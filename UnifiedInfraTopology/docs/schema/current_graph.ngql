@@ -1,0 +1,50 @@
+-- 仅供运维人员逐阶段审阅并手工执行；应用启动不执行此文件。
+-- 必须使用独立的新空间，禁止在遗留图空间执行。生产副本数需由运维按集群审阅。
+-- 阶段 1：创建专用空间，等待元数据传播完成后再执行阶段 2。
+CREATE SPACE `unified_inventory_current` (partition_num = 10, replica_factor = 1, vid_type = FIXED_STRING(67));
+
+-- 阶段 2：确认空间名与 inventory.graph.space 完全一致。
+USE `unified_inventory_current`;
+
+-- scope_id 与 entity_id 均为 32 位小写十六进制。
+-- VID = scope_id + ':d:' / ':i:' / ':a:' + entity_id，固定 67 字节。
+-- 所有实体表示当前状态，禁止使用 generation_id 构造 VID 或过滤当前查询。
+CREATE TAG `device` (
+  scope_id string NOT NULL, entity_id string NOT NULL,
+  name string NOT NULL, device_kind string NOT NULL, role string NOT NULL,
+  lifecycle string NOT NULL, resolution_status string NOT NULL,
+  serial_number string NULL
+);
+CREATE TAG `interface` (
+  scope_id string NOT NULL, entity_id string NOT NULL, device_id string NOT NULL,
+  namespace string NOT NULL, source_name string NOT NULL, normalized_name string NOT NULL,
+  interface_kind string NOT NULL, admin_state string NOT NULL, oper_state string NOT NULL,
+  lifecycle string NOT NULL, resolution_status string NOT NULL, speed_bps int NULL
+);
+CREATE TAG `address` (
+  scope_id string NOT NULL, entity_id string NOT NULL, device_id string NOT NULL,
+  interface_id string NULL, address_family int NOT NULL, address string NOT NULL,
+  prefix_length int NULL, address_scope_key string NOT NULL, scope_status string NOT NULL,
+  purpose string NOT NULL, lifecycle string NOT NULL, resolution_status string NOT NULL
+);
+
+-- 边端点必须属于同一 scope；ID 属性和 VID 必须保持一致。
+-- device -> interface / address；interface -> address。
+CREATE EDGE `owns_interface` (scope_id string NOT NULL);
+CREATE EDGE `owns_address` (scope_id string NOT NULL);
+CREATE EDGE `has_address` (scope_id string NOT NULL);
+-- interface -> interface；链路双向关系由写入方按统一方向约定维护。
+CREATE EDGE `links_to` (scope_id string NOT NULL);
+-- 聚合接口 -> 成员接口；当前聚合关系，不保存整代快照。
+CREATE EDGE `aggregates` (scope_id string NOT NULL);
+
+-- 阶段 3：等待标签/边类型传播后创建索引，等待索引可用后再接入读取服务。
+-- 新建空空间无需重建；导入既有数据后由运维单独审阅 REBUILD INDEX 操作。
+-- scope/entity 前缀服务于有界键集分页；其余列覆盖 LOOKUP 的可选过滤条件。
+-- 3.8 支持未索引属性过滤，但覆盖过滤列可避免依赖随机选择的无关索引。
+-- LIMIT 只限制返回行数；上线前仍需用 EXPLAIN/PROFILE 审查排序和扫描成本。
+CREATE TAG INDEX `device_scope_entity` ON `device` (scope_id(32), entity_id(32), lifecycle(64), device_kind(64), name(256));
+CREATE TAG INDEX `interface_scope_entity` ON `interface` (scope_id(32), entity_id(32), device_id(32), lifecycle(64), interface_kind(64));
+CREATE TAG INDEX `address_scope_entity` ON `address` (scope_id(32), entity_id(32), device_id(32), lifecycle(64), address_family);
+CREATE TAG INDEX `interface_scope_device_entity` ON `interface` (scope_id(32), device_id(32), entity_id(32), lifecycle(64), interface_kind(64));
+CREATE TAG INDEX `address_scope_device_entity` ON `address` (scope_id(32), device_id(32), entity_id(32), lifecycle(64), address_family);
