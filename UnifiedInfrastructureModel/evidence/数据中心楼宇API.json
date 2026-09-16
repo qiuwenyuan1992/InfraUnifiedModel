@@ -1,0 +1,137 @@
+{
+    "result": true,
+    "error_code": 0,
+    "error_msg": "success",
+    "permission": null,
+    "data": {
+        "count": 342,
+        "info": [
+            {
+                "action_id": "20230912150246",
+                "address": "上海市真大路6号上海电信真如机房",
+                "apply_uuid": "",
+                "basic_code": "SHA52",
+                "build_ops_status": 2,
+                "building": "1",
+                "building_full_name": "上海_中国电信_真如_1号楼",
+                "building_property": 1,
+                "cabinet_num": 2,
+                "cabinet_power_num": 1,
+                "city_id": 647,
+                "cn_name": "上海_中国电信_真如1",
+                "created_at": "2019-03-28 16:16:24",
+                "deleted_at": "1999-12-31 16:00:00",
+                "describe": "主要用于CDN业务",
+                "device_num": 1,
+                "external_num": 0,
+                "id": 2,
+                "idc_id": 31,
+                "inst_id": 2,
+                "is_delete": 0,
+                "is_sync": 0,
+                "isp1": 4,
+                "isp_building_name": "1号楼",
+                "isp_phone": "021-62507709",
+                "jira_delete": 0,
+                "jira_key": "NW-336",
+                "last_time": "2024-08-20T23:01:16.512+08:00",
+                "logic_idc_id": [
+                    null
+                ],
+                "name": "上海真如1",
+                "network_device_num": 1,
+                "obj_id": "building",
+                "other_num": 0,
+                "server_num": 0,
+                "status": 1,
+                "supplier_account": "0",
+                "support_application_ids": [],
+                "support_business_model_ids": [],
+                "support_ids": [
+                    4,
+                    985,
+                    56
+                ],
+                "support_isp1_ids": [
+                    4
+                ],
+                "support_isp2_ids": [],
+                "support_node_role_ids": [
+                    985
+                ],
+                "support_service_ids": [
+                    56
+                ],
+                "updated_at": "2024-08-20 23:01:16",
+                "updated_time": "2024-08-20T23:01:16.512+08:00",
+                "username": "cmdb_sys:statisticTask",
+                "uuid": "2e0ab9c9-f65e-45d5-988a-8206bb375545"
+            },
+            {
+                "action_id": "20220713120043",
+                "address": "北京市海淀区丰慧中路11号院永丰产业基地新材料产业园（安泰产业园）有孚网络北京永丰E-Data云计算数据中心C区 B6 5层 L5-3",
+                "apply_uuid": "",
+                "basic_code": "BJS01",
+                "build_ops_status": 2,
+                "building": "B6",
+                "building_full_name": "北京_中国联通_有孚_C2_B6",
+                "building_property": 2,
+                "cabinet_num": 483,
+                "cabinet_power_num": 424,
+                "city_id": 685,
+                "cn_name": "北京_中国联通_有孚B6",
+                "created_at": "2019-03-28 16:17:00",
+                "deleted_at": "1999-12-31 16:00:00",
+                "describe": "京东骨干网华北节点",
+                "device_num": 3371,
+                "external_num": 44,
+                "id": 3,
+                "idc_id": 121,
+                "inst_id": 3,
+                "is_delete": 0,
+                "is_sync": 0,
+                "isp1": 5,
+                "isp_building_name": "C2",
+                "isp_phone": "17710243286",
+                "jira_delete": 0,
+                "jira_key": "NW-16",
+                "last_time": "2026-01-22T23:01:25.497+08:00",
+                "logic_idc_id": [
+                    null
+                ],
+                "modifier": "supengwei1",
+                "name": "北京有孚B6",
+                "network_device_num": 657,
+                "obj_id": "building",
+                "other_num": 41,
+                "server_num": 2673,
+                "status": 1,
+                "supplier_account": "0",
+                "support_application_ids": [],
+                "support_business_model_ids": [],
+                "support_ids": [
+                    5,
+                    40,
+                    50,
+                    986
+                ],
+                "support_isp1_ids": [
+                    5
+                ],
+                "support_isp2_ids": [
+                    40
+                ],
+                "support_node_role_ids": [
+                    986
+                ],
+                "support_service_ids": [
+                    50
+                ],
+                "updated_at": "2026-01-22 23:01:25",
+                "updated_time": "2026-01-22T23:01:25.497+08:00",
+                "username": "cmdb_sys:statisticTask",
+                "uuid": "2dfe3461-b366-4798-ab83-bd4c4ccfe9e9"
+            }
+        ]
+    }
+}

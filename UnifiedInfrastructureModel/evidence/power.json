@@ -1,0 +1,658 @@
+{
+    "data":
+    {
+        "substation":
+        {
+            "substation_node":
+            {
+                "high_line_cabinet":
+                [
+                    {
+                        "tag": "high_line_cabinet",
+                        "code": "西柏站221路-M2-201",
+                        "inst_id": 588,
+                        "typ": 0,
+                        "fault_list":
+                        {
+                            "total": 0,
+                            "idc_name": "",
+                            "idc_module_name": "",
+                            "building_name": "",
+                            "cabinet_code": "",
+                            "list":
+                            []
+                        }
+                    }
+                ],
+                "up_substation":
+                [
+                    {
+                        "tag": "up_substation",
+                        "code": "西柏220KV站",
+                        "inst_id": 584,
+                        "typ": 0,
+                        "fault_list":
+                        {
+                            "total": 0,
+                            "idc_name": "",
+                            "idc_module_name": "",
+                            "building_name": "",
+                            "cabinet_code": "",
+                            "list":
+                            []
+                        }
+                    }
+                ],
+                "self_built_substation":
+                [
+                    {
+                        "tag": "园区自建变电站",
+                        "code": "园区自建变电站",
+                        "inst_id": 99999,
+                        "typ": 0,
+                        "fault_list":
+                        {
+                            "total": 0,
+                            "idc_name": "",
+                            "idc_module_name": "",
+                            "building_name": "",
+                            "cabinet_code": "",
+                            "list":
+                            []
+                        }
+                    }
+                ]
+            },
+            "link":
+            {
+                "self_built2_substation_line":
+                [
+                    {
+                        "local": "园区自建变电站",
+                        "local_tag": "园区自建变电站",
+                        "local_inst_id": 99999,
+                        "remote": "西柏220KV站",
+                        "remote_tag": "up_substation",
+                        "remote_inst_id": 584,
+                        "line_name": "",
+                        "typ": 0
+                    }
+                ],
+                "substation2_high_line_cabinet_line":
+                [
+                    {
+                        "local": "西柏220KV站",
+                        "local_tag": "up_substation",
+                        "local_inst_id": 584,
+                        "remote": "西柏站282路-M1-202",
+                        "remote_tag": "high_line_cabinet",
+                        "remote_inst_id": 584,
+                        "line_name": "西柏站282路-M1",
+                        "typ": 0
+                    }
+                ],
+                "high_line_cabinet2_high_line_cabinet_line":
+                [
+                    {
+                        "local": "西柏站282路-M1-202",
+                        "local_tag": "high_line_cabinet",
+                        "local_inst_id": 0,
+                        "remote": "西柏站231路-M1-201",
+                        "remote_tag": "high_line_cabinet",
+                        "remote_inst_id": 0,
+                        "line_name": "自投手付",
+                        "typ": 0
+                    }
+                ]
+            },
+            "other":
+            {
+                "588":
+                {
+                    "local": "西柏站221路-M2-201",
+                    "local_tag": "",
+                    "local_inst_id": 0,
+                    "remote": "",
+                    "remote_tag": "",
+                    "remote_inst_id": 0,
+                    "line_name": "西柏站221路-M2",
+                    "typ": 0
+                },
+                "698":
+                {
+                    "local": "西柏站222路-M2-201",
+                    "local_tag": "",
+                    "local_inst_id": 0,
+                    "remote": "",
+                    "remote_tag": "",
+                    "remote_inst_id": 0,
+                    "line_name": "西柏站222路-M2",
+                    "typ": 0
+                }
+                
+            },
+            "data":
+            {
+                "698": "西柏220KV站",
+                "697": "西柏220KV站",
+                "588": "西柏220KV站",
+                "605": "西柏220KV站",
+                "699": "西柏220KV站",
+                "584": "西柏220KV站",
+                "700": "西柏220KV站",
+                "600": "西柏220KV站"
+            }
+        },
+        "transformer":
+        {
+            "transformer_node":
+            [
+                {
+                    "first":
+                    {
+                        "tag": "transformer_node",
+                        "code": "DC5M1-121-1#",
+                        "inst_id": 1522,
+                        "typ": 0,
+                        "fault_list":
+                        {
+                            "total": 0,
+                            "idc_name": "",
+                            "idc_module_name": "",
+                            "building_name": "",
+                            "cabinet_code": "",
+                            "list":
+                            []
+                        }
+                    },
+                    "two":
+                    {
+                        "tag": "transformer_node",
+                        "code": "DC5M1-121-2#",
+                        "inst_id": 1518,
+                        "typ": 0,
+                        "fault_list":
+                        {
+                            "total": 0,
+                            "idc_name": "",
+                            "idc_module_name": "",
+                            "building_name": "",
+                            "cabinet_code": "",
+                            "list":
+                            []
+                        }
+                    }
+                }
+            ],
+            "link":
+            {
+                "transformer2_transformer_line":
+                [
+                    {
+                        "local": "DC5M1-121-1#",
+                        "local_tag": "transformer_node",
+                        "local_inst_id": 1522,
+                        "remote": "DC5M1-121-2#",
+                        "remote_tag": "transformer_node",
+                        "remote_inst_id": 1518,
+                        "line_name": "自投自复",
+                        "typ": 0
+                    }
+                ],
+                "high_line_cabinet_transformer_line":
+                [
+                    {
+                        "local": "西柏站282路-M1-202",
+                        "local_tag": "high_line_cabinet",
+                        "local_inst_id": 584,
+                        "remote": "DC5M1-121-1#",
+                        "remote_tag": "transformer_node",
+                        "remote_inst_id": 1522,
+                        "line_name": "",
+                        "typ": 0
+                    }
+                ]
+            },
+            "inst_id2_ups_node":
+            {
+                "1398": "DC5M2-314-1#",
+                "1536": "DC5M2-121-2#",
+                "1394": "DC5M1-214-2#",
+                "1520": "DC5M2-123-2#",
+                "1541": "DC5M1-123-1#",
+                "1531": "DC5M1-123-2#",
+                "1423": "DC5M2-214-1#",
+                "1538": "DC5M2-123-1#",
+                "1396": "DC5M1-314-1#",
+                "1410": "DC5M1-314-2#",
+                "1522": "DC5M1-121-1#",
+                "1420": "DC5M1-214-1#",
+                "1393": "DC5M2-214-2#",
+                "1518": "DC5M1-121-2#",
+                "1528": "DC5M2-121-1#",
+                "1391": "DC5M2-314-2#"
+            }
+        },
+        "ups":
+        {
+            "ups_node":
+            [
+                {
+                    "tag": "ups_node_line",
+                    "code": "DC5_M1_214-A",
+                    "inst_id": 510,
+                    "typ": 0,
+                    "fault_list":
+                    {
+                        "total": 0,
+                        "idc_name": "",
+                        "idc_module_name": "",
+                        "building_name": "",
+                        "cabinet_code": "",
+                        "list":
+                        []
+                    }
+                },
+                {
+                    "tag": "ups_node_line",
+                    "code": "DC5_M1_214-B",
+                    "inst_id": 713,
+                    "typ": 0,
+                    "fault_list":
+                    {
+                        "total": 0,
+                        "idc_name": "",
+                        "idc_module_name": "",
+                        "building_name": "",
+                        "cabinet_code": "",
+                        "list":
+                        []
+                    }
+                }
+            ],
+            "link":
+            {
+                "ups_node_line":
+                [
+                    {
+                        "local": "DC5M1-214-1#",
+                        "local_tag": "transformer_node",
+                        "local_inst_id": 1420,
+                        "remote": "DC5_M1_214-A",
+                        "remote_tag": "ups_node_line",
+                        "remote_inst_id": 510,
+                        "line_name": "",
+                        "typ": 0
+                    }
+                ]
+            },
+            "inst_id2_ups_node":
+            {
+                "194": "DC5_M2_214-B",
+                "888": "DC5_M1_314-E",
+                "713": "DC5_M1_214-B",
+                "328": "DC5_M2_214-C",
+                "56": "DC5_M1_314-B",
+                "834": "DC5_M1_214-E",
+                "502": "DC5_M2_314-C",
+                "510": "DC5_M1_214-A",
+                "572": "DC5_M2_214-E",
+                "117": "DC5_M2_214-D",
+                "235": "DC5_M2_314-D",
+                "124": "DC5_M2_314-A",
+                "132": "DC5_M1_314-D",
+                "89": "DC5_M1_214-C",
+                "12": "DC5_M1_314-A",
+                "375": "DC5_M2_214-A",
+                "634": "DC5_M1_314-C",
+                "415": "DC5_M1_214-D",
+                "592": "DC5_M2_314-E",
+                "190": "DC5_M2_314-B"
+            }
+        },
+        "ups_rpp_line":
+        [
+            {
+                "local": "DC5_M2_314-A",
+                "local_tag": "ups_node_line",
+                "local_inst_id": 124,
+                "remote": "341-GOA",
+                "remote_tag": "rpp2_ups_line",
+                "remote_inst_id": 4168,
+                "line_name": "",
+                "typ": 0
+            }
+        ],
+        "ups_building_line":
+        [
+           
+            {
+                "local": "DC5_M1_314-B",
+                "local_tag": "ups_node_line",
+                "local_inst_id": 56,
+                "remote": "廊坊_中国联通_磐石_DC5",
+                "remote_tag": "building",
+                "remote_inst_id": 411,
+                "line_name": "",
+                "typ": 0
+            }
+        ],
+        "ups_room_line":
+        [
+            {
+                "local": "DC5_M2_214-C",
+                "local_tag": "ups_node_line",
+                "local_inst_id": 328,
+                "remote": "廊坊_中国联通_磐石_DC5_M2_241",
+                "remote_tag": "room",
+                "remote_inst_id": 783,
+                "line_name": "",
+                "typ": 0
+            }
+        ],
+        "building":
+        [
+            {
+                "building": "廊坊_中国联通_磐石_DC5",
+                "building_id": 411,
+                "tag": "building",
+                "room":
+                [                    
+                    {
+                        "room": "廊坊_中国联通_磐石_DC5_M2_341",
+                        "room_id": 819,
+                        "tag": "room",
+                        "rpp":
+                        [
+                            {
+                                "tag": "rpp2_ups_line",
+                                "code": "341-AOA",
+                                "inst_id": 4109,
+                                "typ": 0,
+                                "fault_list":
+                                {
+                                    "total": 0,
+                                    "idc_name": "",
+                                    "idc_module_name": "",
+                                    "building_name": "",
+                                    "cabinet_code": "",
+                                    "list":
+                                    []
+                                }
+                            }
+                        ],
+                        "cabinet":
+                        [
+                            {
+                                "row_code": "12498",
+                                "tag": "idc_row",
+                                "row_inst_id": "12498",
+                                "row_switch_id_a": "341-GOA",
+                                "cabinet":
+                                [
+                                    {
+                                        "tag": "cabinet",
+                                        "code": "DC5-M2-341-G15",
+                                        "inst_id": 59637,
+                                        "typ": 0,
+                                        "fault_list":
+                                        {
+                                            "total": 0,
+                                            "idc_name": "",
+                                            "idc_module_name": "",
+                                            "building_name": "",
+                                            "cabinet_code": "",
+                                            "list":
+                                            []
+                                        }
+                                    },
+                                    {
+                                        "tag": "cabinet",
+                                        "code": "DC5-M2-341-G13",
+                                        "inst_id": 59635,
+                                        "typ": 0,
+                                        "fault_list":
+                                        {
+                                            "total": 4,
+                                            "idc_name": "廊坊_中国联通_磐石",
+                                            "idc_module_name": "廊坊_中国联通_磐石_DC5",
+                                            "building_name": "廊坊_中国联通_磐石DC5",
+                                            "cabinet_code": "DC5-M2-341-G13",
+                                            "list":
+                                            [
+                                                {
+                                                    "fault_id": "be45289301d74d6a879644c06fea1f91"
+                                                },
+                                                {
+                                                    "fault_id": "56c101daf9fe4daa93fc7a1e7b41fb82"
+                                                },
+                                                {
+                                                    "fault_id": "217b6a0bfc9944e3a8a589d834f3bc98"
+                                                },
+                                                {
+                                                    "fault_id": "82572cbc97634e2cbe2e46c530972834"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "row_code": "12605",
+                                "tag": "idc_row",
+                                "row_inst_id": "12605",
+                                "row_switch_id_a": "341-HOA",
+                                "cabinet":
+                                [
+                                    {
+                                        "tag": "cabinet",
+                                        "code": "DC5-M2-341-H18",
+                                        "inst_id": 59665,
+                                        "typ": 0,
+                                        "fault_list":
+                                        {
+                                            "total": 0,
+                                            "idc_name": "",
+                                            "idc_module_name": "",
+                                            "building_name": "",
+                                            "cabinet_code": "",
+                                            "list":
+                                            []
+                                        }
+                                    },
+                                    {
+                                        "tag": "cabinet",
+                                        "code": "DC5-M2-341-H22",
+                                        "inst_id": 59669,
+                                        "typ": 0,
+                                        "fault_list":
+                                        {
+                                            "total": 0,
+                                            "idc_name": "",
+                                            "idc_module_name": "",
+                                            "building_name": "",
+                                            "cabinet_code": "",
+                                            "list":
+                                            []
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "row_code": "12652",
+                                "tag": "idc_row",
+                                "row_inst_id": "12652",
+                                "row_switch_id_a": "341-IOA",
+                                "cabinet":
+                                [
+                                    {
+                                        "tag": "cabinet",
+                                        "code": "DC5-M2-341-I10",
+                                        "inst_id": 59682,
+                                        "typ": 0,
+                                        "fault_list":
+                                        {
+                                            "total": 0,
+                                            "idc_name": "",
+                                            "idc_module_name": "",
+                                            "building_name": "",
+                                            "cabinet_code": "",
+                                            "list":
+                                            []
+                                        }
+                                    },
+                                    {
+                                        "tag": "cabinet",
+                                        "code": "DC5-M2-341-I07",
+                                        "inst_id": 59679,
+                                        "typ": 0,
+                                        "fault_list":
+                                        {
+                                            "total": 0,
+                                            "idc_name": "",
+                                            "idc_module_name": "",
+                                            "building_name": "",
+                                            "cabinet_code": "",
+                                            "list":
+                                            []
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "row_code": "12657",
+                                "tag": "idc_row",
+                                "row_inst_id": "12657",
+                                "row_switch_id_a": "341-JOA",
+                                "cabinet":
+                                [
+                                    {
+                                        "tag": "cabinet",
+                                        "code": "DC5-M2-341-J09",
+                                        "inst_id": 59702,
+                                        "typ": 0,
+                                        "fault_list":
+                                        {
+                                            "total": 0,
+                                            "idc_name": "",
+                                            "idc_module_name": "",
+                                            "building_name": "",
+                                            "cabinet_code": "",
+                                            "list":
+                                            []
+                                        }
+                                    },
+                                    {
+                                        "tag": "cabinet",
+                                        "code": "DC5-M2-341-J15",
+                                        "inst_id": 59708,
+                                        "typ": 0,
+                                        "fault_list":
+                                        {
+                                            "total": 0,
+                                            "idc_name": "",
+                                            "idc_module_name": "",
+                                            "building_name": "",
+                                            "cabinet_code": "",
+                                            "list":
+                                            []
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "row_code": "12487",
+                                "tag": "idc_row",
+                                "row_inst_id": "12487",
+                                "row_switch_id_a": "341-KOA",
+                                "cabinet":
+                                [
+                                    {
+                                        "tag": "cabinet",
+                                        "code": "DC5-M2-341-K10",
+                                        "inst_id": 59728,
+                                        "typ": 0,
+                                        "fault_list":
+                                        {
+                                            "total": 0,
+                                            "idc_name": "",
+                                            "idc_module_name": "",
+                                            "building_name": "",
+                                            "cabinet_code": "",
+                                            "list":
+                                            []
+                                        }
+                                    },
+                                    {
+                                        "tag": "cabinet",
+                                        "code": "DC5-M2-341-K18",
+                                        "inst_id": 59736,
+                                        "typ": 0,
+                                        "fault_list":
+                                        {
+                                            "total": 0,
+                                            "idc_name": "",
+                                            "idc_module_name": "",
+                                            "building_name": "",
+                                            "cabinet_code": "",
+                                            "list":
+                                            []
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "cabinet_line":
+        [
+            {
+                "local": "341-EOA",
+                "local_tag": "rpp2_ups_line",
+                "local_inst_id": 4200,
+                "remote": "DC5-M2-341-E10",
+                "remote_tag": "cabinet",
+                "remote_inst_id": 59586,
+                "line_name": "A",
+                "typ": 0
+            },
+            {
+                "local": "341-EOB",
+                "local_tag": "rpp2_ups_line",
+                "local_inst_id": 4067,
+                "remote": "DC5-M2-341-E10",
+                "remote_tag": "cabinet",
+                "remote_inst_id": 59586,
+                "line_name": "B",
+                "typ": 0
+            }
+        ],
+        "rpp_row_line":
+        [
+            {
+                "local": "M1_241-AOA",
+                "local_tag": "rpp2_ups_line",
+                "local_inst_id": 4017,
+                "remote": "12604",
+                "remote_tag": "idc_row",
+                "remote_inst_id": 12604,
+                "line_name": "A",
+                "typ": 0
+            },
+            {
+                "local": "341-KOB",
+                "local_tag": "rpp2_ups_line",
+                "local_inst_id": 4292,
+                "remote": "12487",
+                "remote_tag": "idc_row",
+                "remote_inst_id": 12487,
+                "line_name": "B",
+                "typ": 0
+            }
+        ]
+    },
+    "msg": "OK",
+    "code": 200
+}

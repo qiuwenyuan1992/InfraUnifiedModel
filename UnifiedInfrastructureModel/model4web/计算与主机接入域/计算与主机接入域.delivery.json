@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/qiuwenyuan/Documents/workspace/AIgen/InfraUnifiedModel/UnifiedInfrastructureModel/model4web/计算与主机接入域.architecture.json",
+  "output": "/Users/qiuwenyuan/Documents/workspace/AIgen/InfraUnifiedModel/UnifiedInfrastructureModel/model4web/计算与主机接入域.html",
+  "specification": {
+    "sha256": "d1b8f1fc597d3353ba79368a1c81ab3bb6bf9f87778c18f149ca6192e529a559",
+    "bytes": 3285
+  },
+  "artifact": {
+    "sha256": "b9620356c4bba4fb9e6f4ab03f14e21641fa3b15a266cf392497312526579178",
+    "bytes": 806480
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

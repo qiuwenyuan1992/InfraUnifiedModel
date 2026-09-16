@@ -1,0 +1,33 @@
+{
+    "result": true,
+    "error_code": 0,
+    "error_msg": "success",
+    "permission": null,
+    "data": {
+        "count": 1,
+        "info": [
+            {
+                "building": 54,
+                "city": "廊坊",
+                "code": "DC2_M1_313-D",
+                "create_time": "2024-07-08T14:47:46.823+08:00",
+                "idc": 1,
+                "inst_id": 28,
+                "last_time": "2025-08-27T11:13:09.069+08:00",
+                "modifier": "supengwei1",
+                "module": 58,
+                "obj_id": "idc_ups_group",
+                "supplier_account": "0",
+                "transformer_id_up": 1392,
+                "ups_external_bypass": 1,
+                "ups_group_id_tag": "A1-3-2",
+                "ups_group_num": 3,
+                "ups_only_IT": 2,
+                "ups_only_jd": [
+                    1
+                ],
+                "ups_proportion_jd": null
+            }
+        ]
+    }
+}

@@ -1,0 +1,41 @@
+{
+    "result": true,
+    "error_code": 0,
+    "error_msg": "success",
+    "permission": null,
+    "data": {
+        "count": 1,
+        "info": [
+            {
+                "battery_brand": "雄韬",
+                "battery_group_num": 4,
+                "battery_num": 36,
+                "battery_product_time": "2025-09-01",
+                "battery_resistance": 2,
+                "battery_type": "HFS12-700WF-X",
+                "battery_voltage": 12,
+                "building": 183,
+                "city": "北京",
+                "code": "2U4B2",
+                "create_time": "2024-03-07T18:01:10.878+08:00",
+                "idc": 238,
+                "idc_module_name": "北京_万国数据_昌金路_1#",
+                "inst_id": 2570,
+                "last_time": "2025-12-26T17:00:17.321+08:00",
+                "modifier": "supengwei1",
+                "module": 45,
+                "obj_id": "idc_ups",
+                "supplier_account": "0",
+                "transformer_id_up": 1068,
+                "ups_brand": "华为",
+                "ups_capacitor_change_date": null,
+                "ups_capacity": 600,
+                "ups_exprie_date": "2023-10-24",
+                "ups_group": 720,
+                "ups_group_id_tag": "A3-1-2",
+                "ups_product_date": "2018-10-25",
+                "ups_type": "5000E"
+            }
+        ]
+    }
+}

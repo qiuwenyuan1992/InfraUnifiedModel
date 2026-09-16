@@ -1,0 +1,47 @@
+env: prod
+http:
+  host: 0.0.0.0
+  #  host: 127.0.0.1
+  port: 8000
+security:
+  api_sign:
+    app_key: 123456
+    app_security: 123456
+  jwt:
+    key: QQYnRFerJTSEcrfB89fw8prOaObmrch8
+data:
+  db:
+    main:
+      driver: mysql
+      dsn: root:123456@tcp(127.0.0.1:3306)/user?charset=utf8mb4&parseTime=True&loc=Local
+  #    main:
+  #      driver: postgres
+  #      dsn: host=localhost user=gorm password=gorm dbname=gorm port=9920 sslmode=disable TimeZone=Asia/Shanghai
+  redis:
+    addr: 127.0.0.1:6350
+    password: ""
+    db: 0
+    read_timeout: 0.2s
+    write_timeout: 0.2s
+  mongo:
+    uri: mongodb://root:123456@localhost:27017
+log:
+  log_level: info
+  mode: file               #  file or console or both
+  encoding: json           # json or console
+  log_file_name: "./storage/logs/server.log"
+  max_backups: 30
+  max_age: 7
+  max_size: 1024
+  compress: true
+inventory:
+  # 密钥、授权和图连接由部署方提供，不复用 JWT 密钥。
+  cursor_key: ""
+  grants: []
+  graph:
+    # 留空时资产读取不可用，控制 API 仍可启动。
+    hosts: []
+    space: ""
+    username: ""
+    password: ""
+    timeout_seconds: 5

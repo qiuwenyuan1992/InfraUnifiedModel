@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {"title": "空间归属域 · 目标模型", "locale": "zh-CN", "quality_profile": "showcase", "viewBox": [1120, 650], "legend": {"entries": {"backend": {"label": "空间与资产"}, "external": {"label": "逻辑归属"}}}},
+  "components": [
+    {"id": "space-site", "type": "backend", "label": "物理站点", "sublabel": "DataCenter", "pos": [40, 60], "size": [220, 76]},
+    {"id": "space-building", "type": "backend", "label": "楼宇", "sublabel": "Building · 样例 411", "pos": [440, 60], "size": [220, 76]},
+    {"id": "space-room", "type": "backend", "label": "房间", "sublabel": "Room · 样例 819", "pos": [840, 60], "size": [220, 76]},
+    {"id": "space-row", "type": "backend", "label": "机柜行 · 可选", "sublabel": "Row · 样例 12652", "pos": [840, 290], "size": [220, 76]},
+    {"id": "space-cabinet", "type": "backend", "label": "机柜", "sublabel": "Cabinet · 样例 59682", "pos": [440, 290], "size": [220, 76]},
+    {"id": "space-device", "type": "backend", "label": "共享设备", "sublabel": "Device · 样例 535335", "pos": [40, 290], "size": [220, 76]},
+    {"id": "space-module", "type": "external", "label": "逻辑模组", "sublabel": "Module · 非物理容器", "pos": [40, 520], "size": [220, 76]},
+    {"id": "space-logical", "type": "external", "label": "逻辑数据中心", "sublabel": "LogicalDataCenter", "pos": [440, 520], "size": [220, 76]},
+    {"id": "space-placement", "type": "backend", "label": "安装历史", "sublabel": "RackPlacement · U位与时间", "pos": [840, 520], "size": [220, 76]}
+  ],
+  "connections": [
+    {"id": "space-site-building", "from": "space-site", "to": "space-building", "label": "CONTAINS"},
+    {"id": "space-building-room", "from": "space-building", "to": "space-room", "label": "CONTAINS"},
+    {"id": "space-room-row", "from": "space-room", "to": "space-row", "label": "CONTAINS", "labelDy": 90},
+    {"id": "space-row-cabinet", "from": "space-row", "to": "space-cabinet", "label": "CONTAINS"},
+    {"id": "space-device-cabinet", "from": "space-device", "to": "space-cabinet", "label": "LOCATED_IN", "variant": "emphasis"},
+    {"id": "space-device-module", "from": "space-device", "to": "space-module", "label": "MEMBER_OF", "labelDy": 90},
+    {"id": "space-module-logical", "from": "space-module", "to": "space-logical", "label": "ASSIGNED_TO"}
+  ],
+  "cards": [
+    {"dot": "cyan", "title": "P · 目标关系", "items": ["箭头是项目建议语义，不代表全量已接入。", "物理包含无环；直接父级唯一；缺行不造行。"]},
+    {"dot": "emerald", "title": "E · 局部样例", "items": ["411 / 819 / 12652 / 59682 可局部对齐。", "535335 落位该柜，不证明同一采集时刻。"]},
+    {"dot": "amber", "title": "U · 历史与容量", "items": ["设备以 HAS_PLACEMENT 关联安装历史。", "为避免跨图长线，此关联以文字列出。", "U位口径及有效期待确认，逻辑归属不导电。"]}
+  ]
+}

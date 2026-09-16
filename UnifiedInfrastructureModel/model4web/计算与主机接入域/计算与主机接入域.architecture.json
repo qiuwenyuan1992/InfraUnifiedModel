@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {"title": "计算与主机接入域 · 模型与观测", "locale": "zh-CN", "quality_profile": "showcase", "viewBox": [1120, 650], "legend": {"entries": {"backend": {"label": "资产与逻辑分组"}, "external": {"label": "引用、观测与目标"}}}},
+  "components": [
+    {"id": "compute-logical", "type": "external", "label": "逻辑站点引用 · U", "sublabel": "LogicalDataCenter · 28", "pos": [40, 60], "size": [220, 76]},
+    {"id": "compute-pod", "type": "backend", "label": "逻辑资源分组 · E", "sublabel": "ComputePod · 944 / POD011", "pos": [440, 60], "size": [220, 76]},
+    {"id": "compute-building", "type": "external", "label": "楼宇覆盖引用 · U", "sublabel": "Building · 176", "pos": [840, 60], "size": [220, 76]},
+    {"id": "compute-access-one", "type": "external", "label": "接入观测 1 · E", "sublabel": "11.97.5.174 · 25GE1/0/4", "pos": [40, 290], "size": [220, 76]},
+    {"id": "compute-device", "type": "backend", "label": "共享服务器资产 · E", "sublabel": "Device · 535335", "pos": [440, 290], "size": [220, 76]},
+    {"id": "compute-access-two", "type": "external", "label": "接入观测 2 · E", "sublabel": "11.97.5.175 · 25GE1/0/4", "pos": [840, 290], "size": [220, 76]},
+    {"id": "compute-bond", "type": "external", "label": "聚合接口 · P", "sublabel": "BondInterface", "pos": [40, 520], "size": [220, 76]},
+    {"id": "compute-interface", "type": "external", "label": "主机接口 · P", "sublabel": "HostInterface", "pos": [440, 520], "size": [220, 76]},
+    {"id": "compute-address", "type": "external", "label": "作用域地址 · P", "sublabel": "AddressAssignment", "pos": [840, 520], "size": [220, 76]}
+  ],
+  "connections": [
+    {"id": "compute-assignment", "from": "compute-pod", "to": "compute-logical", "label": "ASSIGNED_TO", "variant": "dashed"},
+    {"id": "compute-coverage", "from": "compute-pod", "to": "compute-building", "label": "SITED_IN", "variant": "dashed"},
+    {"id": "compute-observation-one", "from": "compute-device", "to": "compute-access-one", "label": "OBSERVED_ACCESS", "variant": "emphasis"},
+    {"id": "compute-observation-two", "from": "compute-device", "to": "compute-access-two", "label": "OBSERVED_ACCESS", "variant": "emphasis"},
+    {"id": "compute-aggregation", "from": "compute-bond", "to": "compute-interface", "label": "AGGREGATES"},
+    {"id": "compute-addressing", "from": "compute-interface", "to": "compute-address", "label": "HAS_ADDRESS"}
+  ],
+  "cards": [
+    {"dot": "cyan", "title": "分组存在，成员未知", "items": ["E 样例；P 目标；U 待解析或待确认。", "944 是逻辑分组，不是 Kubernetes Pod。", "不将535335与944连为已确认成员。"]},
+    {"dot": "amber", "title": "观测不等于接线", "items": ["两个同名远端口属于不同设备，不合并。", "缺本地主机端口、观测时间及运行状态。", "不能据此确认物理接线、Bond、LACP或冗余。"]},
+    {"dot": "emerald", "title": "目标接口，不虚构实例", "items": ["第三排仅为目标关系，不关联样例实例。", "组件摘要不展开组件；地址关联保留作用域与时间。", "来源：计算与主机接入域.md 第3—6节。"]}
+  ]
+}

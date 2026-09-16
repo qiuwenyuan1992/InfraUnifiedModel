@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/qiuwenyuan/Documents/workspace/AIgen/InfraUnifiedModel/UnifiedInfrastructureModel/model4web/电力与动环域.architecture.json",
+  "output": "/Users/qiuwenyuan/Documents/workspace/AIgen/InfraUnifiedModel/UnifiedInfrastructureModel/model4web/电力与动环域.html",
+  "specification": {
+    "sha256": "3ac0bea595e8e6076069a12bf7e7dcb4977d858509f8323228b3fa17634cf79c",
+    "bytes": 3084
+  },
+  "artifact": {
+    "sha256": "0777e7877a86ffc9c00bdb861d7f001ca0e5c3ed74796be739e65a4aad698b2a",
+    "bytes": 805712
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {"title": "电力与动环域 · 关系与证据", "locale": "zh-CN", "quality_profile": "showcase", "viewBox": [1120, 650], "legend": {"entries": {"backend": {"label": "电气资产"}, "external": {"label": "引用与观测"}}}},
+  "components": [
+    {"id": "power-ups", "type": "backend", "label": "UPS 设备 · E", "sublabel": "UPSDevice · 2570", "pos": [40, 60], "size": [220, 76]},
+    {"id": "power-group", "type": "external", "label": "组引用 · U", "sublabel": "UPSGroup · 720 待解析", "pos": [440, 60], "size": [220, 76]},
+    {"id": "power-panel", "type": "backend", "label": "列头柜 · E", "sublabel": "RemotePowerPanel · 606", "pos": [840, 60], "size": [220, 76]},
+    {"id": "power-feed-a", "type": "backend", "label": "列头柜来源 A · E", "sublabel": "RPP · 4200", "pos": [40, 290], "size": [220, 76]},
+    {"id": "power-cabinet", "type": "backend", "label": "机柜 · E", "sublabel": "Cabinet · 59586", "pos": [440, 290], "size": [220, 76]},
+    {"id": "power-feed-b", "type": "backend", "label": "列头柜来源 B · E", "sublabel": "RPP · 4067", "pos": [840, 290], "size": [220, 76]},
+    {"id": "power-point", "type": "external", "label": "测点 · P", "sublabel": "MeasurementPoint", "pos": [40, 520], "size": [220, 76]},
+    {"id": "power-asset", "type": "backend", "label": "被测电气对象 · P", "sublabel": "资产 / 组件 / 端点", "pos": [440, 520], "size": [220, 76]},
+    {"id": "power-alarm", "type": "external", "label": "告警事件 · P", "sublabel": "AlarmEvent", "pos": [840, 520], "size": [220, 76]}
+  ],
+  "connections": [
+    {"id": "power-membership", "from": "power-ups", "to": "power-group", "label": "MEMBER_OF", "variant": "dashed"},
+    {"id": "power-association", "from": "power-panel", "to": "power-group", "label": "ASSOCIATED_WITH", "variant": "dashed"},
+    {"id": "power-line-a", "from": "power-feed-a", "to": "power-cabinet", "label": "来源线路 · A", "variant": "emphasis"},
+    {"id": "power-line-b", "from": "power-feed-b", "to": "power-cabinet", "label": "来源线路 · B", "variant": "emphasis"},
+    {"id": "power-measure", "from": "power-point", "to": "power-asset", "label": "MEASURES"},
+    {"id": "power-observe", "from": "power-alarm", "to": "power-asset", "label": "OBSERVED_ON"}
+  ],
+  "cards": [
+    {"dot": "cyan", "title": "编组不是馈电", "items": ["E 样例事实；P 目标模型；U 待确认。", "2570 与 606 同引720，不证明直接供给。", "第一、二排不同证据切片，禁止自动串接。"]},
+    {"dot": "amber", "title": "A/B 不是冗余结论", "items": ["第二排仅保留源端点与 A/B 标签。", "SUPPLIES 须核验工程方向、回路和状态。", "端点接线、开关、容量不全：无法确认冗余。"]},
+    {"dot": "emerald", "title": "动环目标与追溯", "items": ["第三排为 P，不表示测点实例已经接入。", "冷却设备 COOLS 区域；传感器 MONITORS 对象。", "来源：电力与动环域.md 第4—7节；时序外存。"]}
+  ]
+}

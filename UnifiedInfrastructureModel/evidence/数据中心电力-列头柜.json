@@ -1,0 +1,31 @@
+{
+    "result": true,
+    "error_code": 0,
+    "error_msg": "success",
+    "permission": null,
+    "data": {
+        "count": 7,
+        "info": [
+            {
+                "building": 183,
+                "city": "北京",
+                "code": "B205PDU-4A",
+                "create_time": "2024-05-20T11:13:08.13+08:00",
+                "idc": 238,
+                "idc_room": 395,
+                "inst_id": 606,
+                "last_time": "2024-07-19T15:07:56.366+08:00",
+                "modifier": "supengwei1",
+                "module": 45,
+                "obj_id": "idc_RPP",
+                "row_in_num": 18,
+                "row_power_type": 1,
+                "row_rated_current": 400,
+                "row_rated_voltage": 380,
+                "supplier_account": "0",
+                "transformer_group_a": 1232,
+                "ups_group": 720
+            }
+        ]
+    }
+}

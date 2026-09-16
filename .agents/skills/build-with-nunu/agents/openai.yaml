@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build with Nunu"
+  short_description: "Build production Go apps with go-nunu conventions"
+  default_prompt: "Use $build-with-nunu to implement a complete feature in this Nunu project."

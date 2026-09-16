@@ -1,0 +1,27 @@
+{
+    "result": true,
+    "error_code": 0,
+    "error_msg": "success",
+    "permission": null,
+    "data": {
+        "count": 586,
+        "info": [
+            {
+                "cn_name": "廊坊_中国联通_磐石",
+                "code": "PS",
+                "device_num": 56369,
+                "inst_id": 1,
+                "network_device_num": 6608,
+                "uuid": "9d159857-ab43-428b-b384-81e77e9f2539"
+            },
+            {
+                "cn_name": "广州_中国电信_南沙",
+                "code": "NS",
+                "device_num": 0,
+                "inst_id": 2,
+                "network_device_num": 0,
+                "uuid": "ad0ff91d-b723-4dec-b8eb-4621f2c8d657"
+            }
+        ]
+    }
+}

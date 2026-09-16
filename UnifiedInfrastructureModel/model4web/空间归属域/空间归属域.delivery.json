@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/qiuwenyuan/Documents/workspace/AIgen/InfraUnifiedModel/UnifiedInfrastructureModel/model4web/空间归属域.architecture.json",
+  "output": "/Users/qiuwenyuan/Documents/workspace/AIgen/InfraUnifiedModel/UnifiedInfrastructureModel/model4web/空间归属域.html",
+  "specification": {
+    "sha256": "6102f33da29e4ef0ac85be369478102a4cc4d041c5ec2d90da65eff3261039e7",
+    "bytes": 3019
+  },
+  "artifact": {
+    "sha256": "2e53603b1964fce16270396793d01c1ddfcbb546549957323e671c0a555646fc",
+    "bytes": 806022
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

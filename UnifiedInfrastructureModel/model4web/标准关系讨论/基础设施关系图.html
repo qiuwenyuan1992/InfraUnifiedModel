@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>基础设施行业标准关系图</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#fff;color:#18212b;font:16px/1.65 system-ui,"PingFang SC",sans-serif}main{max-width:1320px;margin:auto;padding:28px}h1{font-size:28px;margin:0 0 12px}h2{font-size:22px;margin-top:32px}h3{font-size:18px}p{margin:10px 0}.notice{border-left:4px solid #555;padding:10px 18px;background:#f5f5f5}.diagram{overflow:auto;border:1px solid #ccc;margin:18px 0}svg{display:block;width:100%;min-width:1120px;height:auto}svg text{font-family:system-ui,"PingFang SC",sans-serif;fill:#18212b}svg .node{fill:white;stroke:#333;stroke-width:1.5}svg .edge{fill:none;stroke:#333;stroke-width:1.5;marker-end:var(--edge-marker)}svg .undirected{marker-end:none}svg .candidate{stroke-dasharray:6 5}svg .label{font-size:14px}svg .title{font-size:17px;font-weight:600}svg .small{font-size:13px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:12px;border:1px solid #ccc;vertical-align:top;text-align:left}th{background:#f5f5f5}.table-wrap{overflow:auto}a{color:#174b82}code{overflow-wrap:anywhere;font-size:13px}.muted{color:#555}li{margin:7px 0}@media print{main{max-width:none;padding:0}.diagram{overflow:visible}svg{min-width:0}table{font-size:11px}h2{break-after:avoid}tr{break-inside:avoid}}
+nav{position:sticky;top:0;background:white;border-bottom:1px solid #aaa;padding:12px 0;z-index:2}section,tr[id],details[id]{scroll-margin-top:70px}.relation-map{border:1px solid #bbb;padding:18px;margin:16px 0;overflow:auto}.relation-row{display:grid;grid-template-columns:minmax(220px,1fr) minmax(250px,1.25fr) minmax(220px,1fr);align-items:center;gap:14px;min-width:740px;margin:16px 0}.entity{border:1px solid #555;padding:12px;text-align:center;overflow-wrap:anywhere}.entity small{display:block;color:#555}.connector{text-align:center;font-size:14px;overflow-wrap:anywhere}.connector a{display:block}.connector:after{content:'⟶';display:block;font-size:30px;line-height:1}.relation-map .subnote{font-size:14px;min-width:740px}summary{cursor:pointer;font-weight:650;padding:16px;border:1px solid #bbb}details{margin:20px 0}caption{text-align:left;font-weight:650;padding:8px 0}td:first-child{width:16%}section td:nth-child(2){width:35%}section h2{border-bottom:1px solid #bbb;padding-bottom:8px}section code{word-break:break-word}@media(max-width:700px){main{padding:16px}nav{position:static}h1{font-size:24px}td{min-width:150px}}@media print{nav{position:static}.relation-map{overflow:visible}.relation-row{min-width:0;grid-template-columns:1fr 1fr 1fr;break-inside:avoid}.relation-map .subnote{min-width:0}}
+</style>
+</head>
+<body><main>
+<h1>基础设施行业标准关系图</h1>
+<p>先确定标准中“什么对象，通过什么关系，连接什么对象”。本页是类型关系参考，不是系统架构、固定工程接线、现场拓扑或合规认证。</p>
+<div class="notice"><strong>三层分开：</strong>主视图只使用标准类及原生关系；中文业务类型与跨标准关联是项目映射；实际接线、运行状态和容量另需现场事实。箭头表示表中声明的关系方向，不自动表示电流或冷却介质流向。相同类型重复出现不代表复制资产。</div>
+<nav aria-label="标准视图导航"><a href="#space-standard">空间与安装</a> · <a href="#power-standard">配电</a> · <a href="#cooling-standard">冷却</a> · <a href="#observation-standard">观测与控制</a> · <a href="#network-standard">网络</a> · <a href="#mapping-boundary">业务映射边界</a> · <a href="#legacy">旧项目附录</a></nav>
+<p class="muted">图中编号对应紧随其后的逐边表。集合链接 ≠ 资源数组；关联对象 ≠ 物理组成；标准可选字段 ≠ 项目必填约束。先交付标准关系，实例适配不作为前置条件。</p>
+<section id="space-standard">
+<h2>一、空间与安装：分解、包含、安装和编组分开</h2>
+<p>IFC 4.3.2.0；DMTF CIM Schema 2.54.0。标准不强制“站点→楼宇→楼层→房间→行→机柜”的固定层级。</p>
+<div class="relation-map" role="group" aria-label="空间与安装标准关系图">
+<div class="relation-row"><div class="entity">IfcObjectDefinition<small>整体；适用空间实体</small></div><div class="connector"><a href="#s1">S1 · IfcRelAggregates</a>分解</div><div class="entity">IfcObjectDefinition<small>部分；适用空间实体</small></div></div>
+<div class="relation-row"><div class="entity">IfcSpatialElement<small>空间</small></div><div class="connector"><a href="#s2">S2 · 主要包含 / 附加引用</a>两个独立关系</div><div class="entity">IfcProduct / IfcSpatialReferenceSelect<small>产品 / 引用对象，按关系区分</small></div></div>
+<div class="relation-row"><div class="entity">CIM_Rack</div><div class="connector"><a href="#s3">S3 · CIM_ChassisInRack</a>机柜安装</div><div class="entity">CIM_Chassis</div></div>
+<div class="relation-row"><div class="entity">CIM_PhysicalPackage</div><div class="connector"><a href="#s4">S4 · CIM_Container</a>包内组成</div><div class="entity">CIM_PhysicalElement</div></div>
+<div class="relation-row"><div class="entity">IfcGroup<small>包括适用的 IfcSystem</small></div><div class="connector"><a href="#s5">S5 · IfcRelAssignsToGroup</a>成员分配</div><div class="entity">IfcObjectDefinition</div></div>
+</div>
+<div class="table-wrap"><table><caption>空间逐边说明 · IFC 为关联实例的两端角色，不是同名 JSON 属性</caption><thead><tr><th>编号</th><th>方向、基数及官方定义</th><th>适用边界</th></tr></thead><tbody>
+<tr id="s1"><td>S1 分解</td><td>整体→部分；每关系整体 1、部分 1..*。<a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAggregates.htm">IfcRelAggregates</a></td><td>空间结构的父分解还受 WR41 约束，见附录 R1；行、模块必须先确认语义，不强行加入空间树。</td></tr>
+<tr id="s2"><td>S2 两种空间关系</td><td>空间→产品：<a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelContainedInSpatialStructure.htm">主要包含</a>，空间 1、产品 1..*，产品主要包含 0..1。空间→引用对象：<a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelReferencedInSpatialStructure.htm">附加引用</a>，空间 1、对象 1..*。</td><td>引用对象为 IfcGroup 或 IfcProduct，可参与多个空间引用；引用不替代主要包含。机柜不是自动成立的空间类。</td></tr>
+<tr id="s3"><td>S3 机柜安装</td><td>GroupComponent（Rack）→PartComponent（Chassis）。<a href="https://schemas.dmtf.org/wbem/cim-html/2.54.0/CIM_ChassisInRack.html">CIM_ChassisInRack</a>，基数未确认，不猜测。</td><td>类版本 2.10.0 不等于 Schema 版本。BottomU 是最低安装 U 位；不提供安装历史或完整占用冲突规则。项目安装记录须连接资产与机柜，并记录有效期。</td></tr>
+<tr id="s4"><td>S4 物理组成</td><td>GroupComponent（PhysicalPackage）→PartComponent（PhysicalElement）。<a href="https://schemas.dmtf.org/wbem/cim-html/2.54.0/CIM_Container.html">CIM_Container</a>；基数未确认。</td><td>资产身份不自动等于机箱，物理组成不等于逻辑成员。U 位、容量和历史另建项目契约。</td></tr>
+<tr id="s5"><td>S5 编组</td><td>组→对象；每关系组 1、对象 1..*，对象可参与 0..* 组分配。<a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAssignsToGroup.htm">IfcRelAssignsToGroup</a></td><td>逻辑 POD、UPS 组等需项目映射；成员关系不能证明馈电、机柜安装或独立冗余。</td></tr>
+</tbody></table></div></section>
+<section id="power-standard"><h2>二、配电：配电单元、回路、插座与 PSU</h2>
+<p>Redfish 的 PowerDistribution 是配电功能资源。机柜 PDU 可按 RackPDU 场景映射；列头柜需按实际功能核对，不能仅按名称等同 FloorPDU。以下不是强制“UPS→列头柜→PDU”的建设链。</p>
+<div class="relation-map" role="group" aria-label="配电标准关系图">
+<div class="relation-row"><div class="entity">PowerDistribution<small>配电单元</small></div><div class="connector"><a href="#e1">E1 · Mains / Branches</a>两个独立集合入口</div><div class="entity">CircuitCollection<small>集合成员为 Circuit；不是回路数组属性</small></div></div>
+<div class="relation-row"><div class="entity">PowerDistribution</div><div class="connector"><a href="#e2">E2 · Outlets / OutletGroups</a>分别指向各自集合</div><div class="entity">OutletCollection / OutletGroupCollection</div></div>
+<div class="relation-row"><div class="entity">Circuit<small>供电回路</small></div><div class="connector"><a href="#e3">E3 · Links.DistributionCircuits</a>所供电的下游回路</div><div class="entity">Circuit（下游）</div></div>
+<div class="relation-row"><div class="entity">Circuit<small>受电回路</small></div><div class="connector"><a href="#e4">E4 · Links.SourceCircuit / PowerOutlet</a>按源建模方式分别使用</div><div class="entity">Circuit（上游）/ Outlet（电源）</div></div>
+<div class="relation-row"><div class="entity">Outlet</div><div class="connector"><a href="#e5">E5 · Links.BranchCircuit</a>关联支路</div><div class="entity">Circuit</div></div>
+<div class="relation-row"><div class="entity">PowerSupply<small>设备 PSU 功能资源</small></div><div class="connector"><a href="#e6">E6 · Links.PowerOutlets</a>供电插座，复数数组</div><div class="entity">Outlet</div></div>
+<div class="relation-row"><div class="entity">PowerDistribution</div><div class="connector"><a href="#e7">E7 · Links.Chassis / Facility</a>容纳本资源的机箱 / 设施</div><div class="entity">Chassis / Facility</div></div>
+<div class="relation-row"><div class="entity">Outlet</div><div class="connector"><a href="#e7">E7 · Links.Chassis</a>连接到本插座的机箱；不是容器</div><div class="entity">Chassis</div></div>
+<div class="relation-row"><div class="entity">IfcDistributionElement</div><div class="connector"><a href="#e8">E8 · IfcRelNests</a>嵌套端口</div><div class="entity">IfcPort</div></div>
+<div class="relation-row"><div class="entity">IfcPort（本端）</div><div class="connector"><a href="#e9">E9 · IfcRelConnectsPorts</a>连接角色，不是供电方向</div><div class="entity">IfcPort（对端）</div></div>
+<p class="subnote">回路 Circuit ≠ 断路器资产；BreakerState 是保护装置状态。断路器、切换开关、母线分别作为物理对象适配，通过适用端口连接；“保护哪个回路 / 切换哪条路径”不可由名称或 CircuitType 自动生成。</p>
+</div>
+<div class="table-wrap"><table><caption>配电逐边说明 · 基数表示属性形态，不保证实例必返</caption><thead><tr><th>编号</th><th>方向、属性与形态</th><th>固定版本与适用条件</th></tr></thead><tbody>
+<tr id="e1"><td>E1 回路集合</td><td>PowerDistribution→CircuitCollection；Mains、Branches 各为单集合链接，不是 Circuit 数组。</td><td><a href="https://redfish.dmtf.org/schemas/v1/PowerDistribution.v1_3_0.json">PowerDistribution 1.3.0</a>。集合是资源导航，不是物理父子树或完整接线。</td></tr>
+<tr id="e2"><td>E2 插座集合</td><td>PowerDistribution.Outlets→OutletCollection；OutletGroups→OutletGroupCollection；各为单集合链接。</td><td><a href="https://redfish.dmtf.org/schemas/v1/PowerDistribution.v1_3_0.json">PowerDistribution 1.3.0</a>。OutletGroups 长描述与类型引用存在冲突，本图按引用类型，不据描述改成 OutletCollection。</td></tr>
+<tr id="e3"><td>E3 下游回路</td><td>Circuit.Links.DistributionCircuits→Circuit 数组。表达本回路供电的下游回路。</td><td><a href="https://redfish.dmtf.org/schemas/v1/Circuit.v1_8_1.json">Circuit 1.8.1</a>；属性自 1.4.0 引入。不表示当前带电或负载容量已满足。</td></tr>
+<tr id="e4"><td>E4 上游电源</td><td>Circuit.Links.SourceCircuit→上游 Circuit，单值可空；Links.PowerOutlet→供电 Outlet，单值可空。</td><td><a href="https://redfish.dmtf.org/schemas/v1/Circuit.v1_8_1.json">Circuit 1.8.1</a>。SourceCircuit 用于电源未建模为 Outlet 的情形；不宣称 Schema 设置了二选一校验。图箭头是受电回路指向电源，非能量流向。</td></tr>
+<tr id="e5"><td>E5 支路与插座</td><td>Outlet.Links.BranchCircuit→Circuit，单值可空。另有 Circuit.Links.Outlets→Outlet 数组；Circuit.Links.BranchCircuit 为关联支路引用。</td><td><a href="https://redfish.dmtf.org/schemas/v1/Outlet.v1_4_0.json">Outlet 1.4.0</a> / <a href="https://redfish.dmtf.org/schemas/v1/Circuit.v1_8_1.json">Circuit 1.8.1</a>。不同属性分别保存，不假定服务完整返回逆向链接。</td></tr>
+<tr id="e6"><td>E6 PSU 受电</td><td>PowerSupply.Links.PowerOutlets→Outlet 数组。</td><td><a href="https://redfish.dmtf.org/schemas/v1/PowerSupply.v1_5_0.json">PowerSupply 1.5.0</a>。这里是复数 PowerOutlets，与 Circuit 的单数 PowerOutlet 不同；多插座不自动证明 A/B 独立。</td></tr>
+<tr id="e7"><td>E7 容纳与连接（分开）</td><td>PowerDistribution.Links.Chassis→容纳本资源的 Chassis 数组，Links.Facility→容纳设备的 Facility 单值；Outlet.Links.Chassis→连接到本插座的 Chassis 数组，不是容纳插座的机箱。</td><td><a href="https://redfish.dmtf.org/schemas/v1/PowerDistribution.v1_3_0.json">PowerDistribution 1.3.0</a> / <a href="https://redfish.dmtf.org/schemas/v1/Outlet.v1_4_0.json">Outlet 1.4.0</a>。同名 Links.Chassis 不保证同一语义或基数；上述关系不保证实例必返，功能资源与物理资产须显式映射。</td></tr>
+<tr id="e8"><td>E8 端口嵌套</td><td>适用分配设备→端口；每关系整体 1、有序部分 1..*。</td><td>IFC 4.3.2.0：<a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelNests.htm">IfcRelNests</a>。图示为官方端口用法子集，详见附录 R7；不将 Redfish 资源直接当作 IFC 元素。</td></tr>
+<tr id="e9"><td>E9 物理连接</td><td>RelatingPort→RelatedPort，各 1；RealizingElement 0..1。两反向连接角色各 0..1，不合并为总连接数最多一条。</td><td>IFC 4.3.2.0：<a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelConnectsPorts.htm">IfcRelConnectsPorts</a>。禁止端口自连；连接结构不证明开关闭合、实际供电或故障影响。</td></tr>
+</tbody></table></div>
+<p>配电场景参考：<a href="https://www.dmtf.org/sites/default/files/standards/documents/DSP2056_1.1.0.pdf">DSP2056 v1.1.0</a> 为资料性白皮书，列有 RackPDUs、FloorPDUs、PowerShelves、ElectricalBuses、TransferSwitches、Switchgear；分类不是统一强制串接顺序。</p>
+</section>
+<section id="cooling-standard"><h2>三、冷却：单元、回路、连接器与物理容器</h2>
+<p>下图为 Redfish 液冷关系。CoolingUnit 是主动冷却功能单元，可表示适用 CDU 等；CoolingLoop 是承载冷却介质的回路，可表示管路、歧管、浸没槽，通常不含主动冷却组件。两者不能仅因同有连接器而合并。</p>
+<div class="relation-map" role="group" aria-label="冷却标准关系图">
+<div class="relation-row"><div class="entity">CoolingUnit / CoolingLoop<small>两个独立资源类型</small></div><div class="connector"><a href="#c1">C1 · PrimaryCoolantConnectors / SecondaryCoolantConnectors</a>主侧 / 次侧集合入口</div><div class="entity">CoolantConnectorCollection<small>集合成员为 CoolantConnector</small></div></div>
+<div class="relation-row"><div class="entity">CoolantConnector<small>本侧连接器</small></div><div class="connector"><a href="#c2">C2 · Links.ConnectedCoolingLoop</a>另一端回路</div><div class="entity">CoolingLoop</div></div>
+<div class="relation-row"><div class="entity">CoolantConnector</div><div class="connector"><a href="#c3">C3 · Links.ConnectedCoolingUnit</a>另一端冷却单元</div><div class="entity">CoolingUnit</div></div>
+<div class="relation-row"><div class="entity">CoolantConnector</div><div class="connector"><a href="#c4">C4 · Links.ConnectedChassis</a>连接到的机箱</div><div class="entity">Chassis</div></div>
+<div class="relation-row"><div class="entity">CoolingUnit / CoolingLoop</div><div class="connector"><a href="#c5">C5 · Links.Chassis / Facility</a>容纳本资源的机箱 / 设施</div><div class="entity">Chassis / Facility</div></div>
+<p class="subnote">连接器可以分别描述供液、回液或成对连接；主侧 / 次侧不等于供液 / 回液，引用方向不等于介质流向。机箱容纳与连接到机箱是不同关系。</p>
+</div>
+<div class="table-wrap"><table><caption>冷却逐边说明</caption><thead><tr><th>编号</th><th>方向、属性与形态</th><th>固定版本及边界</th></tr></thead><tbody>
+<tr id="c1"><td>C1 连接器集合</td><td>CoolingUnit 或 CoolingLoop→CoolantConnectorCollection；PrimaryCoolantConnectors、SecondaryCoolantConnectors 各为单集合链接，不是连接器数组。</td><td><a href="https://redfish.dmtf.org/schemas/v1/CoolingUnit.v1_5_0.json">CoolingUnit1.5.0</a>；<a href="https://redfish.dmtf.org/schemas/v1/CoolingLoop.v1_1_0.json">CoolingLoop 1.1.0</a>。集合入口不能代替实际连接关系。</td></tr>
+<tr id="c2"><td>C2 连接回路</td><td>CoolantConnector.Links.ConnectedCoolingLoop→CoolingLoop，单值可空。</td><td><a href="https://redfish.dmtf.org/schemas/v1/CoolantConnector.v1_4_0.json">CoolantConnector 1.4.0</a>。指向另一端回路，不是本连接器的所属容器。</td></tr>
+<tr id="c3"><td>C3 连接单元</td><td>CoolantConnector.Links.ConnectedCoolingUnit→CoolingUnit，单值可空。</td><td><a href="https://redfish.dmtf.org/schemas/v1/CoolantConnector.v1_4_0.json">CoolantConnector 1.4.0</a>。不凭该引用补造管路长度、泵状态或实际流量。</td></tr>
+<tr id="c4"><td>C4 连接机箱</td><td>CoolantConnector.Links.ConnectedChassis→Chassis 数组。</td><td><a href="https://redfish.dmtf.org/schemas/v1/CoolantConnector.v1_4_0.json">CoolantConnector 1.4.0</a>。连接对象不自动等于“所在机箱”，也不直接证明全部机箱组件被冷却。</td></tr>
+<tr id="c5"><td>C5 容器与设施</td><td>CoolingUnit.Links.Chassis 为数组；CoolingLoop.Links.Chassis 为单值可空。二者 Links.Facility 均为单值链接。</td><td><a href="https://redfish.dmtf.org/schemas/v1/CoolingUnit.v1_5_0.json">CoolingUnit 1.5.0</a> / <a href="https://redfish.dmtf.org/schemas/v1/CoolingLoop.v1_1_0.json">CoolingLoop 1.1.0</a>。属性可缺省不等于服务必须返回；禁止把 Chassis 基数统一成数组。</td></tr>
+</tbody></table></div>
+<p class="notice"><strong>范围边界：</strong>本图不宣称涵盖完整暖通空气系统。空调 / 行级冷却对房间、行、机柜的覆盖仍需项目映射；IFC 附加空间引用可表达适用的服务空间，但不能直接推导风量、温升或故障因果。冷却设备受电复用配电关系，安装复用空间关系。</p>
+</section>
+<section id="observation-standard"><h2>四、观测与控制：设备、活动、属性、对象和结果分开</h2>
+<p>依据 <a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/">W3C SSN / SOSA Recommendation，2017-10-19（OGC 16-079）</a>。以下使用轻量 SOSA 关系及明确标为 SSN 的补充关系；不将 SSN 附加 OWL 公理统一作为 SOSA 接口必填校验。</p>
+<div class="relation-map" role="group" aria-label="观测与执行标准关系图">
+<div class="relation-row"><div class="entity">sosa:Sensor<small>设备、人或软件感知实体</small></div><div class="connector"><a href="#o1">O1 · sosa:madeObservation</a>产生观测活动</div><div class="entity">sosa:Observation</div></div>
+<div class="relation-row"><div class="entity">sosa:Observation</div><div class="connector"><a href="#o2">O2 · sosa:observedProperty</a>本次观测属性</div><div class="entity">sosa:ObservableProperty<small>例如温度、电流</small></div></div>
+<div class="relation-row"><div class="entity">sosa:Observation / sosa:Actuation</div><div class="connector"><a href="#o3">O3 · sosa:hasFeatureOfInterest</a>观测或改变的对象</div><div class="entity">sosa:FeatureOfInterest<small>空间、设备、回路等需显式映射</small></div></div>
+<div class="relation-row"><div class="entity">sosa:Observation / sosa:Actuation</div><div class="connector"><a href="#o4">O4 · sosa:hasResult / hasSimpleResult</a>结果资源 / 简单字面值</div><div class="entity">sosa:Result / 字面值<small>按所用属性分别建模</small></div></div>
+<div class="relation-row"><div class="entity">sosa:Actuator</div><div class="connector"><a href="#o5">O5 · sosa:madeActuation</a>产生执行活动</div><div class="entity">sosa:Actuation</div></div>
+<div class="relation-row"><div class="entity">sosa:Actuation</div><div class="connector"><a href="#o6">O6 · sosa:actsOnProperty</a>活动所作用的属性</div><div class="entity">sosa:ActuatableProperty<small>可执行改变的属性</small></div></div>
+<div class="relation-row"><div class="entity">sosa:Observation / sosa:Actuation</div><div class="connector"><a href="#o7">O7 · sosa:usedProcedure</a>使用过程</div><div class="entity">sosa:Procedure</div></div>
+<div class="relation-row"><div class="entity">sosa:Platform</div><div class="connector"><a href="#o8">O8 · sosa:hosts</a>承载</div><div class="entity">Sensor / Actuator / Sampler / Platform<small>均为 SOSA 类</small></div></div>
+<div class="relation-row"><div class="entity">sosa:FeatureOfInterest</div><div class="connector"><a href="#o9">O9 · ssn:hasProperty</a>SSN 补充，不是 SOSA 属性</div><div class="entity">ssn:Property</div></div>
+<p class="subnote">测点 ≠ Sensor ≠ Observation ≠ 告警。Sensor 的可感知属性由 sosa:observes 表达，不代替某次 Observation 的 observedProperty；Actuator 不直接充当 actsOnProperty 的活动主体。</p>
+</div>
+<div class="table-wrap"><table><caption>观测逐边说明 · 来源均为2017年固定版；不主张统一强制基数</caption><thead><tr><th>编号</th><th>方向与官方属性</th><th>适用边界</th></tr></thead><tbody>
+<tr id="o1"><td>O1 感知与活动</td><td>Sensor→Observation：<a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/#SOSAmadeObservation">madeObservation</a>；逆属性 madeBySensor。Sensor→ObservableProperty：<a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/#SOSAobserves">observes</a>。</td><td>Sensor 可以是设备、人或软件；观测是活动，不能将其与传感器资产合并。</td></tr>
+<tr id="o2"><td>O2 观测属性</td><td>Observation→ObservableProperty：<a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/#SOSAobservedProperty">observedProperty</a>。</td><td>描述本次观测估计的属性；“具备测温能力”不是“某次温度观测”。量纲、相别与测点粒度另行适配。</td></tr>
+<tr id="o3"><td>O3 目标对象</td><td>Observation / Actuation→FeatureOfInterest：<a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/#SOSAhasFeatureOfInterest">hasFeatureOfInterest</a>；该属性也适用于 Sampling。</td><td>观测对象与传感器安装位置不同；对象可映射到空间、设备、回路等，但本体不提供跨源资产匹配规则。</td></tr>
+<tr id="o4"><td>O4 结果</td><td>活动→Result：<a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/#SOSAhasResult">hasResult</a>，逆属性 isResultOf；活动→字面值：<a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/#SOSAhasSimpleResult">hasSimpleResult</a>。</td><td>资源结果与字面值不是同一类型的边；这里展示 Observation / Actuation 子集，不完整展开采样。结果也不自动等同告警事件。</td></tr>
+<tr id="o5"><td>O5 执行活动</td><td>Actuator→Actuation：<a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/#SOSAmadeActuation">madeActuation</a>，逆属性 madeByActuator。</td><td>本图描述执行活动，不执行设备操作；有命令或设定值不等于执行已成功。</td></tr>
+<tr id="o6"><td>O6 作用属性</td><td>Actuation→ActuatableProperty：<a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/#SOSAactsOnProperty">actsOnProperty</a>。</td><td>主体是具体活动，不是执行器资产；改变后的实际状态需要观测或其他状态证据。</td></tr>
+<tr id="o7"><td>O7 过程</td><td>活动→Procedure：<a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/#SOSAusedProcedure">usedProcedure</a>。</td><td>可复用的协议、工作流、算法或方法与单次活动分开；不是采集服务地址或外部指标存储位置。</td></tr>
+<tr id="o8"><td>O8 承载</td><td>Platform→Sensor / Actuator / Sampler / Platform：<a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/#SOSAhosts">hosts</a>，逆属性 isHostedBy。</td><td>承载不等于观测对象或冷却覆盖；映射到 CIM/IFC 安装关系需额外契约，不能无条件等价。</td></tr>
+<tr id="o9"><td>O9 对象属性</td><td>FeatureOfInterest→Property：<a href="https://www.w3.org/TR/2017/REC-vocab-ssn-20171019/#SSNhasProperty">ssn:hasProperty</a>，逆属性 ssn:isPropertyOf。</td><td>属于 SSN 扩展。SOSA 的 domainIncludes/rangeIncludes 注解不等同严格 OWL domain/range 或数据库外键约束。</td></tr>
+</tbody></table></div>
+<p><strong>时间与基数：</strong>phenomenonTime 是结果适用时间（可为区间）；resultTime 是活动完成时间，不自动等于采集或入库时间。轻量 SOSA 与 SSN 附加公理分层采用；未核对机器可读本体的附加限制不写成统一 1:N 或接口必填要求。</p>
+<p><strong>Redfish 衔接：</strong><a href="https://redfish.dmtf.org/schemas/v1/Circuit.v1_8_1.json">Circuit 1.8.1</a> 与 <a href="https://redfish.dmtf.org/schemas/v1/CoolingLoop.v1_1_0.json">CoolingLoop 1.1.0</a> 的读数摘要若提供 DataSourceUri，可按该字段定义引用对应 ReadingType 的 Sensor。Redfish Sensor 资源与 SOSA Sensor 的等价关系仍需映射；读数摘要不自动生成完整 Observation 历史。</p>
+</section>
+<section id="network-standard"><h2>五、网络：拓扑作用域、终结点、有向链路与层间支撑</h2>
+<p>依据 IETF <a href="https://www.rfc-editor.org/rfc/rfc8345.html">RFC 8345</a>（2018年3月，YANG 模块修订 2018-02-26）；三层扩展参见 <a href="https://www.rfc-editor.org/rfc/rfc8346.html">RFC 8346</a>。图中 Network、Node、Link、TerminationPoint 是阅读名称，实际 YANG 路径见表。</p>
+<div class="relation-map" role="group" aria-label="网络标准关系图">
+<div class="relation-row"><div class="entity">Network<small>网络拓扑作用域</small></div><div class="connector"><a href="#n1">N1 · node / link</a>作用域内列表</div><div class="entity">Node / Link<small>不同类型，不合并身份</small></div></div>
+<div class="relation-row"><div class="entity">Node</div><div class="connector"><a href="#n2">N2 · termination-point</a>节点内列表</div><div class="entity">TerminationPoint（TP）<small>终结点；不必等于物理端口</small></div></div>
+<div class="relation-row"><div class="entity">Link</div><div class="connector"><a href="#n3">N3 · source-node / source-tp</a>引用源端，不是数据流箭头</div><div class="entity">源 Node / 源 TP</div></div>
+<div class="relation-row"><div class="entity">Link</div><div class="connector"><a href="#n3">N3 · dest-node / dest-tp</a>引用目的端</div><div class="entity">目的 Node / 目的 TP</div></div>
+<div class="relation-row"><div class="entity">上层 Network</div><div class="connector"><a href="#n4">N4 · supporting-network</a>引用下层网络</div><div class="entity">下层 Network</div></div>
+<div class="relation-row"><div class="entity">上层 Node</div><div class="connector"><a href="#n5">N5 · supporting-node</a>引用下层节点</div><div class="entity">下层 Node</div></div>
+<div class="relation-row"><div class="entity">上层 Link</div><div class="connector"><a href="#n6">N6 · supporting-link</a>引用下层链路</div><div class="entity">下层 Link</div></div>
+<div class="relation-row"><div class="entity">上层 TP</div><div class="connector"><a href="#n7">N7 · supporting-termination-point</a>引用下层终结点</div><div class="entity">下层 TP</div></div>
+<p class="subnote">转发方向是“源端→目的端”；图中 Link→端点只是属性引用方向。双向拓扑连接用两条有向 Link；下层支撑不自动证明 LACP、实际转发、业务可达或故障影响。</p></div>
+<div class="table-wrap"><table><caption>网络逐边说明 · RFC 8345 §4、§6；无统一强制 1:N</caption><thead><tr><th>编号</th><th>路径、方向与基数</th><th>作用域和边界</th></tr></thead><tbody>
+<tr id="n1"><td>N1 网络成员</td><td>network/node 与 network/link 均为列表，0..*；分别由 node-id、link-id 标识。</td><td>来源：<a href="https://www.rfc-editor.org/rfc/rfc8345.html#section-6.1">§6.1 ietf-network</a> / <a href="https://www.rfc-editor.org/rfc/rfc8345.html#section-6.2">§6.2 ietf-network-topology</a>。Link 是拓扑模块的增补；节点和链路身份在所属网络作用域内解析。</td></tr>
+<tr id="n2"><td>N2 节点终结点</td><td>network/node/termination-point，0..* 列表，以 tp-id 标识。</td><td>来源：<a href="https://www.rfc-editor.org/rfc/rfc8345.html#section-6.2">§6.2</a>。TP 身份还需 Node 作用域；其物理端口 / 逻辑接口映射不是基础模型统一规定的资产外键。</td></tr>
+<tr id="n3"><td>N3 链路两端</td><td>link/source/source-node、source-tp；link/destination/dest-node、dest-tp。各叶子为可选单值；基础 YANG 不强制四者均出现。</td><td>来源：<a href="https://www.rfc-editor.org/rfc/rfc8345.html#section-6.2">§6.2</a>。语义上 Link 为有向点到点；源/目的 TP 引用在对应节点内解析。可选不代表缺失引用的实例具备完整拓扑。</td></tr>
+<tr id="n4"><td>N4 网络支撑</td><td>上层 network/supporting-network→下层 network；0..* 列表，键 network-ref。</td><td>来源：<a href="https://www.rfc-editor.org/rfc/rfc8345.html#section-6.1">§6.1</a>。明确网络分层；不是空间包含或资产组成。</td></tr>
+<tr id="n5"><td>N5 节点支撑</td><td>上层 node/supporting-node→下层 node；0..* 列表，键 network-ref、node-ref。</td><td>来源：<a href="https://www.rfc-editor.org/rfc/rfc8345.html#section-6.1">§6.1</a>。保留下层网络作用域，不只存 node-id；多个支撑节点不等于多台物理设备。</td></tr>
+<tr id="n6"><td>N6 链路支撑</td><td>上层 link/supporting-link→下层 link；0..* 列表，键 network-ref、link-ref。</td><td>来源：<a href="https://www.rfc-editor.org/rfc/rfc8345.html#section-6.2">§6.2</a>。可表达多条下层链路支撑上层链路，不自动解释成链路聚合协议。</td></tr>
+<tr id="n7"><td>N7 终结点支撑</td><td>上层 termination-point/supporting-termination-point→下层 TP；0..* 列表，键 network-ref、node-ref、tp-ref。</td><td>来源：<a href="https://www.rfc-editor.org/rfc/rfc8345.html#section-6.2">§6.2</a>。不能丢弃任一作用域键；与节点及网络层间映射保持一致。</td></tr>
+</tbody></table></div>
+<p><strong>层间校验：</strong>支撑关系不得直接或传递自引用；这不是禁止网络转发拓扑存在环。引用存在性、分层一致性与无环性需分别检查，不假定一个 YANG 校验器能发现全部传递环。</p>
+<p><strong>三层扩展：</strong><a href="https://www.rfc-editor.org/rfc/rfc8346.html#section-4">RFC 8346 §4</a> 增补 L3 单播拓扑属性，如节点前缀、链路度量和 TP 地址；不是完整 BGP 会话、RIB/FIB、VLAN/VXLAN 或综合网络资产模型。物理交换机、网卡、线缆复用共享资产身份，协议层对象单独适配。</p>
+</section>
+<section id="mapping-boundary"><h2>六、业务映射边界：标准能表达什么，项目还需决定什么</h2>
+<p>上面五类视图不是单一标准规定的统一模型。共享资产身份连接各领域表示；映射本身须有明确规则和来源，不能因名称相同或类型相似自动合并。</p>
+<div class="table-wrap"><table><caption>业务类型的采用边界（项目层，不新增伪标准关系）</caption><thead><tr><th>业务对象</th><th>可复用的标准关系</th><th>仍需项目契约 / 后置验证</th></tr></thead><tbody>
+<tr><td>列头柜、机柜 PDU</td><td>配电功能采用 E1—E7；物理包及组成参考 S4；装柜参考 S3，主要空间落位参考 S2。</td><td>列头柜不按中文名称自动等于 FloorPDU。明确配电资源与物理柜体的身份映射；UPS、列头柜、PDU 不强制串成固定链。</td></tr>
+<tr><td>回路、断路器、切换开关、母线</td><td>回路之间的供电引用参考 E3—E5；适用物理设备的端口与连接参考 E8—E9。</td><td>四类对象分别建模。保护、切换、条件供给、覆盖和联络分别定义；BreakerState 不替代独立开关资产，CircuitType 不自动生成母线组件。</td></tr>
+<tr><td>服务器、交换机、网卡、PSU</td><td>物理组成参考 S4；机柜安装参考 S3；PSU 到电源插座采用 E6；网络表示采用 N1—N7。</td><td>设备资产、机箱和功能资源并非同义。设备到网络节点、端口到 TP 显式映射；配置字符串和接口地址不足以生成真实组件或连接。</td></tr>
+<tr><td>测点、内置仪表、外部指标</td><td>感知、观测活动、被测属性、对象和结果采用 O1—O4；承载采用 O8。</td><td>测点保存对象、相别、量纲、倍率、采集地址和有效期；可来源于内置仪表，不强造传感器资产。外部时序以引用衔接，不复制成设备实体。</td></tr>
+<tr><td>告警、控制设定与执行</td><td>执行器、执行活动和作用属性采用 O5—O7；IFC 专用构件控制关系见附录 R9。</td><td>告警关联对象、阈值策略、设定值及命令状态单独定义。执行活动、执行成功和实际状态不等价；通用告警不强套 IFC 构件关系。</td></tr>
+<tr><td>液冷、空调、冷却覆盖</td><td>液冷资源与连接采用 C1—C5；安装复用 S2—S4，设备受电复用配电视图。</td><td>完整空气系统、服务区域与风水管工程细化尚未展开；冷却覆盖不等于所在空间或确定故障因果。主次侧不等于供回液。</td></tr>
+<tr><td>房间、行、模组、POD、UPS 组</td><td>实际空间分解采用 S1，落位/附加引用采用 S2，适用逻辑成员采用 S5。</td><td>先区分空间、物理结构与逻辑集合；不固定所有层级。成员、关联、供电、安装不能互相替代。</td></tr>
+</tbody></table></div>
+<p><strong>统一身份与证据：</strong>保留来源系统、源对象标识、对象类型、映射规则、有效时间与记录时间；同一资产跨视图复用身份。来源、编码、名称、IP、MAC 或同值 ID 都不是通用的全局合并依据。</p>
+<p><strong>后置而非阻塞项：</strong>实际接线、开关状态、容量、A/B 独立性、冗余切换、LACP、端到端可达及故障传播依赖实例证据和验证。本页交付五类核心类型关系，不声称覆盖所有基础设施标准、全部专业工程或通过合规认证。</p>
+</section>
+<details id="legacy"><summary>附录：旧项目映射图与历史讨论（展开查看，不作为新增标准关系的主视图）</summary>
+<p class="notice">以下保留历史项目候选图、采集来源、外部指标引用及既有标准对照。旧文“未核验”等表述仅指当时的候选映射；标准定义以本页上方主视图为准。实线表示有对应标准机制，虚线仍是项目候选，不代表现场事实。</p>
+<h2>一、项目关系总览</h2>
+<p>共享同一设备资产身份；空间、供电、网络和逻辑编组是不同关系视图。以下站点到房间仅是候选层级片段，不是 IFC 强制固定树；允许按项目补充楼层等层级。</p>
+<div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 830" role="img" aria-labelledby="overview-title overview-desc" style="--edge-marker:url(#overview-arrow)">
+<title id="overview-title">基础设施空间、资产、系统、端口与观测的类型关系</title>
+<desc id="overview-desc">空间分解到房间，房间落位机柜，机柜安装设备机箱；设备连接组件、系统成员、电气端口、网络视图与观测。虚线关系是项目建议。</desc>
+<defs><marker id="overview-arrow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7" fill="none" stroke="#333"/></marker></defs>
+<rect class="node" x="30" y="40" width="180" height="65"/><text class="title" x="120" y="78" text-anchor="middle">物理站点</text>
+<rect class="node" x="340" y="40" width="180" height="65"/><text class="title" x="430" y="78" text-anchor="middle">建筑</text>
+<rect class="node" x="650" y="40" width="180" height="65"/><text class="title" x="740" y="78" text-anchor="middle">房间 / 空间</text>
+<rect class="node" x="960" y="40" width="230" height="65"/><text class="title" x="1075" y="78" text-anchor="middle">机柜</text>
+<path class="edge" d="M210 72 H340"/><text class="label" x="275" y="60" text-anchor="middle">R1 分解</text>
+<path class="edge" d="M520 72 H650"/><text class="label" x="585" y="60" text-anchor="middle">R1 分解</text>
+<path class="edge" d="M830 72 H960"/><text class="label" x="895" y="60" text-anchor="middle">R2 主要落位</text>
+<rect class="node" x="30" y="220" width="240" height="85"/><text class="title" x="150" y="254" text-anchor="middle">物理组件</text><text class="small" x="150" y="279" text-anchor="middle">板卡 / 电源模块等，按类映射</text>
+<rect class="node" x="420" y="220" width="250" height="85"/><text class="title" x="545" y="254" text-anchor="middle">物理机箱</text><text class="small" x="545" y="279" text-anchor="middle">与设备资产身份显式映射</text>
+<rect class="node" x="900" y="220" width="290" height="85"/><text class="title" x="1045" y="254" text-anchor="middle">系统 / 逻辑组</text><text class="small" x="1045" y="279" text-anchor="middle">供电系统、计算 POD、逻辑模组</text>
+<path class="edge" d="M1075 105 V156 H545 V220"/><text class="label" x="730" y="145" text-anchor="middle">R3 安装：仅适用机柜—机箱映射</text>
+<path class="edge" d="M420 262 H270"/><text class="label" x="345" y="249" text-anchor="middle">R4 包内组成</text>
+<path class="edge" d="M900 262 H670"/><text class="label" x="785" y="249" text-anchor="middle">R5 成员分配，非馈电</text>
+<path class="edge" d="M940 220 V190 H780 V105"/><text class="small" x="1000" y="183" text-anchor="middle">R6 服务空间 / 附加引用</text>
+<rect class="node" x="30" y="450" width="240" height="70"/><text class="title" x="150" y="479" text-anchor="middle">本端电气端口</text><text class="small" x="150" y="503" text-anchor="middle">仅对适用的分配设备映射</text>
+<rect class="node" x="30" y="650" width="240" height="70"/><text class="title" x="150" y="691" text-anchor="middle">对端电气端口</text>
+<path class="edge" d="M470 305 V365 H150 V450"/><text class="label" x="280" y="353" text-anchor="middle">R7 端口嵌套</text>
+<path class="edge" d="M150 520 V650"/><text class="label" x="166" y="575">R8 端口连接</text><text class="small" x="166" y="599">连接 ≠ 当前供电</text>
+<rect class="node" x="420" y="450" width="250" height="70"/><text class="title" x="545" y="479" text-anchor="middle">网络节点视图</text><text class="small" x="545" y="503" text-anchor="middle">归属一个网络作用域</text>
+<rect class="node" x="420" y="650" width="250" height="70"/><text class="title" x="545" y="691" text-anchor="middle">网络终结点</text>
+<path class="edge candidate" d="M545 305 V450"/><text class="label" x="563" y="405">P1 资产—视图映射</text>
+<path class="edge" d="M545 520 V650"/><text class="label" x="563" y="581">R10 节点拥有终结点</text>
+<rect class="node" x="900" y="440" width="290" height="30"/><text class="label" x="1045" y="460" text-anchor="middle">测点（项目配置）</text>
+<rect class="node" x="900" y="480" width="290" height="30"/><text class="label" x="1045" y="500" text-anchor="middle">告警（独立事件）</text>
+<rect class="node" x="900" y="520" width="290" height="30"/><text class="label" x="1045" y="540" text-anchor="middle">观测活动（标准见 O1—O9）</text>
+<rect class="node" x="900" y="650" width="290" height="70"/><text class="title" x="1045" y="679" text-anchor="middle">下游负载 / 供电对象</text><text class="small" x="1045" y="703" text-anchor="middle">先确认回路、方向和开关状态</text>
+<path class="edge candidate" d="M620 305 V335 H1160 V440"/><text class="label" x="910" y="325" text-anchor="middle">P2 测点对象映射；非标准观测方向</text>
+<path class="edge candidate" d="M670 292 H850 V685 H900"/><text class="label" x="835" y="567" text-anchor="end">P3 条件性供给</text><text class="small" x="835" y="590" text-anchor="end">适用供电设备</text>
+<text class="small" x="30" y="772">行、物理模块：先确认是空间区划、设备集合还是实体结构；不强行插入空间树。</text>
+<text class="small" x="30" y="800">逻辑数据中心、POD、逻辑模组：优先讨论编组 / 归属；不因名称相似就当作物理容器。</text>
+</svg></div>
+<h2>二、电力与动环具体类型关系</h2>
+<p><strong>本节全部虚线为 P：项目类型关系候选。</strong>展示业务对象及适用关系，不是现场实例。R4—R9 是可参考的标准机制，不代表下列中文类型已经完成标准类映射。此处 PDU 专指机柜配电单元，列头柜单独建模，不混用名称。</p>
+<h3>2.1 配电与末端受电：示例路径，不是强制链</h3>
+<p>下面仅说明一种可能的工程组织。实际可以省略列头柜、采用其他配电方式，或存在直供、旁路、并联与联络；每段都需独立确认，不能把图中相邻类型直接当成已接线。</p>
+<div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 540" role="img" aria-labelledby="power-title power-desc" style="--edge-marker:url(#power-arrow)">
+<defs><marker id="power-arrow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7" fill="none" stroke="#333"/></marker></defs>
+<title id="power-title">列头柜与机柜 PDU 的候选供给关系</title><desc id="power-desc">高压柜、变压器、UPS、列头柜和机柜PDU的条件性供给示意；另列电池与UPS、母线联络关系。每段需工程证据，不代表固定或真实链路。</desc>
+<rect class="node" x="30" y="45" width="220" height="65"/><text class="title" x="140" y="84" text-anchor="middle">高压柜</text>
+<rect class="node" x="500" y="45" width="220" height="65"/><text class="title" x="610" y="84" text-anchor="middle">变压器</text>
+<rect class="node" x="970" y="45" width="240" height="65"/><text class="title" x="1090" y="84" text-anchor="middle">UPS 设备</text>
+<path class="edge candidate" d="M250 77 H500"/><text class="label" x="375" y="61" text-anchor="middle">P3 条件性供给</text>
+<path class="edge candidate" d="M720 77 H970"/><text class="label" x="845" y="61" text-anchor="middle">P3 条件性供给</text>
+<rect class="node" x="500" y="210" width="220" height="75"/><text class="title" x="610" y="241" text-anchor="middle">列头柜</text><text class="small" x="610" y="266" text-anchor="middle">楼层 / 行级配电设备</text>
+<rect class="node" x="970" y="210" width="240" height="75"/><text class="title" x="1090" y="241" text-anchor="middle">机柜 PDU</text><text class="small" x="1090" y="266" text-anchor="middle">柜内配电；非机柜本体</text>
+<path class="edge candidate" d="M1090 110 V151 H610 V210"/><text class="label" x="820" y="140" text-anchor="middle">P3 条件性供给</text>
+<path class="edge candidate" d="M720 247 H970"/><text class="label" x="845" y="230" text-anchor="middle">P3 条件性供给</text>
+<rect class="node" x="30" y="170" width="220" height="30"/><text class="label" x="140" y="191" text-anchor="middle">回路（连接组织）</text>
+<rect class="node" x="30" y="208" width="220" height="30"/><text class="label" x="140" y="229" text-anchor="middle">断路器（物理设备）</text>
+<rect class="node" x="30" y="246" width="220" height="30"/><text class="label" x="140" y="267" text-anchor="middle">切换开关（物理设备）</text>
+<rect class="node" x="30" y="284" width="220" height="30"/><text class="label" x="140" y="305" text-anchor="middle">母线（物理导体）</text>
+<text class="small" x="30" y="337">各段须关联真实回路、端点及适用开关；这些对象不是串接在所有场景中的固定四级设备。</text>
+<rect class="node" x="30" y="355" width="220" height="65"/><text class="title" x="140" y="394" text-anchor="middle">电池系统</text>
+<rect class="node" x="500" y="355" width="220" height="65"/><text class="title" x="610" y="394" text-anchor="middle">UPS 直流侧端点</text>
+<path class="edge candidate" d="M250 387 H500"/><text class="label" x="375" y="373" text-anchor="middle">P 接线关联：充 / 放电另判</text>
+<rect class="node" x="30" y="455" width="220" height="60"/><text class="title" x="140" y="491" text-anchor="middle">母线 / 电气设备</text>
+<rect class="node" x="500" y="455" width="220" height="60"/><text class="title" x="610" y="491" text-anchor="middle">另一母线 / 电气设备</text>
+<path class="edge candidate undirected" d="M250 485 H500"/><text class="label" x="375" y="472" text-anchor="middle">P 联络能力（对称关系）</text>
+<text class="small" x="770" y="391">电池不是逻辑组成员数生成的组件。</text><text class="small" x="770" y="490">联络不等于当前闭合或可成功切换。</text>
+</svg></div>
+<h3>2.2 PDU、插座、电源模块与机柜：接线不等于安装</h3>
+<div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 530" role="img" aria-labelledby="terminal-title terminal-desc" style="--edge-marker:url(#terminal-arrow)">
+<defs><marker id="terminal-arrow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7" fill="none" stroke="#333"/></marker></defs>
+<title id="terminal-title">PDU到设备电源模块的末端接线及物理安装</title><desc id="terminal-desc">PDU拥有插座，插座拥有电气端点；端点与设备电源模块输入端点接线。服务器拥有电源模块，服务器与PDU分别安装于机柜。UPS设备属于UPS组，列头柜关联该组但不证明馈电。</desc>
+<rect class="node" x="30" y="40" width="240" height="65"/><text class="title" x="150" y="80" text-anchor="middle">机柜 PDU</text>
+<rect class="node" x="500" y="40" width="240" height="65"/><text class="title" x="620" y="80" text-anchor="middle">插座</text>
+<rect class="node" x="970" y="40" width="240" height="65"/><text class="title" x="1090" y="80" text-anchor="middle">插座电气端点</text>
+<path class="edge candidate" d="M270 72 H500"/><text class="label" x="385" y="58" text-anchor="middle">P 具有组件</text>
+<path class="edge candidate" d="M740 72 H970"/><text class="label" x="855" y="58" text-anchor="middle">P 具有端点（参考 R7）</text>
+<rect class="node" x="30" y="220" width="240" height="65"/><text class="title" x="150" y="260" text-anchor="middle">服务器 / 网络设备</text>
+<rect class="node" x="500" y="220" width="240" height="65"/><text class="title" x="620" y="260" text-anchor="middle">设备电源模块</text>
+<rect class="node" x="970" y="220" width="240" height="65"/><text class="title" x="1090" y="260" text-anchor="middle">电源模块输入端点</text>
+<path class="edge candidate" d="M270 252 H500"/><text class="label" x="385" y="237" text-anchor="middle">P 具有组件（参考 R4）</text>
+<path class="edge candidate" d="M740 252 H970"/><text class="label" x="855" y="237" text-anchor="middle">P 具有端点</text>
+<path class="edge candidate" d="M1090 105 V220"/><text class="label" x="1072" y="156" text-anchor="end">P 端点接线（参考 R8）</text><text class="small" x="1072" y="180" text-anchor="end">非供电方向；电缆可独立识别</text>
+<rect class="node" x="30" y="130" width="240" height="65"/><text class="title" x="150" y="170" text-anchor="middle">机柜</text>
+<path class="edge candidate" d="M100 105 V130"/><path class="edge candidate" d="M100 220 V195"/>
+<text class="label" x="295" y="151">P 两者分别安装于机柜</text><text class="small" x="295" y="175">机柜是安装容器，不是电流端点</text>
+<text class="small" x="30" y="325">一个设备可有多个电源模块；每个端点分别记录路径，不能把 A/B 标签自动升级为独立冗余。</text>
+<rect class="node" x="30" y="380" width="240" height="65"/><text class="title" x="150" y="420" text-anchor="middle">UPS 设备</text>
+<rect class="node" x="500" y="380" width="240" height="65"/><text class="title" x="620" y="420" text-anchor="middle">UPS 逻辑组</text>
+<rect class="node" x="970" y="380" width="240" height="65"/><text class="title" x="1090" y="420" text-anchor="middle">列头柜</text>
+<path class="edge candidate" d="M270 412 H500"/><text class="label" x="385" y="397" text-anchor="middle">P 属于组（参考 R5）</text>
+<path class="edge candidate" d="M970 412 H740"/><text class="label" x="855" y="397" text-anchor="middle">P 业务关联</text>
+<text class="small" x="30" y="490">UPS 与列头柜同引一个组，只能确认相应成员 / 业务关联；不能补画 UPS 直接供给列头柜。</text>
+</svg></div>
+<h3>2.3 环境监测、告警与冷却覆盖</h3>
+<div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 580" role="img" aria-labelledby="environment-title environment-desc" style="--edge-marker:url(#environment-arrow)">
+<defs><marker id="environment-arrow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7" fill="none" stroke="#333"/></marker></defs>
+<title id="environment-title">动环监测与冷却类型关系</title><desc id="environment-desc">传感器监测区域或对象，测点测量被测对象，告警关联对象，冷却设备冷却服务区域。安装位置、监测范围和冷却范围分别记录，指标引用指向外部时序。</desc>
+<rect class="node" x="30" y="40" width="260" height="75"/><text class="title" x="160" y="72" text-anchor="middle">传感器</text><text class="small" x="160" y="98" text-anchor="middle">温湿度 / 漏水 / 烟感等</text>
+<rect class="node" x="890" y="40" width="320" height="75"/><text class="title" x="1050" y="72" text-anchor="middle">被监测区域 / 对象</text><text class="small" x="1050" y="98" text-anchor="middle">房间、机柜、配电或冷却设备</text>
+<path class="edge candidate" d="M290 77 H890"/><text class="label" x="590" y="61" text-anchor="middle">P 监测：范围及有效时间须明确</text>
+<rect class="node" x="30" y="205" width="260" height="75"/><text class="title" x="160" y="237" text-anchor="middle">测点</text><text class="small" x="160" y="263" text-anchor="middle">采集地址、量纲、倍率、质量</text>
+<rect class="node" x="890" y="205" width="320" height="75"/><text class="title" x="1050" y="237" text-anchor="middle">被测对象</text><text class="small" x="1050" y="263" text-anchor="middle">空间 / 设备 / 回路 / 电气端点</text>
+<path class="edge candidate" d="M290 242 H890"/><text class="label" x="590" y="227" text-anchor="middle">P 测量：电流、电压、温度、开关状态等</text>
+<path class="edge candidate" d="M160 205 V115"/><text class="label" x="180" y="157">P 采集来源映射</text><text class="small" x="180" y="179">也可来自设备内置仪表，不强制造传感器</text>
+<rect class="node" x="500" y="330" width="260" height="65"/><text class="title" x="630" y="370" text-anchor="middle">告警事件</text>
+<path class="edge candidate" d="M760 362 H1050 V280"/><text class="label" x="925" y="347" text-anchor="middle">P 关联对象；允许候选</text>
+<rect class="node" x="30" y="330" width="260" height="65"/><text class="title" x="160" y="370" text-anchor="middle">外部指标引用</text>
+<path class="edge candidate" d="M160 330 V280"/><text class="small" x="180" y="312">P 对应测点</text>
+<rect class="node" x="30" y="450" width="260" height="75"/><text class="title" x="160" y="482" text-anchor="middle">冷却设备</text><text class="small" x="160" y="508" text-anchor="middle">空调 / 行级冷却 / 液冷设备等</text>
+<rect class="node" x="890" y="450" width="320" height="75"/><text class="title" x="1050" y="482" text-anchor="middle">冷却服务区域</text><text class="small" x="1050" y="508" text-anchor="middle">可覆盖房间 / 行 / 多个机柜</text>
+<path class="edge candidate" d="M290 487 H890"/><text class="label" x="590" y="471" text-anchor="middle">P 冷却覆盖：不是空间包含或确定温升因果</text>
+<text class="small" x="30" y="559">传感器安装位置 ≠ 监测范围；冷却设备安装位置 ≠ 冷却覆盖；测点 ≠ 传感器 ≠ 告警事件。</text>
+</svg></div>
+<h3>2.4 关系契约与标准对照</h3>
+<div class="table-wrap"><table><thead><tr><th>关系及方向（均为项目候选）</th><th>基数 / 粒度建议</th><th>标准参考与不推导的结论</th></tr></thead><tbody>
+<tr id="d1"><td>列头柜 / PDU → 组件；组件 / 设备 → 电气端点</td><td>父对象可有多个组件或端点；每个已确认组件 / 端点在同一有效时段记录一个直接物理父对象。PDU → 插座；配电设备 → 适用断路器、母线等内部组件。</td><td>物理包组成参考 R4，端口嵌套参考 R7；具体类映射仍待核验。回路是电气连接组织，不自动当成柜内物理组件。</td></tr>
+<tr id="d2"><td>电气端点 ↔ 电气端点；回路 → 所属端点 / 接线；断路器 / 切换开关 → 所作用回路</td><td>连接实例记录两个已解析端点，保留回路 / 电缆身份区分平行连接。一个回路可组织多段接线；开关作用范围须按极数、投切方式和接线确认。</td><td>端点连接参考 R8；项目图允许多对多连接能力，不覆盖 IFC 各连接角色的约束。开关与回路映射尚未完成标准类核验，不直接套用 R9。连接、保护、切换和供给方向分别记录。</td></tr>
+<tr id="d3"><td>上游电气设备 / 端点 → 下游设备 / 端点：条件性供给</td><td>多对多能力；每条边明确粒度、回路、方向、相别、有效期及状态。列头柜 → PDU、插座 → 电源模块均需各自证据。</td><td>对应 P3；已读国际标准不规定此处强制供电链。备用、并联与旁路可形成结构环；不能凭连接结构判定带电。</td></tr>
+<tr id="d4"><td>电气系统 / 设备 → 房间、行、机柜：供电覆盖；电气设备 ↔ 电气设备：联络能力</td><td>均允许多对多。覆盖保存源粒度，不展开成区域内全部设备接线；联络保留开关、联锁及时间条件。</td><td>覆盖与附加空间引用 R6 仅在适用映射下对照；机柜、行不能无条件视为 IFC 空间。联络不是供电方向或成功切换证明。</td></tr>
+<tr id="d5"><td>UPS设备 → UPS组：成员；列头柜 → UPS组：业务关联</td><td>多对多能力，实际成员及关联按来源契约。变电站作为设施 / 设备集合，另行记录高压柜与变压器的安装或归属，不当成电流端点。</td><td>逻辑成员可参考 R5；业务关联不自动等于成员，更不等于 UPS 直接馈电。名称与同组引用不足以生成供给边。</td></tr>
+<tr id="d6"><td>传感器 → 区域 / 对象：监测；测点 → 对象：测量；告警 → 对象：关联</td><td>监测范围可多对象；测点按量纲、位置、相别与粒度绑定，复合范围显式定义。告警可保留多个候选对象及解析状态。</td><td>此处为 P2 项目对象映射；标准观测与执行关系见 O1—O9，不强行套 R9。测点到传感器 / 内置仪表的来源映射、指标到测点的引用是额外项目契约；外部时序不复制为资产。</td></tr>
+<tr id="d7"><td>冷却设备 → 冷却区域：冷却覆盖；冷却区域 → 房间 / 行 / 机柜：覆盖映射</td><td>多对多，范围映射需独立证据及有效期；设备物理安装位置另记。冷却设备供电仍复用受电端点模型。</td><td>不是本轮已核验的通用标准关系；不能由房间自动生成冷却区域，也不能仅凭覆盖推导确定温升或宕机时间。</td></tr>
+</tbody></table></div>
+<div class="notice"><strong>证据状态：</strong>已有材料包含列头柜与 UPS 的局部资产、组引用及机柜 A/B 来源声明；PDU、插座、电源模块、独立回路开关、传感器点表和冷却覆盖尚缺完整实例证据。本节保留这些必要业务类型，但不凭设备数量、插座摘要或零值字段生成真实组件，也不把不相干局部线路拼成端到端链。</div>
+<h2>三、两类容易混淆的关系</h2>
+<div class="notice"><strong>网络连接：</strong>网络拥有节点与链路，节点拥有终结点；一条链路是点到点且有向，转发方向为源端→目的端。标准属性引用方向为链路→源端、链路→目的端，见 N3。双向连接用两条有向链路表示；四类上下层支撑见 N4—N7，不能据此认定 LACP 已成立。<br><strong>感知 / 控制：</strong>IFC 的 R9 仅连接“分配流动构件”和“分配控制构件”；通用观测与执行的标准关系见 O1—O9。P2 仅保留测点、告警及跨源对象身份的项目映射，不替代 SOSA / SSN 原生关系。</div>
+<h2>四、标准关系、端点与基数</h2>
+<p>本表“每关系实例”与“对象可参与多少关系”分开描述。标准允许缺省，不等于项目完整性要求可以省略；未知信息也不能填成已确认事实。</p>
+<div class="table-wrap"><table><thead><tr><th>编号 / 语义</th><th>标准端点与基数</th><th>项目映射与限制</th></tr></thead><tbody>
+<tr id="r1"><td>R1 空间分解<br><a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAggregates.htm">IfcRelAggregates · §5.1.3.20</a></td><td>每关系实例：整体 IfcObjectDefinition 1；无序部分集合 1..*。一般 Decomposes 为 0..1，但空间结构实体的 WR41 进一步要求恰有一个父分解关系，父对象为 IfcProject 或 IfcSpatialStructureElement。</td><td>候选映射：物理站点→IfcSite，建筑→IfcBuilding，房间→IfcSpace；仅当实际语义吻合。空间树无环，最高层挂项目。禁止直接自引不等于自动排除间接环。项目“数据中心”若是逻辑集合，应改用编组。</td></tr>
+<tr id="r2"><td>R2 主要空间落位<br><a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelContainedInSpatialStructure.htm">IfcRelContainedInSpatialStructure</a></td><td>每关系实例：IfcSpatialElement 1；IfcProduct 集合 1..*。产品主要空间包含为 0..1。</td><td>房间落位机柜、设备可参考此关系。机柜必须先映射为适当产品类型，不当作空间类。WR31 禁止用它代替空间层级分解；设备装入机柜不等于 IFC 主要空间包含。未装柜设备也可直接落位空间。</td></tr>
+<tr id="r3"><td>R3 机柜安装<br><a href="https://schemas.dmtf.org/wbem/cim-html/2.54.0/CIM_ChassisInRack.html">CIM_ChassisInRack</a></td><td>GroupComponent：CIM_Rack；PartComponent：CIM_Chassis。已读页面未明确给出引用基数，本图不据此规定全局 1:N。</td><td>仅适用于机柜—物理机箱。Device 是项目资产身份，不能无条件等同 CIM_Chassis。BottomU 是最低安装 U 位；1U=4.445cm，不定义完整安装区间、占用冲突或安装历史。</td></tr>
+<tr id="r4"><td>R4 包内物理组成<br><a href="https://schemas.dmtf.org/wbem/cim-html/2.54.0/CIM_Container.html">CIM_Container</a></td><td>GroupComponent：CIM_PhysicalPackage；PartComponent：CIM_PhysicalElement。引用基数未从已读页面确认。</td><td>适用实体包—物理元素；不是任意逻辑组件集合。LocationWithinContainer 是包内位置，不自动形成 U 位契约。一般整体—部分也可考虑 R1，但不能将不同机制无差别合并。</td></tr>
+<tr id="r5"><td>R5 逻辑成员分配<br><a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAssignsToGroup.htm">IfcRelAssignsToGroup</a></td><td>每关系实例：IfcGroup 1；IfcObjectDefinition 集合 1..*。对象可以参与 0..* 个组分配。</td><td>系统可采用 IfcSystem；POD、逻辑模组等映射为组仍是项目选择。组成员不等于物理安装、上下游馈电或独立冗余。不存在成员证据时不补造边。</td></tr>
+<tr id="r6"><td>R6 附加空间引用 / 服务空间<br><a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelReferencedInSpatialStructure.htm">IfcRelReferencedInSpatialStructure · §5.4.3.57</a></td><td>每关系实例：IfcSpatialElement 1；IfcSpatialReferenceSelect 集合 1..*。SELECT 为 IfcGroup 或 IfcProduct。对象可被 0..* 个空间引用。图按系统→服务空间阅读，与标准属性列举顺序不同。</td><td>可表达系统服务空间及产品附加空间引用，不是主要包含。不能用它构建一般空间层级；IfcSpace 引用例外按正式规则处理。IfcRelServicesBuildings 自 IFC 4.3.0.0 弃用，不用于新图首选。</td></tr>
+<tr id="r7"><td>R7 设备端口嵌套<br><a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelNests.htm">IfcRelNests</a></td><td>每关系实例：整体 IfcObjectDefinition 1；有序部分列表 1..*。设备可有 0..* 个嵌套关系，端口的嵌套父关系为 0..1。</td><td>官方端口用法为 IfcDistributionElement 嵌套 IfcPort。项目电气端口需按 IfcDistributionPort 等适当类映射；不能对所有 Device 无条件套用该类型。</td></tr>
+<tr id="r8"><td>R8 端口连接<br><a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelConnectsPorts.htm">IfcRelConnectsPorts · §5.4.3.50</a></td><td>每关系实例：RelatingPort 1；RelatedPort 1，均为 IfcPort；RealizingElement 可选 0..1。禁止同一端口自连。端口两个连接角色的反向基数各为 0..1，不能合并为总连接数最多一条。</td><td>端口流向可双向或缺省；图中本端→对端不是供电方向结论。连接只能证明声明的连接结构，不能单独推导当前供电、容量、A/B独立性或故障影响。</td></tr>
+<tr id="r9"><td>R9 专用感知 / 控制<br><a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelFlowControlElements.htm">IfcRelFlowControlElements</a></td><td>每关系实例：IfcDistributionFlowElement 1；IfcDistributionControlElement 集合 1..*。</td><td>分配流动构件与感知/控制构件之间的专用关联。不要把任意温度指标、日志、告警记录都映射成此关系；通用观测使用 O1—O9，跨源对象映射另见 P2。</td></tr>
+<tr id="r10"><td>R10 网络、节点、终结点与链路<br><a href="https://www.rfc-editor.org/rfc/rfc8345.html#section-4">RFC 8345 · §4、§6</a></td><td>网络下节点与链路、节点下终结点均为列表，无最少一项约束。节点身份属于网络作用域。一条链路语义上为有向点到点；基础 YANG 的源/目的节点及终结点叶子可选，不能宣称均为模式强制必填。</td><td>终结点可以代表物理端口或逻辑接口，但不必等同，具体映射需增补。双向用两条有向链路；多宿主、聚合可用多条下层链路支撑上层链路。支撑链路不允许直接或传递自引用循环。意图态和运行态分开，悬空引用需修复。</td></tr>
+<tr id="p1"><td>P1 资产与网络视图映射</td><td>项目关系：Device ↔ NetworkNode、PhysicalPort / Interface ↔ TerminationPoint。具体基数待确定。</td><td>同一设备可在多个网络中拥有不同节点，不复制资产身份。RFC 基础模型不提供完整资产匹配契约；IP、MAC、名称或同值 ID 都不足以跨来源自动合并。</td></tr>
+<tr id="p2"><td>P2 测点、告警与跨源对象映射</td><td>项目关系：测点、告警及跨源记录 ↔ 设备 / 端口 / 回路 / 空间。对象类型、作用域、映射方向和各自基数分别确认；总览只画机箱到测点的候选映射。</td><td>要求来源、对象定位、有效时间及证据类型；测点、告警与观测活动是不同实体，观测活动的标准关系见 O1—O9。时间序列、告警和测点不可仅凭字符串名称直接连到资产。</td></tr>
+<tr id="p3"><td>P3 条件性供给</td><td>项目关系：供电设备 / 回路 → 负载。无统一强制树或本轮已核验的通用基数。</td><td>需要工程接线、端点流向、回路、开关状态、有效时间和证据。并联、旁路、联络可形成环，不能套用空间树无环要求；组引用不证明馈电，A/B 标记不证明独立冗余。</td></tr>
+</tbody></table></div>
+<h2>五、依据与版本边界</h2>
+<ul>
+<li><a href="https://www.iso.org/standard/84123.html">ISO 16739-1:2024 官方目录</a>：IFC 数据模式，第2版；本轮依据官方目录以及 buildingSMART 开放定义，未阅读全文或做合规认证。</li>
+<li><a href="https://ifc43-docs.standards.buildingsmart.org/">buildingSMART IFC 4.3.2.0 文档</a>：首页声明与链接的 ISO IFC 4.3 发布版语义一致，另有澄清与示例。模式中存在关联不等于所有模型视图定义（MVD）或工具都支持。</li>
+<li>IFC 补充形式定义：<a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSpatialStructureElement.htm">空间结构实体及 WR41</a>、<a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSpatialReferenceSelect.htm">空间引用 SELECT</a>、<a href="https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcDistributionPort.htm">分配端口与流向</a>。</li>
+<li>DMTF CIM 使用 Schema 2.54.0 页面；CIM_ChassisInRack 类版本为 2.10.0，二者不是同一版本号。它与 IFC、RFC 属于不同标准体系，本页不将其统称为 ISO 标准。</li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc8345.html">IETF RFC 8345</a>：2018年3月，Standards Track；两个主 YANG 模块修订日期均为 2018-02-26。已核验主干正文和相关定义，不声称逐字符全文审计。</li>
+<li>IEEE 802.1AX 仅参考过官方介绍，未作条款级映射；IEC 61970-301、ISO/IEC 22237-1、ISO/IEC 11801、TIA 与 TM Forum 相关候选，本轮不列为已核验关系依据。</li>
+</ul>
+<h2>六、优先确认的项目选择</h2>
+<ol>
+<li><strong>空间：</strong>物理站点与逻辑数据中心是否分开？行和模块分别是空间区划、实体结构还是集合？是否需要楼层层级？</li>
+<li><strong>安装：</strong>设备资产与物理机箱是否分开？是否保留独立安装记录，承载 U 位、占用高度和有效时间？非机柜设备如何直接落位空间？</li>
+<li><strong>连接：</strong>电气接线、条件性供给和系统成员是否明确分开？网络物理端口、逻辑接口与视图终结点是否分开？</li>
+<li><strong>观测：</strong>哪些来源能给出准确对象、端点、时间和状态？不能确认的关系保留未解析，不画成现场事实。</li>
+</ol>
+<p class="muted">本页只交付类型关系讨论图，不使用内部样例编号拼接生产拓扑。线条交叉处不表示连接；有向关系在箭头到达节点边界处成立，对称联络用连接两端节点的无箭头线表示。基数详见表格，图中不省略成易误读的统一 1:N。</p>
+<p>项目背景：<a href="../空间归属域/空间归属域.md">空间归属域</a> · <a href="../电力与动环域/电力与动环域.md">电力与动环域</a> · <a href="../计算与主机接入域/计算与主机接入域.md">计算与主机接入域</a>。这些历史文档不自动具有本页新增标准核验的结论。</p>
+</details>
+</main></body></html>

@@ -1,0 +1,51 @@
+{
+    "result": true,
+    "error_code": 0,
+    "error_msg": "success",
+    "permission": null,
+    "data": {
+        "count": 6,
+        "info": [
+            {
+                "JD_use_date": "2021-04-26",
+                "average_pue": 1.49,
+                "building_id": 411,
+                "create_time": "2023-12-19T11:33:14.711+08:00",
+                "de_fire_check": "2023-10-20",
+                "de_light_check": "2022-12-17",
+                "idc_building_id": "DC5",
+                "idc_building_name": "廊坊_中国联通_磐石_DC5",
+                "idc_id": 1,
+                "idc_module_id": "M2",
+                "idc_module_name": "廊坊_中国联通_磐石_DC5",
+                "idc_name": "廊坊_中国联通_磐石",
+                "inst_id": 31,
+                "is_dcim_data": 1,
+                "last_time": "2024-07-04T10:24:11.061+08:00",
+                "obj_id": "idc_module",
+                "supplier_account": "0",
+                "use_time": "2021-05-01"
+            },
+            {
+                "JD_use_date": "2020-09-21",
+                "average_pue": 1.32,
+                "building_id": 344,
+                "create_time": "2023-12-19T11:33:14.714+08:00",
+                "de_fire_check": "2023-10-20",
+                "de_light_check": "2022-12-17",
+                "idc_building_id": "DC4",
+                "idc_building_name": "廊坊_中国联通_磐石_DC4",
+                "idc_id": 1,
+                "idc_module_id": "M2",
+                "idc_module_name": "廊坊_中国联通_磐石_DC4",
+                "idc_name": "廊坊_中国联通_磐石",
+                "inst_id": 36,
+                "is_dcim_data": 1,
+                "last_time": "2024-07-04T10:24:43.268+08:00",
+                "obj_id": "idc_module",
+                "supplier_account": "0",
+                "use_time": "2019-09-01"
+            }
+        ]
+    }
+}
