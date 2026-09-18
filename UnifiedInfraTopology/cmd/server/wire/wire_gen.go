@@ -69,5 +69,5 @@ var serverSet = wire.NewSet(server.NewHTTPServer)
 func newApp(
 	httpServer *http.Server,
 ) *app.App {
-	return app.NewApp(app.WithServer(httpServer), app.WithName("demo-server"))
+	return app.NewApp(app.WithServer(httpServer), app.WithName("unified-infra-topology"))
 }

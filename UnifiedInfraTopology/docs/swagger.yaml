@@ -1,3 +1,4 @@
+basePath: /v1
 definitions:
   v1.GetProfileResponse:
     properties:
@@ -73,18 +74,13 @@ definitions:
     required:
     - email
     type: object
-host: localhost:8000
 info:
-  contact:
-    email: support@swagger.io
-    name: API Support
-    url: http://www.swagger.io/support
-  description: This is a sample server celler server.
+  contact: {}
+  description: Infrastructure inventory and synchronization control API. Generated
+    documentation currently covers user endpoints only; see README for inventory contracts.
   license:
-    name: Apache 2.0
-    url: http://www.apache.org/licenses/LICENSE-2.0.html
-  termsOfService: http://swagger.io/terms/
-  title: Nunu Example API
+    name: MIT
+  title: UnifiedInfraTopology API
   version: 1.0.0
 paths:
   /login:

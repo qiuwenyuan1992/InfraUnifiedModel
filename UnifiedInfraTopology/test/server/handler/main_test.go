@@ -1,20 +1,18 @@
 package handler
 
 import (
+	"UnifiedInfraTopology/internal/handler"
+	"UnifiedInfraTopology/internal/middleware"
+	jwt2 "UnifiedInfraTopology/pkg/jwt"
+	"UnifiedInfraTopology/pkg/log"
 	"bytes"
-	"flag"
 	"fmt"
 	"github.com/gavv/httpexpect/v2"
 	"github.com/gin-gonic/gin"
-	"UnifiedInfraTopology/internal/handler"
-	"UnifiedInfraTopology/internal/middleware"
-	"UnifiedInfraTopology/pkg/config"
-	jwt2 "UnifiedInfraTopology/pkg/jwt"
-	"UnifiedInfraTopology/pkg/log"
+	"github.com/spf13/viper"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -29,17 +27,10 @@ var router *gin.Engine
 
 func TestMain(m *testing.M) {
 	fmt.Println("begin")
-	err := os.Setenv("APP_CONF", "../../../config/local.yml")
-	if err != nil {
-		fmt.Println("Setenv error", err)
-	}
-	var envConf = flag.String("conf", "config/local.yml", "config path, eg: -conf ./config/local.yml")
-	flag.Parse()
-	conf := config.NewConfig(*envConf)
-
-	// modify log directory
-	logPath := filepath.Join("../../../", conf.GetString("log.log_file_name"))
-	conf.Set("log.log_file_name", logPath)
+	// 测试独立配置，不读取开发环境的真实凭据。
+	conf := viper.New()
+	conf.Set("log.mode", "console")
+	conf.Set("security.jwt.key", "user-handler-test-only-key")
 
 	logger = log.NewLog(conf)
 	hdl = handler.NewHandler(logger)

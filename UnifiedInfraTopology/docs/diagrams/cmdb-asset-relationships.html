@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CMDB 当前态资产关系模型</title>
+<style>
+:root{--bg:#f4f7fb;--panel:#fff;--text:#172033;--muted:#64748b;--line:#94a3b8;--border:#dbe3ee;--device:#2563eb;--interface:#0891b2;--gpu:#7c3aed;--pod:#db2777;--space:#0f766e;--power:#d97706;--danger:#dc2626;--shadow:0 12px 32px rgba(30,41,59,.10)}
+[data-theme=dark]{--bg:#09111f;--panel:#111c2e;--text:#e7eefb;--muted:#9fb0c8;--line:#64748b;--border:#26364d;--shadow:0 18px 40px rgba(0,0,0,.35)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}.app{max-width:1600px;margin:auto;padding:22px}.header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:16px}.title h1{font-size:24px;margin:0 0 7px}.title p{margin:0;color:var(--muted);font-size:14px}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:1px solid var(--border);background:var(--panel);color:var(--text);padding:8px 12px;border-radius:9px;cursor:pointer;font-weight:650}.btn.active{color:#fff;background:#2563eb;border-color:#2563eb}.layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:16px}.canvas-shell{overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow)}.canvas{position:relative;width:1240px;height:1020px;background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:24px 24px}.zone{position:absolute;border:1px dashed var(--border);border-radius:18px;background:color-mix(in srgb,var(--panel) 92%,transparent)}.zone h2{position:absolute;left:16px;top:-12px;margin:0;padding:3px 9px;border-radius:999px;background:var(--panel);border:1px solid var(--border);font-size:12px;color:var(--muted)}.zone.network{left:26px;top:34px;width:1186px;height:340px}.zone.power{left:26px;top:410px;width:1186px;height:570px}.node{position:absolute;width:164px;min-height:78px;padding:12px 13px;background:var(--panel);border:2px solid var(--line);border-radius:13px;box-shadow:0 8px 20px rgba(30,41,59,.10);cursor:pointer;z-index:3;transition:box-shadow .18s,border-color .18s}.node:hover,.node.selected{box-shadow:0 12px 28px rgba(30,41,59,.18)}.node .kind{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.node .name{font-size:15px;font-weight:800;margin:4px 0}.node .id{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);overflow-wrap:anywhere}.node.device{border-color:var(--device)}.node.interface{border-color:var(--interface)}.node.gpu{border-color:var(--gpu)}.node.pod{border-color:var(--pod)}.node.space{border-color:var(--space)}.node.power{border-color:var(--power)}.node.unresolved{border-style:dashed;opacity:.78}#relationsLayer{pointer-events:none}.edge{fill:none;stroke:var(--line);stroke-width:2;marker-end:url(#arrow);vector-effect:non-scaling-stroke;transition:opacity .18s}.edge.network{stroke:var(--interface)}.edge.gpu{stroke:var(--gpu);stroke-width:2.7}.edge.membership{stroke:var(--pod);stroke-width:2.7}.edge.power{stroke:var(--power);stroke-width:2.7}.edge.location{stroke:var(--space);stroke-width:2.7}.edge.reference{stroke-dasharray:7 6;stroke-width:1.7}.edge-label{font-size:11px;font-weight:700;fill:var(--text);paint-order:stroke;stroke:var(--panel);stroke-width:5px;stroke-linejoin:round}.edge-label.compact{font-size:10px}.focus-hidden{opacity:.08;pointer-events:none}.sidebar{display:flex;flex-direction:column;gap:16px}.card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:var(--shadow)}.card h3{font-size:14px;margin:0 0 12px}.card p,.card li{font-size:12px;line-height:1.65;color:var(--muted)}.card ul{margin:0;padding-left:18px}.legend{display:grid;grid-template-columns:1fr 1fr;gap:9px;font-size:12px}.legend span{display:flex;align-items:center;gap:7px}.dot{width:10px;height:10px;border-radius:3px}.detail-title{font-size:17px;font-weight:800;margin-bottom:6px}.detail-id{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);overflow-wrap:anywhere}.detail-list{margin-top:12px;display:grid;gap:8px}.detail-row{border-top:1px solid var(--border);padding-top:8px;font-size:12px;line-height:1.6;color:var(--muted)}.detail-row b{display:block;font-size:11px;margin-bottom:2px;color:var(--text)}.sync{border-left:4px solid #16a34a}.sync strong{color:#16a34a}@media(max-width:1050px){.layout{grid-template-columns:1fr}.sidebar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:650px){.app{padding:10px}.header{display:block}.actions{margin-top:12px}.sidebar{display:block}.card{margin-bottom:12px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="header">
+    <div class="title"><h1>CMDB 当前态资产关系模型</h1><p>设备内嵌 IP、网络设备端口、服务器/GPU 上联、POD、数据中心、机柜与供电链路；箭头表示图中保存方向。</p></div>
+    <div class="actions" aria-label="视图筛选">
+      <button class="btn active" data-view="all">全部</button><button class="btn" data-view="network">网络</button><button class="btn" data-view="gpu">GPU</button><button class="btn" data-view="pod">POD</button><button class="btn" data-view="power">供电</button><button class="btn" id="theme">深色</button>
+    </div>
+  </header>
+  <main class="layout">
+    <section class="canvas-shell" aria-label="资产关系图">
+      <div class="canvas">
+        <div class="zone network"><h2>计算、网络与逻辑归属</h2></div><div class="zone power"><h2>物理空间与供电拓扑</h2></div>
+        <svg id="relationsSvg" width="1240" height="1020" viewBox="0 0 1240 1020" style="position:absolute;inset:0;z-index:2" aria-hidden="true">
+          <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="context-stroke"/></marker></defs>
+          <g id="relationsLayer"></g>
+        </svg>
+        <article class="node pod" style="left:66px;top:70px" data-node="pod" data-views="pod"><div class="kind">pod</div><div class="name">统一 POD</div><div class="id">pod.uuid · plane 区分平面</div></article>
+        <article class="node device" style="left:66px;top:205px" data-node="server" data-views="network gpu pod power"><div class="kind">device</div><div class="name">服务器</div><div class="id">uuid · all_ips[]</div></article>
+        <article class="node gpu" style="left:350px;top:320px" data-node="gpu" data-views="gpu"><div class="kind">gpu</div><div class="name">GPU 卡</div><div class="id">uuid · ip_addresses[]</div></article>
+        <article class="node interface" style="left:650px;top:205px" data-node="switchPort" data-views="network gpu"><div class="kind">interface</div><div class="name">ToR / 网络端口</div><div class="id">port_view.port_uuid</div></article>
+        <article class="node device" style="left:950px;top:205px" data-node="networkDevice" data-views="network gpu"><div class="kind">device</div><div class="name">网络设备</div><div class="id">device_view.uuid</div></article>
+        <article class="node space" style="left:66px;top:450px" data-node="dataCenter" data-views="power"><div class="kind">data_center</div><div class="name">数据中心</div><div class="id">idc.uuid</div></article>
+        <article class="node space" style="left:66px;top:600px" data-node="cabinet" data-views="power"><div class="kind">cabinet</div><div class="name">机柜</div><div class="id">cabinet.uuid</div></article>
+        <article class="node power" style="left:350px;top:600px" data-node="rppA" data-views="power"><div class="kind">rpp</div><div class="name">列头柜 A 路</div><div class="id">idc_RPP.uuid</div></article>
+        <article class="node power" style="left:350px;top:820px" data-node="rppB" data-views="power"><div class="kind">rpp</div><div class="name">列头柜 B 路</div><div class="id">idc_RPP.uuid</div></article>
+        <article class="node power" style="left:650px;top:600px" data-node="upsGroup" data-views="power"><div class="kind">ups_group</div><div class="name">UPS 组</div><div class="id">idc_ups_group.uuid</div></article>
+        <article class="node power" style="left:650px;top:820px" data-node="ups" data-views="power"><div class="kind">ups</div><div class="name">UPS 设备</div><div class="id">idc_ups.uuid</div></article>
+        <article class="node power" style="left:1030px;top:600px" data-node="transformer" data-views="power"><div class="kind">transformer</div><div class="name">变压器</div><div class="id">idc_transformer.uuid</div></article>
+      </div>
+    </section>
+    <aside class="sidebar">
+      <section class="card"><h3>图例</h3><div class="legend"><span><i class="dot" style="background:var(--device)"></i>设备</span><span><i class="dot" style="background:var(--interface)"></i>端口</span><span><i class="dot" style="background:var(--gpu)"></i>GPU</span><span><i class="dot" style="background:var(--pod)"></i>POD 归属</span><span><i class="dot" style="background:var(--space)"></i>物理空间</span><span><i class="dot" style="background:var(--power)"></i>供电</span><span>┄ 引用/核对</span></div></section>
+      <section class="card" id="detail"><h3>节点详情</h3><div class="detail-title">点击任一节点</div><p>查看来源、身份字段、关键属性和关系说明。</p></section>
+      <section class="card"><h3>建模边界</h3><ul><li>服务器与网络设备统一为 <code>device</code>。</li><li>设备保存 <code>all_ips[]</code> 和结构化 <code>device_ip_info[]</code>；带外 IP 可经 MySQL 辅助索引反查设备。</li><li>GPU 保存由 <code>gpu_uplink.gpu_ip</code> 汇总的 <code>ip_addresses[]</code>；空值不写入。</li><li>不建立地址节点、服务器端口节点或网卡端口节点。</li><li>普通服务器通过 <code>server_tor_ports</code> 直接上联 ToR 端口；GPU 通过 <code>gpu_uplink</code> 上联。</li><li>POD 建立统一实体，以 <code>plane</code> 区分管理面、计算面等平面。</li><li><code>compute_plane</code> 只用于关系解析，不建立节点。</li><li>数据中心是物理查询与同步范围；不建立 POD 到数据中心关系。</li><li>RPP 和 UPS 的变压器引用只用于校验，不建立直连边。</li><li>楼栋、房间、模组和逻辑 IDC 暂保留引用属性。</li><li>供电上游止于变压器。</li></ul></section>
+      <section class="card sync"><h3>全量同步清理</h3><p><strong>T = 本轮统一同步时间</strong></p><ul><li>所有本轮见到的节点和关系刷新 <code>synced_at=T</code>。</li><li>十一类 API、关系解析和图写入全部成功后，才删除 <code>synced_at&lt;T</code>。</li><li>任一步失败都不清理。</li></ul></section>
+    </aside>
+  </main>
+</div>
+<script>
+const details={
+ server:{title:'服务器',source:'device_view',identity:'uuid',properties:'device_sn、device_name、device_type、service_status、all_ips[]、device_ip_info[]、cabinet_uuid、u_position、pod_uuid/pod_id、compute_plane',relation:'带外 IP 等地址内嵌在设备；通过 server_tor_ports 直接建立到 ToR 端口的 server_uplink，不建立服务器端口节点。'},
+ pod:{title:'统一 POD',source:'pod',identity:'uuid',properties:'inst_id、basic_code、name、full_name、plane、mode、rdma、phy_building_id、idc_logic_id、is_delete',relation:'device → pod 使用 member_of。管理面优先按 pod_uuid；计算面逐项解析 compute_plane[].pod_id；同一设备与 POD 去重。'},
+ gpu:{title:'GPU 卡',source:'server_gpu + gpu_uplink',identity:'server_gpu.uuid',properties:'parts_sn、manufacturer、model、slot、bus_address、VRAM、maintenance_status、ip_addresses[]',relation:'parts_sn 匹配 gpu_uplink.gpu_sn；非空 gpu_ip 汇总到 GPU，GPU 通过 gpu_uplink 指向 ToR 端口。'},
+ switchPort:{title:'ToR / 网络端口',source:'port_view',identity:'port_uuid',properties:'port_name、port_type、port_speed、port_operation_status、device_uuid、remote_interface_uuid',relation:'普通服务器由 server_tor_ports.sn + ports[] 解析；GPU 由 gpu_uplink.tor_sn + tor_port 解析。'}, 
+ networkDevice:{title:'网络设备',source:'device_view',identity:'uuid',properties:'device_sn、device_name、parent_type、device_type、role、service_status、cabinet_uuid',relation:'与服务器共用 device 节点，通过 parent_type、device_type、role 分类。'},
+ dataCenter:{title:'数据中心',source:'idc',identity:'uuid',properties:'inst_id、code、cn_name、alias、address、location、status、idc_ops_status、idc_service_level、source_updated_at',relation:'作为资产查询与同步范围；机柜的 idc_id/phy_idc_id 解析到 inst_id，最终使用 UUID 关联。'},
+ cabinet:{title:'机柜',source:'cabinet',identity:'uuid',properties:'inst_id、code、phy_room_id、phy_building_id、idc_id、u_num、spare_u_num、status、power_status',relation:'通过 cabinet_uuid 与设备关联；通过 idc_id/phy_idc_id 关联数据中心；row_switch_id_A/B 解析 A/B 路列头柜。'},
+ rppA:{title:'列头柜 A 路',source:'idc_RPP',identity:'uuid',properties:'inst_id、code、idc、building、idc_room、module、ups_group、transformer_group_a',relation:'机柜 row_switch_id_A → RPP inst_id，关系属性标记 power_path=A；transformer_group_a 仅保留为属性，用于校验经 UPS 组解析出的变压器，不建立直连边。'},
+ rppB:{title:'列头柜 B 路',source:'idc_RPP',identity:'uuid',properties:'inst_id、code、idc、building、idc_room、module、ups_group、transformer_group_a',relation:'机柜 row_switch_id_B → RPP inst_id，关系属性标记 power_path=B；与 A 路采用相同解析和 transformer_group_a 校验规则。'},
+ upsGroup:{title:'UPS 组',source:'idc_ups_group',identity:'uuid',properties:'inst_id、code、idc、building、module、ups_group_num、transformer_id_up',relation:'聚合 UPS 成员，并通过 transformer_id_up 指向变压器。'},
+ ups:{title:'UPS 设备',source:'idc_ups',identity:'uuid',properties:'inst_id、code、idc、building、module、ups_group、transformer_id_up、ups_brand、ups_type、ups_capacity',relation:'通过 ups_group 加入 UPS 组；transformer_id_up 仅作为属性，与 UPS 组的上游变压器进行一致性校验，不建立直连边。'},
+ transformer:{title:'变压器',source:'idc_transformer',identity:'uuid',properties:'inst_id、code、idc、building、module、transformer_brand、transformer_type、transformer_capacity',relation:'本阶段供电上游边界；备用变压器使用 standby_for 表达。'}
+};
+const relations=[
+ {id:'device-pod',from:'server',to:'pod',views:'pod',edge:'membership',fromAnchor:'top',toAnchor:'bottom',route:'straight',label:'member_of · 管理面/计算面',labelDx:95},
+ {id:'server-uplink',from:'server',to:'switchPort',views:'network',edge:'network',fromAnchor:'right',toAnchor:'left',route:'straight',label:'server_uplink · server_tor_ports',labelDy:-12},
+ {id:'network-interface',from:'networkDevice',to:'switchPort',views:'network gpu',edge:'network',fromAnchor:'left',toAnchor:'right',route:'straight',label:'owns_interface',labelDy:-11},
+ {id:'gpu-uplink',from:'gpu',to:'switchPort',views:'gpu',edge:'gpu',fromAnchor:'right',toAnchor:'bottom',route:'corner-x',label:'gpu_uplink · gpu_port / gpu_ip',labelSegment:0,labelDy:-11},
+ {id:'device-gpu',from:'server',to:'gpu',views:'gpu',edge:'gpu',fromAnchor:'bottom',toAnchor:'left',route:'corner-y',label:'contains_gpu',labelSegment:1,labelDy:-10},
+ {id:'device-cabinet',from:'server',to:'cabinet',views:'power',edge:'location',fromAnchor:'left',toAnchor:'left',route:'outside-left',lane:0,label:'located_in · 机柜',labelSegment:1,labelDx:9},
+ {id:'cabinet-idc',from:'cabinet',to:'dataCenter',views:'power',edge:'location',fromAnchor:'top',toAnchor:'bottom',route:'straight',label:'located_in · IDC',labelDx:58},
+ {id:'cabinet-rpp-a',from:'cabinet',to:'rppA',views:'power',edge:'power',fromAnchor:'right',toAnchor:'left',route:'straight',label:'power_upstream · A 路',labelDy:-13,labelClass:'compact',avoidNodes:false},
+ {id:'cabinet-rpp-b',from:'cabinet',to:'rppB',views:'power',edge:'power',fromAnchor:'right',toAnchor:'left',route:'hvh',label:'power_upstream · B 路',labelSegment:1,labelDx:-58},
+ {id:'rpp-ups-group',from:'rppA',to:'upsGroup',views:'power',edge:'power',fromAnchor:'right',toAnchor:'left',route:'straight',label:'power_upstream',labelDy:-11},
+ {id:'group-transformer',from:'upsGroup',to:'transformer',views:'power',edge:'power',fromAnchor:'right',toAnchor:'left',route:'straight',label:'组 transformer_id_up',labelDy:-11},
+ {id:'ups-group',from:'ups',to:'upsGroup',views:'power',edge:'power',fromAnchor:'top',toAnchor:'bottom',route:'straight',label:'member_of · 归属 UPS 组',labelDx:94}
+];
+const svgNS='http://www.w3.org/2000/svg';
+const canvas=document.querySelector('.canvas');
+const relationLayer=document.querySelector('#relationsLayer');
+const nodes=[...document.querySelectorAll('.node')];
+const nodeMap=new Map(nodes.map(node=>[node.dataset.node,node]));
+const buttons=[...document.querySelectorAll('.actions [data-view]')];
+let activeView='all',drawFrame=0;
+function nodeBox(node){const canvasRect=canvas.getBoundingClientRect(),rect=node.getBoundingClientRect();return {left:rect.left-canvasRect.left,top:rect.top-canvasRect.top,right:rect.right-canvasRect.left,bottom:rect.bottom-canvasRect.top,width:rect.width,height:rect.height};}
+function anchorPoint(node,side){const box=nodeBox(node);if(side==='left')return{x:box.left,y:box.top+box.height/2};if(side==='right')return{x:box.right,y:box.top+box.height/2};if(side==='top')return{x:box.left+box.width/2,y:box.top};return{x:box.left+box.width/2,y:box.bottom};}
+function routeOrthogonal(start,end,relation){const lane=(relation.lane||0)*12;let points;if(relation.route==='hvh'){const x=(start.x+end.x)/2+lane;points=[start,{x,y:start.y},{x,y:end.y},end];}else if(relation.route==='vhv'){const y=(start.y+end.y)/2+lane;points=[start,{x:start.x,y},{x:end.x,y},end];}else if(relation.route==='outside-left'){const x=Math.min(start.x,end.x)-18-lane;points=[start,{x,y:start.y},{x,y:end.y},end];}else if(relation.route==='outside-right'){const x=Math.max(start.x,end.x)+18+lane;points=[start,{x,y:start.y},{x,y:end.y},end];}else if(relation.route==='corner-x'){points=[start,{x:end.x,y:start.y},end];}else if(relation.route==='corner-y'){points=[start,{x:start.x,y:end.y},end];}else{points=[start,end];}return points.filter((point,index,list)=>index===0||point.x!==list[index-1].x||point.y!==list[index-1].y);}
+function pathData(points){return points.map((point,index)=>`${index?'L':'M'}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');}
+function labelSegment(points,preferred){if(Number.isInteger(preferred)&&preferred>=0&&preferred<points.length-1)return preferred;let selected=0,max=-1;for(let i=0;i<points.length-1;i++){const length=Math.abs(points[i+1].x-points[i].x)+Math.abs(points[i+1].y-points[i].y);if(length>max){max=length;selected=i;}}return selected;}
+function boxesOverlap(a,b,padding=5){return a.x<b.right+padding&&a.x+a.width>b.left-padding&&a.y<b.bottom+padding&&a.y+a.height>b.top-padding;}
+function positionLabel(text,points,relation){const index=labelSegment(points,relation.labelSegment),a=points[index],b=points[index+1],horizontal=Math.abs(b.x-a.x)>=Math.abs(b.y-a.y);let x=(a.x+b.x)/2+(relation.labelDx||0),y=(a.y+b.y)/2+(relation.labelDy||0);text.setAttribute('text-anchor','middle');text.setAttribute('dominant-baseline','middle');text.setAttribute('x',x);text.setAttribute('y',y);if(relation.avoidNodes===false)return;const nodeBoxes=nodes.map(node=>nodeBox(node));for(const delta of [0,-14,14,-28,28,-42,42]){text.setAttribute('x',x+(horizontal?0:delta));text.setAttribute('y',y+(horizontal?delta:0));const box=text.getBBox();if(!nodeBoxes.some(node=>boxesOverlap(box,node)))return;}}
+function createSvg(tag,attributes={}){const element=document.createElementNS(svgNS,tag);Object.entries(attributes).forEach(([key,value])=>element.setAttribute(key,value));return element;}
+function drawRelations(){relationLayer.replaceChildren();for(const relation of relations){const source=nodeMap.get(relation.from),target=nodeMap.get(relation.to);if(!source||!target)continue;const points=routeOrthogonal(anchorPoint(source,relation.fromAnchor),anchorPoint(target,relation.toAnchor),relation);const group=createSvg('g',{'data-relation':relation.id,'data-views':relation.views});const path=createSvg('path',{class:`edge ${relation.edge}`,d:pathData(points)});const text=createSvg('text',{class:`edge-label${relation.labelClass?` ${relation.labelClass}`:''}`});text.textContent=relation.label;group.append(path,text);relationLayer.append(group);positionLabel(text,points,relation);}applyView();}
+function applyView(){buttons.forEach(button=>button.classList.toggle('active',button.dataset.view===activeView));nodes.forEach(node=>node.classList.toggle('focus-hidden',activeView!=='all'&&!node.dataset.views.split(' ').includes(activeView)));document.querySelectorAll('#relationsLayer g[data-views]').forEach(group=>group.classList.toggle('focus-hidden',activeView!=='all'&&!group.dataset.views.split(' ').includes(activeView)));}
+function selectView(view){activeView=view;applyView();}
+function scheduleDraw(){cancelAnimationFrame(drawFrame);drawFrame=requestAnimationFrame(drawRelations);}
+buttons.forEach(button=>button.addEventListener('click',()=>selectView(button.dataset.view)));
+nodes.forEach(node=>node.addEventListener('click',()=>{nodes.forEach(item=>item.classList.remove('selected'));node.classList.add('selected');const d=details[node.dataset.node];document.querySelector('#detail').innerHTML=`<h3>节点详情</h3><div class="detail-title">${d.title}</div><div class="detail-id">来源：${d.source}</div><div class="detail-list"><div class="detail-row"><b>身份字段</b>${d.identity}</div><div class="detail-row"><b>关键属性</b>${d.properties}</div><div class="detail-row"><b>关系说明</b>${d.relation}</div></div>`;}));
+const observer=new ResizeObserver(scheduleDraw);observer.observe(canvas);nodes.forEach(node=>observer.observe(node));window.addEventListener('resize',scheduleDraw);if(document.fonts?.ready)document.fonts.ready.then(scheduleDraw);drawRelations();
+document.querySelector('#theme').addEventListener('click',e=>{const dark=document.documentElement.dataset.theme==='dark';document.documentElement.dataset.theme=dark?'':'dark';e.target.textContent=dark?'深色':'浅色';scheduleDraw();});
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+# 复制为 local.yml 后填写；不覆盖已有配置，不将真实凭据提交到仓库。
+env: local
+http:
+  host: 127.0.0.1
+  port: 8000
+security:
+  jwt:
+    key: "REPLACE_WITH_INDEPENDENT_JWT_SECRET"
+data:
+  db:
+    main:
+      driver: mysql
+      dsn: "REPLACE_WITH_MYSQL_DSN"
+log:
+  log_level: debug
+  mode: console
+  encoding: console
+  log_file_name: "./storage/logs/server.log"
+  max_backups: 30
+  max_age: 7
+  max_size: 100
+  compress: true
+inventory:
+  # 独立随机生成至少 32 字节的密钥，不与 JWT 共用；默认不授予任何权限。
+  cursor_key: ""
+  grants: []
+  # grants 示例：user_id / scope_id / permissions 三个字段。
+  # permissions 可包含 inventory:read、sync:read、sync:write。
+  graph:
+    # 留空时不连接图库；配置后必须指向本项目独立空间。
+    hosts: [] # 示例：["127.0.0.1:9669"]
+    space: ""
+    username: ""
+    password: ""
+    timeout_seconds: 5

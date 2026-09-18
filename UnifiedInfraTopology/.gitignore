@@ -3,3 +3,18 @@ storage/logs
 *.log
 deploy/docker-compose/conf
 deploy/docker-compose/data
+
+# 仓库只保留配置模板，真实配置留在部署环境。
+/config/*.yml
+!/config/*.example.yml
+/config/*.yaml
+/config/*.json
+/.env
+/.env.*
+!/.env.example
+
+# 测试数据库、编译与覆盖率输出不纳入版本管理。
+/storage/
+/bin/
+/coverage.out
+/coverage.html

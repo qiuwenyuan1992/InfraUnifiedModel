@@ -51,7 +51,7 @@ func newApp(
 ) *app.App {
 	return app.NewApp(
 		app.WithServer(httpServer),
-		app.WithName("demo-server"),
+		app.WithName("unified-infra-topology"),
 	)
 }
 

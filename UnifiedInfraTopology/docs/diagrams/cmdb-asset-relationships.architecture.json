@@ -1,0 +1,340 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "CMDB 当前态资产关系模型",
+    "locale": "zh-CN",
+    "output": "docs/diagrams/cmdb-asset-relationships.html",
+    "animation": "none",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1320,
+      820
+    ],
+    "views": [
+      {
+        "id": "network-view",
+        "label": "网络关系",
+        "focus": [
+          "server",
+          "server_port",
+          "peer_port",
+          "network_device"
+        ],
+        "note": "设备拥有端口；端口之间形成连接；IP 地址保存在设备或端口属性中，不建立独立节点。"
+      },
+      {
+        "id": "gpu-view",
+        "label": "GPU 上联",
+        "focus": [
+          "server",
+          "gpu",
+          "peer_port",
+          "network_device"
+        ],
+        "note": "GPU 通过服务器内网卡端口名匹配上联，最终连接到交换机端口 UUID。"
+      },
+      {
+        "id": "power-view",
+        "label": "供电影响链",
+        "focus": [
+          "server",
+          "cabinet",
+          "rpp",
+          "ups_group",
+          "ups",
+          "transformer"
+        ],
+        "note": "供电关系沿下游指向上游保存，影响分析时反向遍历。"
+      }
+    ],
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "backend": {
+          "label": "计算与网络资产"
+        },
+        "database": {
+          "label": "空间与供电资产"
+        },
+        "external": {
+          "label": "网络设备"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "gpu",
+      "type": "backend",
+      "label": "GPU 卡",
+      "sublabel": "server_gpu.uuid",
+      "pos": [
+        70,
+        75
+      ],
+      "size": [
+        150,
+        72
+      ],
+      "tag": "资产 UUID"
+    },
+    {
+      "id": "server",
+      "type": "backend",
+      "label": "服务器设备",
+      "sublabel": "device_view.uuid",
+      "pos": [
+        70,
+        245
+      ],
+      "size": [
+        170,
+        78
+      ],
+      "tag": "统一 device"
+    },
+    {
+      "id": "server_port",
+      "type": "backend",
+      "label": "服务器端口",
+      "sublabel": "port_view.port_uuid",
+      "pos": [
+        315,
+        245
+      ],
+      "size": [
+        178,
+        78
+      ],
+      "tag": "interface"
+    },
+    {
+      "id": "peer_port",
+      "type": "backend",
+      "label": "交换机端口",
+      "sublabel": "port_view.port_uuid",
+      "pos": [
+        585,
+        245
+      ],
+      "size": [
+        178,
+        78
+      ],
+      "tag": "interface"
+    },
+    {
+      "id": "network_device",
+      "type": "external",
+      "label": "网络设备",
+      "sublabel": "device_view.uuid",
+      "pos": [
+        845,
+        245
+      ],
+      "size": [
+        170,
+        78
+      ],
+      "tag": "统一 device"
+    },
+    {
+      "id": "cabinet",
+      "type": "database",
+      "label": "机柜",
+      "sublabel": "cabinet.uuid",
+      "pos": [
+        70,
+        495
+      ],
+      "size": [
+        170,
+        78
+      ],
+      "tag": "空间节点"
+    },
+    {
+      "id": "rpp",
+      "type": "database",
+      "label": "列头柜 RPP",
+      "sublabel": "idc_RPP.uuid",
+      "pos": [
+        325,
+        495
+      ],
+      "size": [
+        170,
+        78
+      ],
+      "tag": "A / B 路"
+    },
+    {
+      "id": "ups_group",
+      "type": "database",
+      "label": "UPS 组",
+      "sublabel": "idc_ups_group.uuid",
+      "pos": [
+        585,
+        495
+      ],
+      "size": [
+        180,
+        78
+      ],
+      "tag": "供电分组"
+    },
+    {
+      "id": "transformer",
+      "type": "database",
+      "label": "变压器",
+      "sublabel": "idc_transformer.uuid",
+      "pos": [
+        1090,
+        495
+      ],
+      "size": [
+        170,
+        78
+      ],
+      "tag": "上游边界"
+    },
+    {
+      "id": "ups",
+      "type": "database",
+      "label": "UPS 设备",
+      "sublabel": "idc_ups.uuid",
+      "pos": [
+        590,
+        675
+      ],
+      "size": [
+        170,
+        78
+      ],
+      "tag": "成员设备"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "计算与网络拓扑",
+      "wraps": [
+        "gpu",
+        "server",
+        "server_port",
+        "peer_port",
+        "network_device"
+      ],
+      "pad": 24
+    },
+    {
+      "kind": "region",
+      "label": "空间与供电拓扑",
+      "wraps": [
+        "cabinet",
+        "rpp",
+        "ups_group",
+        "ups",
+        "transformer"
+      ],
+      "pad": 24
+    }
+  ],
+  "connections": [
+    {
+      "from": "server",
+      "to": "gpu",
+      "label": "包含 GPU",
+      "variant": "emphasis"
+    },
+    {
+      "from": "server",
+      "to": "server_port",
+      "label": "拥有端口",
+      "variant": "emphasis"
+    },
+    {
+      "from": "server_port",
+      "to": "peer_port",
+      "label": "端口连接",
+      "variant": "emphasis",
+      "width": 2
+    },
+    {
+      "from": "network_device",
+      "to": "peer_port",
+      "label": "拥有端口",
+      "variant": "emphasis"
+    },
+    {
+      "from": "gpu",
+      "to": "peer_port",
+      "label": "GPU 上联 · gpu_port=ib8",
+      "variant": "security"
+    },
+    {
+      "from": "server",
+      "to": "cabinet",
+      "label": "上架位置",
+      "variant": "emphasis"
+    },
+    {
+      "from": "cabinet",
+      "to": "rpp",
+      "label": "A / B 路供电",
+      "variant": "security",
+      "width": 2
+    },
+    {
+      "from": "rpp",
+      "to": "ups_group",
+      "label": "上游 UPS 组",
+      "variant": "emphasis"
+    },
+    {
+      "from": "ups",
+      "to": "ups_group",
+      "label": "成员归属",
+      "variant": "dashed"
+    },
+    {
+      "from": "ups_group",
+      "to": "transformer",
+      "label": "上游变压器",
+      "variant": "emphasis",
+      "width": 2
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "身份规则",
+      "items": [
+        "设备、GPU、机柜及供电对象使用资源 UUID",
+        "网络端口使用 port_uuid，不使用视图顶层 uuid",
+        "SN 与 inst_id 只用于来源匹配和引用解析"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "当前不建节点",
+      "items": [
+        "地址分配：IP 保存在设备或端口属性中",
+        "网卡与网卡端口：ib8 保存在 GPU 上联关系",
+        "端口组：组标识和三级分类保存在端口属性",
+        "UPS、RPP 到变压器的跨层引用：仅作属性校验",
+        "楼栋、房间、IDC、模组和 POD：暂存引用属性"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "同步清理",
+      "items": [
+        "每轮统一记录时间 T",
+        "本轮见到的所有节点和关系刷新 synced_at=T",
+        "九类 API 和图写入全部成功后才清理 synced_at<T"
+      ]
+    }
+  ]
+}

@@ -1,21 +1,15 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "This is a sample server celler server.",
-        "title": "Nunu Example API",
-        "termsOfService": "http://swagger.io/terms/",
-        "contact": {
-            "name": "API Support",
-            "url": "http://www.swagger.io/support",
-            "email": "support@swagger.io"
-        },
+        "description": "Infrastructure inventory and synchronization control API. Generated documentation currently covers user endpoints only; see README for inventory contracts.",
+        "title": "UnifiedInfraTopology API",
+        "contact": {},
         "license": {
-            "name": "Apache 2.0",
-            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+            "name": "MIT"
         },
         "version": "1.0.0"
     },
-    "host": "localhost:8000",
+    "basePath": "/v1",
     "paths": {
         "/login": {
             "post": {

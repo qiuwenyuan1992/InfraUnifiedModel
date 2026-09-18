@@ -1,35 +1,63 @@
-.PHONY: init
+.DEFAULT_GOAL := help
+GO ?= go
+CONF ?= config/local.yml
+
+.PHONY: help init run worker migrate test coverage race vet build wire mock swag
+help:
+	@printf '%s\n' \
+	  'run        启动 API（不迁移；CONF=config/local.yml）' \
+	  'worker     启动独立 worker（仅待机，不领取任务）' \
+	  'migrate    显式执行目标数据库迁移；运行前核对 CONF / APP_CONF' \
+	  'test       运行全部测试；不启用真实图库检查' \
+	  'coverage   运行全部测试并生成覆盖率报告' \
+	  'race       运行全部竞态测试' \
+	  'vet        运行 go vet' \
+	  'build      编译 server、migration 和 worker 到 bin/' \
+	  'wire       重新生成现有入口的 Wire 装配' \
+	  'mock       重新生成用户服务和仓储 mocks' \
+	  'swag       重新生成现有 Swagger 注解' \
+	  'init       安装与 go.mod 一致版本的开发工具'
+
 init:
-	go install github.com/google/wire/cmd/wire@latest
-	go install github.com/golang/mock/mockgen@latest
-	go install github.com/swaggo/swag/cmd/swag@latest
+	$(GO) install github.com/google/wire/cmd/wire@v0.7.0
+	$(GO) install github.com/golang/mock/mockgen@v1.6.0
+	$(GO) install github.com/swaggo/swag/cmd/swag@v1.16.6
 
-.PHONY: bootstrap
-bootstrap:
-	cd ./deploy/docker-compose && docker compose up -d && cd ../../
-	go run ./cmd/migration
-	nunu run ./cmd/server
+run:
+	$(GO) run ./cmd/server -conf "$(CONF)"
 
-.PHONY: mock
-mock:
-	mockgen -source=internal/service/user.go -destination test/mocks/service/user.go
-	mockgen -source=internal/repository/user.go -destination test/mocks/repository/user.go
-	mockgen -source=internal/repository/repository.go -destination test/mocks/repository/repository.go
+worker:
+	$(GO) run ./cmd/worker -conf "$(CONF)"
 
-.PHONY: test
+# 不与 run/build/test 隐式关联，必须单独执行。
+migrate:
+	$(GO) run ./cmd/migration -conf "$(CONF)"
+
 test:
-	go test -coverpkg=./internal/handler,./internal/service,./internal/repository -coverprofile=./coverage.out ./test/server/...
-	go tool cover -html=./coverage.out -o coverage.html
+	INVENTORY_GRAPH_TEST_CONFIG= $(GO) test ./... -count=1 -timeout=90s
 
-.PHONY: build
+coverage:
+	INVENTORY_GRAPH_TEST_CONFIG= $(GO) test ./... -coverprofile=coverage.out -count=1 -timeout=90s
+	$(GO) tool cover -html=coverage.out -o coverage.html
+
+race:
+	INVENTORY_GRAPH_TEST_CONFIG= $(GO) test -race ./... -count=1 -timeout=90s
+
+vet:
+	$(GO) vet ./...
+
 build:
-	go build -ldflags="-s -w" -o ./bin/server ./cmd/server
+	$(GO) build -ldflags="-s -w" -o ./bin/server ./cmd/server
+	$(GO) build -ldflags="-s -w" -o ./bin/migration ./cmd/migration
+	$(GO) build -ldflags="-s -w" -o ./bin/worker ./cmd/worker
 
-.PHONY: docker
-docker:
-	docker build -f deploy/build/Dockerfile --build-arg APP_RELATIVE_PATH=./cmd/task -t 1.1.1.1:5000/demo-task:v1 .
-	docker run --rm -i 1.1.1.1:5000/demo-task:v1
+wire:
+	$(GO) generate ./cmd/server/wire ./cmd/migration/wire ./cmd/worker/wire
 
-.PHONY: swag
+mock:
+	$(GO) run github.com/golang/mock/mockgen@v1.6.0 -source=internal/service/user.go -destination test/mocks/service/user.go
+	$(GO) run github.com/golang/mock/mockgen@v1.6.0 -source=internal/repository/user.go -destination test/mocks/repository/user.go
+	$(GO) run github.com/golang/mock/mockgen@v1.6.0 -source=internal/repository/repository.go -destination test/mocks/repository/repository.go
+
 swag:
-	swag init  -g cmd/server/main.go -o ./docs
+	$(GO) run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g cmd/server/main.go -o ./docs

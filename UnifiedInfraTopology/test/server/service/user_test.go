@@ -1,22 +1,21 @@
 package service_test
 
 import (
-	"context"
-	"errors"
-	"flag"
-	"fmt"
 	v1 "UnifiedInfraTopology/api/v1"
 	"UnifiedInfraTopology/pkg/jwt"
 	"UnifiedInfraTopology/test/mocks/repository"
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	"testing"
 
 	"UnifiedInfraTopology/internal/model"
 	"UnifiedInfraTopology/internal/service"
-	"UnifiedInfraTopology/pkg/config"
 	"UnifiedInfraTopology/pkg/log"
 	"UnifiedInfraTopology/pkg/sid"
 	"github.com/golang/mock/gomock"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -30,14 +29,10 @@ var (
 func TestMain(m *testing.M) {
 	fmt.Println("begin")
 
-	err := os.Setenv("APP_CONF", "../../../config/local.yml")
-	if err != nil {
-		panic(err)
-	}
-
-	var envConf = flag.String("conf", "config/local.yml", "config path, eg: -conf ./config/local.yml")
-	flag.Parse()
-	conf := config.NewConfig(*envConf)
+	// 测试独立配置，不读取开发环境的真实凭据。
+	conf := viper.New()
+	conf.Set("log.mode", "console")
+	conf.Set("security.jwt.key", "user-service-test-only-key")
 
 	logger = log.NewLog(conf)
 	j = jwt.NewJwt(conf)

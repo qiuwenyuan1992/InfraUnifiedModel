@@ -1,0 +1,31 @@
+# 部署模板，不可原样用于生产；真实配置由部署环境管理。
+env: prod
+http:
+  host: 0.0.0.0
+  port: 8000
+security:
+  jwt:
+    key: "REPLACE_WITH_INDEPENDENT_JWT_SECRET"
+data:
+  db:
+    main:
+      driver: mysql
+      dsn: "REPLACE_WITH_MYSQL_DSN"
+log:
+  log_level: info
+  mode: console
+  encoding: json
+  log_file_name: "./storage/logs/server.log"
+  max_backups: 30
+  max_age: 7
+  max_size: 100
+  compress: true
+inventory:
+  cursor_key: ""
+  grants: []
+  graph:
+    hosts: []
+    space: ""
+    username: ""
+    password: ""
+    timeout_seconds: 5

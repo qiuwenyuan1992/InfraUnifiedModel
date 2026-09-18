@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"UnifiedInfraTopology/internal/model"
 	graphclient "UnifiedInfraTopology/pkg/nebula"
@@ -19,6 +21,62 @@ import (
 
 const graphTestScope = "11111111111111111111111111111111"
 const graphTestParent = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+// 仅显式指定配置时连接专用开发空间；普通测试不访问外部服务。
+func TestGraphInventoryLiveReadOnly(t *testing.T) {
+	path := os.Getenv("INVENTORY_GRAPH_TEST_CONFIG")
+	if path == "" {
+		t.Skip("set INVENTORY_GRAPH_TEST_CONFIG to enable read-only Nebula integration checks")
+	}
+	conf := viper.New()
+	conf.SetConfigFile(path)
+	require.NoError(t, conf.ReadInConfig())
+	cfg, err := graphclient.ParseConfig(conf)
+	require.NoError(t, err)
+	require.Equal(t, "unified_inventory_current", cfg.Space, "integration checks require the dedicated development space")
+	client, err := graphclient.New(cfg)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	for _, statement := range []string{
+		"DESCRIBE SPACE `unified_inventory_current`;",
+		"DESCRIBE TAG `device`;", "DESCRIBE TAG `interface`;", "DESCRIBE TAG `address`;",
+		"DESCRIBE EDGE `owns_interface`;", "DESCRIBE EDGE `owns_address`;", "DESCRIBE EDGE `has_address`;",
+		"DESCRIBE EDGE `links_to`;", "DESCRIBE EDGE `aggregates`;",
+		"DESCRIBE TAG INDEX `device_scope_entity`;",
+		"DESCRIBE TAG INDEX `interface_scope_entity`;", "DESCRIBE TAG INDEX `address_scope_entity`;",
+		"DESCRIBE TAG INDEX `interface_scope_device_entity`;", "DESCRIBE TAG INDEX `address_scope_device_entity`;",
+	} {
+		result, err := client.ExecuteParameter(ctx, statement, nil)
+		require.NoError(t, err, statement)
+		require.NotNil(t, result, statement)
+		require.True(t, result.IsSucceed(), "schema check failed: %s (code %v): %s", statement, result.GetErrorCode(), result.GetErrorMsg())
+	}
+	r := &graphInventoryRepository{client: client}
+	const probeID = "00000000000000000000000000000000"
+	_, err = r.Device(ctx, probeID, probeID)
+	require.True(t, err == nil || errors.Is(err, ErrInventoryNotFound), "FETCH probe failed: %v", err)
+	for _, resource := range []string{"devices", "interfaces", "addresses"} {
+		t.Run(resource, func(t *testing.T) {
+			q := InventoryListQuery{ScopeID: probeID, Limit: 1}
+			_, err := r.List(ctx, resource, q)
+			require.NoError(t, err)
+			q.LastID = probeID
+			q.Lifecycle = "active"
+			switch resource {
+			case "devices":
+				q.DeviceKind, q.Name = "router", "inventory-read-only-probe"
+			case "interfaces":
+				q.ParentID, q.InterfaceKind = probeID, "physical"
+			case "addresses":
+				q.ParentID, q.AddressFamily = probeID, "4"
+			}
+			_, err = r.List(ctx, resource, q)
+			require.NoError(t, err)
+		})
+	}
+}
 
 type fakeGraphClient struct {
 	result        *nebulago.ResultSet
