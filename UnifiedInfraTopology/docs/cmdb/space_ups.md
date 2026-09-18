@@ -15,10 +15,10 @@
         "sort": "inst_id"
     },
     "condition": {
-        "idc": 451,
-        "module": 100,
-        "transformer_id_up":1588,
-        "ups_group":1156
+        "idc": 451, -- 可选
+        "module": 100, -- 可选
+        "transformer_id_up":1588, -- 可选
+        "ups_group":1156 -- 可选
     }
 }
 ```
