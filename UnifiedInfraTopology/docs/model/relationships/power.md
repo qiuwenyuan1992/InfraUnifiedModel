@@ -73,9 +73,11 @@ transformer(standby)
 
 1. `row_switch_id_A` 生成 `power_path=A`。
 2. `row_switch_id_B` 生成 `power_path=B`。
-3. `power_path` 是关系身份的一部分，避免 A/B 路互相覆盖。
-4. 数字引用必须唯一解析到 RPP UUID。
-5. 当前 A 路样例已闭环；B 路目标未提供时只记录诊断，不创建占位关系。
+3. `power_path` 是 `relation_id` 的业务区分字段，用于区分 A/B 路的逻辑关系身份。
+4. A/B 路连接不同 RPP 时，两条边的终点不同，均可使用默认 `rank=0`。
+5. A/B 路连接同一 RPP 时，两条边的起点、Edge Type 和终点相同，必须根据各自 `relation_id` 使用稳定且不同的 Rank，避免物理边互相覆盖。
+6. 数字引用必须唯一解析到 RPP UUID。
+7. 当前 A 路样例已闭环；B 路目标未提供时只记录诊断，不创建占位关系。
 
 ### 4.2 RPP 连接 UPS 组
 

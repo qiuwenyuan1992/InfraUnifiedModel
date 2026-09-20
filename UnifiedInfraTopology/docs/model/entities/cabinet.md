@@ -230,7 +230,7 @@ device_view.cabinet_uuid
 解析成功后生成：
 
 ```text
-device(device_sn) -[located_in]-> cabinet(uuid)
+device(device_sn) -[spatial_relation {relation_kind: "located_in"}]-> cabinet(uuid)
 ```
 
 规则：
@@ -252,7 +252,7 @@ cabinet.idc_id → data_center.inst_id → data_center.uuid
 解析成功后生成：
 
 ```text
-cabinet(uuid) -[located_in]-> data_center(uuid)
+cabinet(uuid) -[spatial_relation {relation_kind: "located_in"}]-> data_center(uuid)
 ```
 
 规则：
@@ -273,7 +273,7 @@ cabinet.pod_ids[] → pod.inst_id → pod.uuid
 生成：
 
 ```text
-cabinet(uuid) -[tagged_with]-> pod(uuid)
+cabinet(uuid) -[spatial_relation {relation_kind: "tagged_with"}]-> pod(uuid)
 ```
 
 规则：
@@ -297,8 +297,8 @@ cabinet.row_switch_id_B → rpp.inst_id → rpp.uuid
 生成：
 
 ```text
-cabinet(uuid) -[power_upstream {power_path: "A"}]-> rpp(uuid)
-cabinet(uuid) -[power_upstream {power_path: "B"}]-> rpp(uuid)
+cabinet(uuid) -[power_relation {relation_kind: "power_upstream", power_path: "A"}]-> rpp(uuid)
+cabinet(uuid) -[power_relation {relation_kind: "power_upstream", power_path: "B"}]-> rpp(uuid)
 ```
 
 规则：
@@ -311,18 +311,18 @@ cabinet(uuid) -[power_upstream {power_path: "B"}]-> rpp(uuid)
 
 ## 5. 拓扑关系
 
-| 关系 | 端点 | 通用属性 | 业务属性 | 来源 |
-|---|---|---|---|---|
-| `located_in` | `device(device_sn) → cabinet(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `device_view.cabinet_uuid` |
-| `located_in` | `cabinet(uuid) → data_center(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `cabinet.idc_id` |
-| `tagged_with` | `cabinet(uuid) → pod(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `cabinet.pod_ids[]` |
-| `power_upstream` | `cabinet(uuid) → rpp(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `power_path` | `row_switch_id_A/B` |
+| Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
+|---|---|---|---|---|---|
+| `spatial_relation` | `located_in` | `device(device_sn) → cabinet(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `device_view.cabinet_uuid` |
+| `spatial_relation` | `located_in` | `cabinet(uuid) → data_center(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `cabinet.idc_id` |
+| `spatial_relation` | `tagged_with` | `cabinet(uuid) → pod(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `cabinet.pod_ids[]` |
+| `power_relation` | `power_upstream` | `cabinet(uuid) → rpp(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `power_path` | `row_switch_id_A/B` |
 
 关系身份规则：
 
 - 上述来源均没有独立关系 UUID。
-- `located_in` 和 `tagged_with` 的 `relation_id` 由关系类型和两端完整逻辑身份确定性生成。
-- `power_upstream` 的 `relation_id` 由关系类型、两端完整逻辑身份和 `power_path` 确定性生成。
+- `located_in` 和 `tagged_with` 的 `relation_id` 由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。
+- `power_upstream` 的 `relation_id` 由 `Edge Type`、`relation_kind`、两端完整逻辑身份和 `power_path` 确定性生成。
 - 两端完整逻辑身份必须包含 `scope_id`、`source_id`、对象类型和稳定身份。
 
 ## 6. 同步与清理约定

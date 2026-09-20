@@ -107,7 +107,7 @@ port_view.port_uuid        → interface.port_uuid
 生成：
 
 ```text
-device(device_sn) -[owns_interface]-> interface(port_uuid)
+device(device_sn) -[composition_relation {relation_kind: "owns_interface"}]-> interface(port_uuid)
 ```
 
 如果来源缺少 `local_device_sn`，但提供稳定 `local_device_uuid`，则直接以该 UUID 查询设备 API 取得 `device_sn`。不要求预存 `device_uuid → device_sn` 内存索引，也不使用 `local_device_id` 进行必要交叉校验。
@@ -124,7 +124,7 @@ port_view.remote_interface_uuid → 对端 interface
 生成：
 
 ```text
-interface(port_uuid) -[links_to]-> interface(remote_interface_uuid)
+interface(port_uuid) -[network_relation {relation_kind: "links_to"}]-> interface(remote_interface_uuid)
 ```
 
 规则：
@@ -150,7 +150,7 @@ server_tor_ports[].ports[] → port_view.port_name
 直接查询或匹配得到 `port_uuid`，生成：
 
 ```text
-device(server_device_sn) -[server_uplink]-> interface(tor_port_uuid)
+device(server_device_sn) -[network_relation {relation_kind: "server_uplink"}]-> interface(tor_port_uuid)
 ```
 
 不要求保存 `(ToR SN, port_name) → port_uuid` 内存索引，也不建立服务器本端接口节点。
@@ -168,7 +168,7 @@ GPU 上联使用 `tor_sn + tor_port` 直接查询或匹配 ToR 接口：
 解析成功后生成：
 
 ```text
-gpu(uuid) -[gpu_uplink]-> interface(port_uuid)
+gpu(uuid) -[network_relation {relation_kind: "gpu_uplink"}]-> interface(port_uuid)
 ```
 
 `ib8` 等 GPU 侧端口名不是具有稳定 UUID 的网络设备端口，当前不据此创建接口节点。
@@ -206,16 +206,16 @@ gpu(uuid) -[gpu_uplink]-> interface(port_uuid)
 
 ## 6. 拓扑关系
 
-| 关系 | 端点 | 必要边属性 | 来源 |
-|---|---|---|---|
-| `owns_interface` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `port_view.local_device_sn`，缺失时按 `local_device_uuid` 查询 |
-| `links_to` | `interface(port_uuid) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `remote_interface_uuid` |
-| `server_uplink` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `server_tor_ports[].sn + ports[]` |
-| `gpu_uplink` | `gpu(uuid) → interface(port_uuid)` | GPU 上联业务属性、`relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `gpu_uplink.tor_sn + tor_port` |
+| Edge Type | `relation_kind` | 端点 | 必要边属性 | 来源 |
+|---|---|---|---|---|
+| `composition_relation` | `owns_interface` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `port_view.local_device_sn`，缺失时按 `local_device_uuid` 查询 |
+| `network_relation` | `links_to` | `interface(port_uuid) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `remote_interface_uuid` |
+| `network_relation` | `server_uplink` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `server_tor_ports[].sn + ports[]` |
+| `network_relation` | `gpu_uplink` | `gpu(uuid) → interface(port_uuid)` | GPU 上联业务属性、`relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `gpu_uplink.tor_sn + tor_port` |
 
-除 `links_to` 外，`relation_id` 优先使用明确的来源关系 UUID；没有来源关系 UUID 时，由关系类型和两端稳定身份确定性生成。
+除 `links_to` 外，`relation_id` 优先使用明确的来源关系 UUID；没有来源关系 UUID 时，由 `Edge Type`、`relation_kind` 和两端稳定身份确定性生成。
 
-`links_to` 不使用 `port_view.uuid` 作为关系身份，因为同一物理连接的双端记录具有不同来源 UUID。其 `relation_id` 固定由 `scope_id`、`source_id`、关系类型和规范化后的端口 UUID 对确定性生成，避免双端重复上报产生两条逻辑连接。
+`links_to` 不使用 `port_view.uuid` 作为关系身份，因为同一物理连接的双端记录具有不同来源 UUID。其 `relation_id` 固定由 `scope_id`、`source_id`、`Edge Type`、`relation_kind` 和规范化后的端口 UUID 对确定性生成，避免双端重复上报产生两条逻辑连接。
 
 ## 7. LLDP 双端样例闭环
 
@@ -252,7 +252,7 @@ remote_device_uuid     = 795fa397-3a73-7d42-d435-467c78b2b311
 
 ```text
 interface(542866bc-936b-49b8-8d6d-5a531fc1bb69)
-  -[links_to]->
+  -[network_relation {relation_kind: "links_to"}]->
 interface(ba7e98e2-3514-0b8a-63bc-df7eca91428d)
 ```
 

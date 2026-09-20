@@ -174,6 +174,24 @@ scope_id + source_id + 实体类型 + 稳定实体身份
 3. 使用规范化端点对生成 `relation_id`。
 4. 双端 LLDP 记录只生成一条关系。
 
+### 6.4 NebulaGraph Edge Rank
+
+NebulaGraph 使用以下元组标识一条物理边：
+
+```text
+src_vid + Edge Type + Rank + dst_vid
+```
+
+`relation_id` 和 `relation_kind` 是边属性，不参与物理边键。Rank 只用于解决同一 Edge Type、同一对端点之间需要保存多条逻辑关系的情况：
+
+1. 同一 `src_vid + Edge Type + dst_vid` 只有一条逻辑关系时，使用默认 `rank=0`。
+2. 同一端点之间存在多条逻辑关系时，不能全部使用 `rank=0`；每条关系必须根据 `relation_id` 获得稳定且不同的 Rank。
+3. 同一关系在重试、恢复和图重建时必须得到相同 Rank，不得使用写入顺序或临时自增值。
+4. 不同 `relation_id` 映射到同一 Rank 时必须作为冲突处理，不得覆盖已有边。
+5. Rank 是 NebulaGraph 存储实现细节；业务查询、同步诊断和对外返回仍使用 `relation_id` 与 `relation_kind`。
+
+当前明确需要平行边处理的场景是：机柜 A/B 路同时连接同一 RPP。若 A/B 路连接不同 RPP，则终点不同，两条边均可使用默认 `rank=0`。
+
 ## 7. 方向约定
 
 - 空间归属由具体对象指向上级范围：`device → cabinet → data_center`。

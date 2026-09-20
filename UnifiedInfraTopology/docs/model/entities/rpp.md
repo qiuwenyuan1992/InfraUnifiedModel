@@ -200,8 +200,8 @@ cabinet.row_switch_id_B → rpp.inst_id → rpp.uuid
 解析成功后生成：
 
 ```text
-cabinet(uuid) -[power_upstream {power_path: "A"}]-> rpp(uuid)
-cabinet(uuid) -[power_upstream {power_path: "B"}]-> rpp(uuid)
+cabinet(uuid) -[power_relation {relation_kind: "power_upstream", power_path: "A"}]-> rpp(uuid)
+cabinet(uuid) -[power_relation {relation_kind: "power_upstream", power_path: "B"}]-> rpp(uuid)
 ```
 
 规则：
@@ -223,7 +223,7 @@ rpp.ups_group_id → ups_group.inst_id → ups_group.uuid
 解析成功后生成：
 
 ```text
-rpp(uuid) -[power_upstream]-> ups_group(uuid)
+rpp(uuid) -[power_relation {relation_kind: "power_upstream"}]-> ups_group(uuid)
 ```
 
 规则：
@@ -262,23 +262,23 @@ rpp → transformer
 虽然节点保留 `idc_id`，当前不生成：
 
 ```text
-rpp -[located_in]-> data_center
+rpp -[spatial_relation {relation_kind: "located_in"}]-> data_center
 ```
 
 当前供电路径从机柜经 RPP、UPS 组向上遍历。RPP 的数据中心引用仅作为后续版本建模入口，不参与当前关系发布和清理。
 
 ## 5. 拓扑关系
 
-| 关系 | 端点 | 通用属性 | 业务属性 | 来源 |
-|---|---|---|---|---|
-| `power_upstream` | `cabinet(uuid) → rpp(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `power_path` | `cabinet.row_switch_id_A/B` |
-| `power_upstream` | `rpp(uuid) → ups_group(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `rpp.ups_group_id` |
+| Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
+|---|---|---|---|---|---|
+| `power_relation` | `power_upstream` | `cabinet(uuid) → rpp(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `power_path` | `cabinet.row_switch_id_A/B` |
+| `power_relation` | `power_upstream` | `rpp(uuid) → ups_group(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `rpp.ups_group_id` |
 
 关系身份规则：
 
 - 上述来源均没有独立关系 UUID。
-- `cabinet → rpp` 的 `relation_id` 由关系类型、两端完整逻辑身份和 `power_path` 确定性生成。
-- `rpp → ups_group` 的 `relation_id` 由关系类型和两端完整逻辑身份确定性生成。
+- `cabinet → rpp` 的 `relation_id` 由 `Edge Type`、`relation_kind`、两端完整逻辑身份和 `power_path` 确定性生成。
+- `rpp → ups_group` 的 `relation_id` 由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。
 - 两端完整逻辑身份必须包含 `scope_id`、`source_id`、对象类型和稳定 UUID。
 
 ## 6. 同步与清理约定
@@ -322,9 +322,9 @@ transformer_group_a_id  = 1588
 
 ```text
 cabinet
-  -[power_upstream {power_path: "A"}]->
+  -[power_relation {relation_kind: "power_upstream", power_path: "A"}]->
 rpp(9f283fc3-d029-4a4d-b312-d23b5c2c4cd5)
-  -[power_upstream]->
+  -[power_relation {relation_kind: "power_upstream"}]->
 ups_group(1461bad1-8c8b-47c8-ad37-dc12399bdeb4)
 ```
 

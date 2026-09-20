@@ -192,15 +192,15 @@ target_port_name = server_tor_ports[].ports[]
 
 设备参与的当前最小关系如下：
 
-| 关系 | 端点 | 必要边属性 | 来源 |
-|---|---|---|---|
-| `located_in` | `device(device_sn) → cabinet(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `device_view.cabinet_uuid` |
-| `member_of` | `device(device_sn) → pod(uuid)` | `plane`、`relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 管理面 POD 或计算面 POD 引用 |
-| `owns_interface` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 详见 [interface.md](interface.md) |
-| `server_uplink` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `server_tor_ports[].sn + ports[]` |
-| `contains_gpu` | `device(device_sn) → gpu(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `server_gpu.device_sn` |
+| Edge Type | `relation_kind` | 端点 | 必要边属性 | 来源 |
+|---|---|---|---|---|
+| `spatial_relation` | `located_in` | `device(device_sn) → cabinet(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `device_view.cabinet_uuid` |
+| `spatial_relation` | `member_of` | `device(device_sn) → pod(uuid)` | `plane`、`relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 管理面 POD 或计算面 POD 引用 |
+| `composition_relation` | `owns_interface` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 详见 [interface.md](interface.md) |
+| `network_relation` | `server_uplink` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `server_tor_ports[].sn + ports[]` |
+| `composition_relation` | `contains_gpu` | `device(device_sn) → gpu(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `server_gpu.device_sn` |
 
-`relation_id` 优先使用带 `scope_id/source_id` 限定的来源关系 UUID；没有来源关系 UUID 时，由关系类型和两端完整逻辑身份确定性生成。`member_of` 允许业务属性参与唯一性，其关系 ID 还必须包含规范化 `plane`。
+`relation_id` 优先使用带 `scope_id/source_id` 限定的来源关系 UUID；没有来源关系 UUID 时，由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。`member_of` 允许业务属性参与唯一性，其关系 ID 还必须包含规范化 `plane`。
 
 说明：
 

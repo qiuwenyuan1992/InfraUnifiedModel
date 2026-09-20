@@ -194,7 +194,7 @@ cabinet.idc_id → data_center.inst_id → data_center.uuid
 解析成功后生成：
 
 ```text
-cabinet(uuid) -[located_in]-> data_center(uuid)
+cabinet(uuid) -[spatial_relation {relation_kind: "located_in"}]-> data_center(uuid)
 ```
 
 规则：
@@ -227,14 +227,14 @@ data_center → logic_idc
 
 ## 5. 拓扑关系
 
-| 关系 | 端点 | 通用属性 | 业务属性 | 来源 |
-|---|---|---|---|---|
-| `located_in` | `cabinet(uuid) → data_center(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `cabinet.idc_id` |
+| Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
+|---|---|---|---|---|---|
+| `spatial_relation` | `located_in` | `cabinet(uuid) → data_center(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `cabinet.idc_id` |
 
 关系身份规则：
 
 - 来源没有独立关系 UUID。
-- `relation_id` 由关系类型和两端完整逻辑身份确定性生成。
+- `relation_id` 由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。
 - 两端完整逻辑身份必须包含 `scope_id`、`source_id`、对象类型和稳定 UUID。
 - 同一机柜在同一时刻只应有一条已发布的数据中心归属关系。
 
@@ -274,7 +274,7 @@ location   = 润惠
 
 ```text
 cabinet(c0b7b4f5-c5b2-ab3d-af4e-da3fbe7c055b)
-  -[located_in]->
+  -[spatial_relation {relation_kind: "located_in"}]->
 data_center(0e32c4d6-a29f-4d8b-94c8-38ac791e363d)
 ```
 

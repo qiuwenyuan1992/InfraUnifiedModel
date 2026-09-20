@@ -203,7 +203,7 @@ server_gpu.uuid      → gpu.uuid
 生成：
 
 ```text
-device(device_sn) -[contains_gpu]-> gpu(uuid)
+device(device_sn) -[composition_relation {relation_kind: "contains_gpu"}]-> gpu(uuid)
 ```
 
 规则：
@@ -255,22 +255,22 @@ device(device_sn) -[contains_gpu]-> gpu(uuid)
 解析成功后生成：
 
 ```text
-gpu(uuid) -[gpu_uplink]-> interface(port_uuid)
+gpu(uuid) -[network_relation {relation_kind: "gpu_uplink"}]-> interface(port_uuid)
 ```
 
 ## 5. 拓扑关系
 
-| 关系 | 端点 | 通用属性 | 业务属性 | 来源 |
-|---|---|---|---|---|
-| `contains_gpu` | `device(device_sn) → gpu(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `server_gpu.device_sn + uuid` |
-| `gpu_uplink` | `gpu(uuid) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `tor_port` 是建边所需来源字段；边属性均允许为空：`gpu_port`、`gpu_port_speed`、`gpu_ip`、`gpu_slot`、`server_port_speed`、`bond_name`、`tor_port`、`tor_port_speed`、`tor_role`、`source` | `gpu_uplink` |
+| Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
+|---|---|---|---|---|---|
+| `composition_relation` | `contains_gpu` | `device(device_sn) → gpu(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `server_gpu.device_sn + uuid` |
+| `network_relation` | `gpu_uplink` | `gpu(uuid) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `tor_port` 是建边所需来源字段；边属性均允许为空：`gpu_port`、`gpu_port_speed`、`gpu_ip`、`gpu_slot`、`server_port_speed`、`bond_name`、`tor_port`、`tor_port_speed`、`tor_role`、`source` | `gpu_uplink` |
 
 上联速率字段全部保持来源字符串，不进行单位换算或跨字段数值比较；当前样例的 `gpu_port_speed/server_port_speed` 使用 `400G/100G`，而 `tor_port_speed` 使用 `400000`，其单位尚未由接口契约明确。
 
 关系身份规则：
 
 - `gpu_uplink.uuid` 是来源关系身份；图中的 `relation_id` 使用 `scope_id:source_id:gpu_uplink:uuid`，避免不同范围或来源发生碰撞。
-- `contains_gpu` 没有独立来源关系 UUID，由关系类型和两端完整逻辑身份确定性生成；两端身份必须包含 `scope_id`、`source_id`、对象类型和稳定身份。
+- `contains_gpu` 没有独立来源关系 UUID，由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成；两端身份必须包含 `scope_id`、`source_id`、对象类型和稳定身份。
 - 同一 GPU 连接同一交换机但接口不同，必须保留为不同上联关系。
 - 上联边的终点是网络设备 `interface(port_uuid)`，不是网络 `device` 节点。
 - `gpu_port` 只是关系属性，不创建 GPU 侧接口节点。

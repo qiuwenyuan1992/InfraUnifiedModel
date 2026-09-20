@@ -218,22 +218,22 @@ compute_plane[].building_id
 管理面和计算面均生成：
 
 ```text
-device(device_sn) -[member_of]-> pod(uuid)
+device(device_sn) -[spatial_relation {relation_kind: "member_of"}]-> pod(uuid)
 ```
 
 关系规则：
 
 - `plane` 使用目标 `pod.plane` 的数值，不保存设备侧中文平面名称。
 - 同一设备、同一 POD、同一平面被多个来源字段重复引用时，只生成一条关系。
-- `relation_id` 由关系类型、两端完整逻辑身份和 `plane` 确定性生成。
+- `relation_id` 由 `Edge Type`、`relation_kind`、两端完整逻辑身份和 `plane` 确定性生成。
 - 若同一设备与同一 POD 出现不同平面引用，按冲突处理，不生成猜测关系。
 - 未分配 POD 的设备允许没有 `member_of` 关系。
 
 ## 5. 拓扑关系
 
-| 关系 | 端点 | 通用属性 | 业务属性 | 来源 |
-|---|---|---|---|---|
-| `member_of` | `device(device_sn) → pod(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `plane` | 管理面 `pod_uuid/pod_id` 或计算面 `compute_plane[].pod_id` |
+| Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
+|---|---|---|---|---|---|
+| `spatial_relation` | `member_of` | `device(device_sn) → pod(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `plane` | 管理面 `pod_uuid/pod_id` 或计算面 `compute_plane[].pod_id` |
 
 当前不生成以下关系：
 

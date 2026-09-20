@@ -185,7 +185,7 @@ rpp.ups_group_id → ups_group.inst_id → ups_group.uuid
 解析成功后生成：
 
 ```text
-rpp(uuid) -[power_upstream]-> ups_group(uuid)
+rpp(uuid) -[power_relation {relation_kind: "power_upstream"}]-> ups_group(uuid)
 ```
 
 规则：
@@ -206,7 +206,7 @@ ups.ups_group_id → ups_group.inst_id → ups_group.uuid
 解析成功后生成：
 
 ```text
-ups(uuid) -[member_of]-> ups_group(uuid)
+ups(uuid) -[power_relation {relation_kind: "member_of"}]-> ups_group(uuid)
 ```
 
 规则：
@@ -229,7 +229,7 @@ ups_group.transformer_id_up → transformer.inst_id → transformer.uuid
 解析成功后生成：
 
 ```text
-ups_group(uuid) -[power_upstream]-> transformer(uuid)
+ups_group(uuid) -[power_relation {relation_kind: "power_upstream"}]-> transformer(uuid)
 ```
 
 规则：
@@ -282,23 +282,23 @@ rpp.transformer_group_a_id
 虽然节点保留 `idc_id`，当前不生成：
 
 ```text
-ups_group -[located_in]-> data_center
+ups_group -[spatial_relation {relation_kind: "located_in"}]-> data_center
 ```
 
 该引用仅作为后续版本建模入口，不参与当前关系发布和清理。
 
 ## 5. 拓扑关系
 
-| 关系 | 端点 | 通用属性 | 业务属性 | 来源 |
-|---|---|---|---|---|
-| `power_upstream` | `rpp(uuid) → ups_group(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `rpp.ups_group_id` |
-| `member_of` | `ups(uuid) → ups_group(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `ups.ups_group_id` |
-| `power_upstream` | `ups_group(uuid) → transformer(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `ups_group.transformer_id_up` |
+| Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
+|---|---|---|---|---|---|
+| `power_relation` | `power_upstream` | `rpp(uuid) → ups_group(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `rpp.ups_group_id` |
+| `power_relation` | `member_of` | `ups(uuid) → ups_group(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `ups.ups_group_id` |
+| `power_relation` | `power_upstream` | `ups_group(uuid) → transformer(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `ups_group.transformer_id_up` |
 
 关系身份规则：
 
 - 上述来源均没有独立关系 UUID。
-- 每条 `relation_id` 由关系类型和两端完整逻辑身份确定性生成。
+- 每条 `relation_id` 由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。
 - 两端完整逻辑身份必须包含 `scope_id`、`source_id`、对象类型和稳定 UUID。
 - 不使用组标签、设备标签或数字引用直接作为最终关系身份。
 
@@ -345,9 +345,9 @@ transformer_id_up  = 1588
 
 ```text
 rpp(9f283fc3-d029-4a4d-b312-d23b5c2c4cd5)
-  -[power_upstream]->
+  -[power_relation {relation_kind: "power_upstream"}]->
 ups_group(1461bad1-8c8b-47c8-ad37-dc12399bdeb4)
-  -[power_upstream]->
+  -[power_relation {relation_kind: "power_upstream"}]->
 transformer(8ff80fda-20d5-4193-b16e-8808d87108a5)
 
 ups(ddc7cfc5-1b84-43e9-8ba7-78685d38f4b1) ─┐
