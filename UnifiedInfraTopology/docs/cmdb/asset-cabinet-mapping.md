@@ -42,41 +42,38 @@
 4. 机柜作为设备位置和供电关系的连接实体；数据中心建立轻量图节点，POD 建立统一逻辑归属节点，楼栋、房间和模组暂不建立独立图节点。
 5. 机柜接口补充机柜属性，本项目决定使用来源 UUID 与设备关联，不以名称作为永久身份；当前单份机柜样例不能独立证明 UUID 跨时间不变。
 6. ARP/LLDP 是网络发现证据，不等于 CMDB 资产登记；不能把每个 ARP 端点直接当作服务器资产。
-7. 不将所有 CMDB 字段搬进 Nebula；本阶段列出需保留的信息，具体存储位置后续确定。
+7. 不将所有 CMDB 字段搬进 Nebula；只持久化设备节点和已解析拓扑关系，建边别名与来源引用仅在完整同步期间临时使用，详见 [device.md](../model/entities/device.md)。
 
 ## 3. 设备字段映射
 
 | CMDB 字段 | 含义及整理规则 | 状态 |
 |---|---|---|
 | `uuid` | `device_view` 顶层记录 UUID 会变化；不进入设备领域模型、业务存储或图节点，也不参与身份、关系或冲突判断 | 已确认 |
-| `inst_id` | 保留为 CMDB 实例标识，辅助查询和一致性核对，不作为最终设备身份 | 已确认 |
-| `device_sn` | 所有设备统一使用的最终身份；唯一、永久不变且退役后不复用 | 已确认 |
-| `device_uuid` | 服务器为空；网络设备中固定不变，作为 `local_device_uuid` 解析端口归属的别名，最终仍解析到 `device_sn` | 已确认 |
-| `device_id` | 样例中与 `inst_id` 相同，但不推定所有记录恒等 | 待确认 |
-| `parent_type` / `parent_type_id` | 资产大类，例如服务器、网络设备；保留来源 ID 与名称，规范分类映射待定 | 样例验证 |
-| `device_type` / `device_type_id` | 子类，例如通用服务器、盒式交换机，不与大类混用 | 样例验证 |
-| `role` | 角色，例如网络设备的 `T1`，不是资产大类 | 样例验证 |
-| `device_name` / `host_name` | 设备名与主机名分别保留；显示名称优先级另定 | 建议 |
-| `service_status` / `service_status_id` | 服务状态；不能不经映射就视为资产生命周期或删除状态 | 待确认 |
-| `cabinet_uuid` / `idc_cabinet_id` / `cabinet` | 机柜 UUID、实例引用和展示名称 | 样例验证 |
-| `building_uuid` / `building_id` 及名称字段 | 楼栋引用及展示信息 | 字段存在；完整关系待空间接口确认 |
-| `room_uuid` / `room_id` / `room` | 房间引用及展示信息 | 字段存在；完整关系待空间接口确认 |
-| `idc_id` / `idc` / `idc_module_id` | IDC 与模组引用；不要把模组和楼栋直接合并 | 待空间接口确认 |
-| `u_position` | 设备在机柜中的位置，如 `11--12`；先保留原值，区间解析规则待确认 | 样例验证 |
-| `height` | 设备高度，与机柜总 U 数不同 | 样例及业务说明 |
-| `pod_uuid` / `pod_id` / `pod_name` / `plane` | 管理面 POD 归属；优先通过 UUID 解析，数字 ID 与名称用于交叉校验 | 样例与 POD API 已验证 |
-| `compute_plane[]` / `compute_pod_id[]` / `compute_pod_name[]` | 计算面 POD 多值归属；`compute_plane[].pod_id` 解析 `pod.inst_id`，其余数组用于核对 | 样例与 POD API 已验证 |
-| `logic_idc_uuid` / `logic_idc_id` | 逻辑 IDC 引用；当前不据此推定 POD 到物理数据中心的关系 | 字段存在，关系待确认 |
-| `device_ip_info`、`eth_ip`、`ilo_ip`、`management_ip` 等地址字段 | 规范化后作为设备内嵌属性；`device_ip_info` 为主来源，顶层重复字段仅补全和校验；IP 不作为设备永久身份 | 已确认 |
-| 负责人、部门、业务、应用等 | 按查询需要保留管理属性，不默认全部建立图节点 | 建议 |
+| `inst_id` | 仅在本轮同步内存中用于查询、引用解析和一致性核对；不持久化 | 已确认 |
+| `device_sn` | 设备节点最终身份；唯一、永久不变且退役后不复用 | 已确认 |
+| `device_uuid` | 仅在本轮同步内存中将 `local_device_uuid` 解析到网络设备 `device_sn`；不持久化 | 已确认 |
+| `device_id` | 已确认等于 `inst_id`，不重复保存 | 已确认 |
+| `parent_type_id` | 设备节点必存的大类 ID：52 服务器、53 存储设备、54 网络设备、55 其他设备 | 已确认 |
+| `device_type_id` | 设备节点必存的子类型 ID；通过类型字典校验其父 ID | 已确认 |
+| `parent_type` / `device_type` | 名称不进入设备节点，展示时通过类型字典解析 | 已确认 |
+| `role` | 设备节点保留的网络角色，例如 T0/T1；非网络设备允许为空 | 样例验证 |
+| `device_name` / `host_name` | 采集时按 `device_name → host_name → device_sn` 生成设备节点 `name`，不重复保存两个来源字段 | 已确认 |
+| `service_status` / `service_status_id` | 当前分析拓扑不需要，不进入结构化当前模型 | 已确认 |
+| `cabinet_uuid` | 本轮同步时用于生成 `device → cabinet`，建边后不持久化该来源引用 | 已确认 |
+| `pod_uuid` / `plane` | 本轮同步时用于生成带 `plane` 属性的 `device → pod`；只持久化边和 `plane` | 已确认 |
+| `compute_plane[]` | 本轮同步时逐项生成计算面 POD 关系，不复制到设备节点或 MySQL | 已确认 |
+| `u_position` / `u_start` / `u_end` | 当前不表达 U 位，不进入结构化当前模型 | 已确认 |
+| `power` / `rated_power` | 仅为机器功耗或规格，当前拓扑分析不需要，不保存 | 已确认 |
+| `device_ip_info`、`eth_ip`、`ilo_ip`、`management_ip` | 采集时规范化、去重为设备节点 `all_ips[]`；详细地址属性当前不保存 | 已确认 |
+| 厂商、型号、资产、部门、业务、应用及 GPU 汇总 | 当前不需要，列入后续扩展字段 | 已确认 |
 
 来源主标识应包含 CMDB 来源命名空间和对象类型。设备身份键为 `source_id:device:device_sn`；`inst_id` 按对象类型解析，不能把不同对象类型下的相同数字视为同一实体。
 
 设备关系端点统一使用 `device_sn`。网络端口的设备别名 UUID 先解析到网络设备 `device_sn`；机柜、POD、供电对象等其他资源继续使用各自已确认的稳定 UUID。只有数字 ID 的非设备引用按目标类型查 `inst_id → 稳定身份` 映射后关联。
 
-六条 `device_view_demo.json` 已核对：`device_ip_info.eth/ilo` 与顶层 `eth_ip*`、`ilo_ip*` 重复，且前者同时保留网关、掩码、MAC、端口和 VLAN 信息。设备地址以 `device_ip_info` 为主来源，顶层地址字段只在主来源缺失时补全，并用于一致性校验；空 IP 不写入。
+六条 `device_view_demo.json` 已核对：`device_ip_info.eth/ilo` 与顶层 `eth_ip*`、`ilo_ip*` 重复。采集时以 `device_ip_info` 为主来源，顶层字段只用于补全和校验；空 IP 过滤后，将有效地址去重为设备节点 `all_ips[]`。
 
-领域模型和 API 将有效地址规范化为 `device_ip_info[]`，每项保留 `type`、`purpose`、`ip`、`gateway`、`mask`、`mac`、`port`、`vlan_id`，同时在设备上维护去重后的 `all_ips[]`。例如服务器带外地址由 `device_ip_info.ilo[].ip` 规范为 `purpose=out_of_band`；输入该 IP 可以反查设备 `device_sn`。为保证精确 IP 查询效率，MySQL 维护 `IP → resource_kind/resource_identity/purpose` 的辅助倒排索引；设备的 `resource_identity` 为 `device_sn`。该索引不是图节点，IP 也不作为设备身份。
+当前不保存网关、掩码、MAC、端口、VLAN、地址类型和用途。精确 IP 查询直接匹配设备节点 `all_ips[]`；IP 不作为设备身份。
 
 `device_ip_info.*.port` 可以为空；不能仅凭这些记录构造完整接口、聚合成员或物理连线。普通服务器上联改由 `server_tor_ports` 建立：先以 `sn` 解析 ToR 设备，再在该设备范围内以 `ports[]` 匹配 `port_view.port_name`，最终形成 `device → interface` 的 `server_uplink` 关系。该来源没有服务器本端端口身份，因此不建立服务器端口节点。
 
@@ -100,21 +97,15 @@
 
 ## 5. 机柜需保留的信息
 
-以下清单包含用户标注的关注字段，以及身份、状态和关联核对所需字段；不代表全部必须作为图属性。
+机柜采用已确认的最小拓扑模型；完整字段、关系及同步约定以 [cabinet.md](../model/entities/cabinet.md) 为准。
 
 | 分组 | 来源字段 | 说明 |
 |---|---|---|
-| 身份 | `uuid`、`inst_id`、`id` | 建议 UUID 为来源主标识；机柜标识稳定性及 `id=inst_id` 的全局保证待确认 |
+| 身份 | `uuid`、`inst_id` | UUID 为最终身份；`inst_id` 只用于查询、引用解析和来源追溯；`id` 不保存 |
 | 编码与展示 | `code`、`dc_colo_rack`、`isp_rack_code` | 机柜编码、建筑/房间/机架组合展示、运营商编码 |
-| 空间引用 | `idc_id`、`phy_idc_id`、`phy_building_id`、`phy_room_id`、`idc_module_id`、`idc_building_structure_id` | 保留各自含义，不凭名称推定完整层级 |
-| 原始引用别名 | `building_full_name`、`room_full_name` | 返回的是数字，不能当作名称；样例分别等于楼栋 ID、房间 ID |
-| 行列与机架 | `idc_rows_code`、`rack`、`rack_column_code`、`rack_row`、`rack_size` | `idc_rows_code` 为机柜列编码 ID；`rack_size` 含义待确认，不当作总 U 数 |
-| 容量与数量 | `u_num`、`spare_u_num`、`used_u_num`、`device_num`、`server_num`、`network_device_num` | 总 U 数、剩余/已用 U 位与设备统计；不替代设备实际归属 |
-| 管理信息 | `jira_key`、`service` | 保留来源值；`jira_key` 样例为字符串；服务关联另核实 |
-| 状态 | `is_delete`、`status`、`ops_status`、`power_status`、`power_state` | 删除、分配、运维、供电状态不能合并为一个生命周期枚举 |
-| 类型 | `usage_type` | 0 其他、1 服务器机柜、2 网络机柜；机柜分类不限制其中只能出现单一设备类型 |
-| 逻辑归属 | `pod_id`、`pod_ids` | 样例 `pod_id=0`、`pod_ids=[914]`；不能只看单值字段就认定没有 POD |
-| TOR 规划 | `rack_tor_fix`、`rack_tor_inter_speed`、`rack_tor_type` | TOR 所在机柜、TOR 端口运行速率、TOR 架构 |
+| 空间引用 | `idc_id`、`phy_building_id`、`phy_room_id`、`idc_module_id`、`idc_building_structure_id` | `idc_id` 用于数据中心关系；其余数字 ID 当前只保存，不凭名称推定完整层级；`phy_idc_id` 冗余并丢弃 |
+| 行列与机架 | `idc_rows_code`、`rack`、`rack_column_code`、`rack_row` | `idc_rows_code` 为机柜列编码 ID；当前不保存容量含义不明确的 `rack_size` |
+| POD 标签 | `pod_ids` | 逐项解析到 `pod.inst_id` 并建立机柜标签关系；`pod_id` 无业务意义并丢弃 |
 | 供电引用 | `row_switch_id_A`、`row_switch_id_B` | **A/B 路列头柜引用，目标为 `idc_RPP.inst_id`**；保留路别。A 路样例已验证，B 路按同类字段处理；不额外创建空开实体 |
 
 ### TOR 信息的边界
@@ -137,17 +128,18 @@
 本轮建立数据中心、机柜和统一 POD 节点。数据中心作为资产查询、同步范围和顶层物理归属；机柜继续连接设备位置与 A/B 路供电链路；POD 表达设备在管理面、计算面等平面中的逻辑归属。楼栋、房间、模组和逻辑 IDC 暂不建立独立节点，先保留稳定引用及展示字段。
 
 1. 数据中心、机柜和 POD 均使用来源 UUID 建立身份；`inst_id` 仅用于来源引用解析与交叉校验。
-2. 设备通过 `cabinet_uuid` 关联机柜，`idc_cabinet_id` 用于交叉校验。
-3. 机柜的 `idc_id`、`phy_idc_id` 解析到 `data_center.inst_id`，最终使用两端 UUID 建立 `cabinet → data_center` 的 `located_in` 关系；两个来源字段不一致时标记冲突，不静默择一。
-4. 管理面 POD 优先使用 `device.pod_uuid → pod.uuid`；同时校验 `pod_id → inst_id`、`pod_name → name`、设备 `plane=管理面` 与 `pod.plane=1`。
-5. 计算面 POD 逐项使用 `device.compute_plane[].pod_id → pod.inst_id`，并通过 `compute_pod_id[]`、`compute_pod_name[]` 及 `building_id → phy_building_id` 交叉校验；数组不得只取第一项。
-6. `compute_plane` 是计算面 POD 归属明细，不建立 `compute_plane` 节点。管理面与计算面引用解析到同一类 `pod` 节点，以 `pod.plane` 区分平面。
-7. 同一设备、同一 POD 被多个来源字段重复引用时，只生成一条 `member_of` 关系，并合并记录来源字段；引用冲突时标记 `conflict`。
-8. 设备位置属性与 `device → cabinet` 关系、机柜 IDC 引用与 `cabinet → data_center` 关系、设备 POD 引用与 `device → pod` 关系均由同一轮同步生成。
-9. 位置和 POD 名称随来源更新，资源身份不因搬迁或改名变化；`u_position`、`u_start`、`u_end` 作为设备上架关系属性，`height` 仍为设备属性。
-10. 未上架或未分配 POD 的设备允许缺少相应关系；引用缺失、目标未采集和来源删除必须分开记录。
-11. 房间和楼宇当前只用于筛选、展示和位置一致性检查；没有房间级故障、制冷、消防或门禁关系需求前，不为其增加节点与同步成本。
-12. `pod.idc_logic_id` 与设备 `logic_idc_id` 的样例值不一致，当前不生成 `pod → data_center` 或 `pod → logic_idc` 关系。
+2. 设备通过 `cabinet_uuid` 关联机柜；当前不保存 `idc_cabinet_id`、机柜展示名或 U 位信息。
+3. 机柜只使用 `idc_id → data_center.inst_id` 解析目标 UUID并建立 `cabinet → data_center` 的 `located_in` 关系；`phy_idc_id` 冗余并完全丢弃。
+4. 机柜逐项使用 `pod_ids[] → pod.inst_id` 建立 `cabinet → pod` 的 `tagged_with` 关系；`pod_id` 无业务意义并完全丢弃。该标签关系不能推导柜内设备的 POD 归属。
+5. 管理面 POD 优先使用 `device.pod_uuid → pod.uuid`；同时校验 `pod_id → inst_id`、`pod_name → name`、设备 `plane=管理面` 与 `pod.plane=1`。
+6. 计算面 POD 逐项使用 `device.compute_plane[].pod_id → pod.inst_id`，并通过 `compute_pod_id[]`、`compute_pod_name[]` 及 `building_id → phy_building_id` 交叉校验；数组不得只取第一项。
+7. `compute_plane` 是计算面 POD 归属明细，不建立 `compute_plane` 节点。管理面与计算面引用解析到同一类 `pod` 节点，以 `pod.plane` 区分平面。
+8. 同一设备、同一 POD 被多个来源字段重复引用时，只生成一条 `member_of` 关系；引用冲突时不生成边，并计入本轮同步诊断。
+9. 设备位置属性与 `device → cabinet` 关系、机柜 IDC 引用与 `cabinet → data_center` 关系、机柜 POD 标签与 `cabinet → pod` 关系、设备 POD 引用与 `device → pod` 关系均由同一轮同步生成。
+10. 位置和 POD 名称随来源更新，资源身份不因搬迁或改名变化；当前只表达设备所属机柜，不保存 U 位和设备高度。
+11. 未上架或未分配 POD 的设备允许缺少相应关系；引用缺失、目标未采集和来源删除必须分开记录。
+12. 房间和楼宇当前只用于筛选、展示和位置一致性检查；没有房间级故障、制冷、消防或门禁关系需求前，不为其增加节点与同步成本。
+13. `pod.idc_logic_id` 与设备 `logic_idc_id` 的样例值不一致，当前不生成 `pod → data_center` 或 `pod → logic_idc` 关系。
 
 本节只确定模型边界；接口兼容、查询切换和上层空间扩展需在实现阶段完成。
 
@@ -155,10 +147,10 @@
 
 - `device_view.md` 的响应样例含非法 JSON 转义，不能直接作为严格 JSON 测试夹具。本次关联校验仅在内存中规范非法转义后解析，未修改原始文档；后续接入前需取得有效 JSON 样例。
 - `device_view.md` 与 `device_view_demo.json` 中六条记录的 `inst_id`、SN 和大部分业务字段可对应，但同一 `inst_id` 的顶层 `uuid` 全部不同。用户已确认该字段会变化，因此设备模型不保存它，也不再将其差异视为身份冲突。
-- `device_uuid` 在服务器中为空，在网络设备中固定不变。端口样例的 `local_device_uuid` 匹配网络设备 `device_uuid=795fa397-...`；端口归属先用该别名定位网络设备，再以 `local_device_sn/device_sn` 和 `local_device_id/inst_id` 交叉校验，最终使用 `device_sn` 建立设备端关系。
-- 五台服务器的 `server_tor_ports` 均有值，但其 ToR SN 和端口未出现在当前设备、端口样例中；普通服务器上联规则尚未形成样例闭环，只能保留待解析引用。
-- 8 条 GPU 上联均可匹配 GPU 卡及 GPU 侧端口/槽位，但所引用的 ToR 设备和端口未提供，且 `gpu_ip` 全为空；ToR 端解析和非空 GPU IP 归属仍待补样例验证。
-- 端口组旧资料把 `group_subtype=6` 列为二级分类，并写有不同一级类型调用不同接口；用户最新确认分别为三级字段和统一 `port_group` 查询。当前仅有 `group_type=3`、`port_group_link_id=2328` 的样例，其他类型需联调验证。
+- `device_uuid` 在服务器中为空，在网络设备中固定不变。接口归属和同步规则以 [interface.md](../model/entities/interface.md) 为准：优先直接使用 `local_device_sn`；缺少 SN 时按稳定 `local_device_uuid` 查询设备 API，数字 `local_device_id` 不作为必要索引或校验字段。
+- 五台服务器的 `server_tor_ports` 均有值。补充的 `device_server_tor_demo.md` 已为 SN `21980114493GN1002115`、`21980114493GN1001855` 及各自端口 `25GE1/0/26` 提供设备和端口闭环；引用这些精确组合的上联可以解析，其他组合按本轮全量数据实际解析，失败时不生成边并计入同步诊断。
+- 8 条 GPU 上联均可匹配 GPU 卡及 GPU 侧端口/槽位；记录已提供 `tor_sn + tor_port`，同步时据此查询 `port_view` 并解析稳定 `port_uuid`。`gpu_ip` 当前全为空，不进入 GPU 节点。
+- 端口组旧资料把 `group_subtype=6` 列为二级分类，并写有不同一级类型调用不同接口；用户最新确认分别为三级字段和统一、灵活的 `port_group` 查询。可直接按稳定 `port_group_uuid` 使用 `condition.uuid` 查询，不要求先保存数字组 ID。
 - 机柜请求条件仍为旧样例的 `idc_id=1`、`idc_module_id=58`、`phy_room_id=213`，不对应当前响应的 `451/100/889`。
 - 机柜文档末尾关注字段清单保留旧样例值；它用于说明字段，不作为第二条实际机柜记录。
 - 复杂查询中 `status` 为数字，但字段说明及响应是字符串枚举；筛选值需确认。
@@ -207,14 +199,14 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 
 ### 最小保留字段
 
-所有供电对象保留 `obj_id`、`uuid`、`inst_id`、`code`、`idc`、`building`、`module` 和可用的来源更新时间。按已确认决策，用资源 UUID 标识对象及最终关系；本节数字 ID 链路用于说明来源解析，不是最终存储关系键。
+供电对象均使用资源 UUID 标识节点及最终关系；各实体最终保留字段以对应实体文档为准。本节数字 ID 链路用于说明来源解析，不是最终关系端点身份。
 
 | 对象 | 关联与主要属性 | 说明 |
 |---|---|---|
-| 列头柜 `idc_RPP` | `idc_room`、`ups_group`、`transformer_group_a`、`row_in_num`、`row_power_type`、`row_rated_current`、`row_rated_voltage` | 编码 `F2_IT06AC-8A`；属性单位和枚举未说明的保留原值，不自行解释 |
-| UPS组 `idc_ups_group` | `transformer_id_up`、`ups_group_num`、`ups_group_id_tag`、`ups_external_bypass` | 编码 `F2-UPS-A1`；组数量 3 与三条成员样例相符；旁路字段不等于实时旁路运行状态 |
-| UPS设备 `idc_ups` | `ups_group`、`transformer_id_up`、`ups_brand`、`ups_type`、`ups_capacity`、`ups_group_id_tag` | 成员由 `ups_group` 关联，不用标记字符串关联；容量单位待确认 |
-| 变压器 `idc_transformer` | `standby_transformer`、`transformer_brand`、`transformer_type`、`transformer_capacity` | 编码 `1T203`；本阶段供电链路上游边界 |
+| 列头柜 `idc_RPP` | `inst_id`、`code`、`idc`、`ups_group`、`transformer_group_a` | 详细规则见 [rpp.md](../model/entities/rpp.md)；`idc` 只为后续数据中心关系预留，当前不解析；位置和电气参数不保存 |
+| UPS组 `idc_ups_group` | `inst_id`、`code`、`idc`、`transformer_id_up` | 详细规则见 [ups_group.md](../model/entities/ups_group.md)；`idc` 只为后续数据中心关系预留；成员数量通过关系计算，组配置字段不保存 |
+| UPS设备 `idc_ups` | `inst_id`、`code`、`idc`、`ups_group`、`transformer_id_up`、`ups_brand`、`ups_type`、`ups_capacity` | 详细规则见 [ups.md](../model/entities/ups.md)；`idc` 仅为后续关系预留，设备级变压器引用只用于与组上游校验 |
+| 变压器 `idc_transformer` | `inst_id`、`code`、`idc`、`standby_transformer`、`transformer_brand`、`transformer_type`、`transformer_capacity` | 详细规则见 [transformer.md](../model/entities/transformer.md)；本阶段主供电链上游边界，备用关系不计入当前供电路径 |
 
 电池参数、采购和维护日期不作为本阶段关系构建的必要输入。变压器的 `up_Feeder_id`、`up_power_line_id` 等上游信息不在本阶段展开成实体或关系。
 
@@ -230,7 +222,7 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 
 **已确定接入方向：直接读取上述十一类 CMDB API，不实现旧项目的数据库直读路径。**
 
-职责建议：`internal/adapter` 处理鉴权、分页、响应解析与来源字段转换；同步 service 处理身份绑定和关系校验；worker 驱动任务；repository 承担本项目存储。当前基础 worker/CMDB adapter 仍是未实现业务的占位结构，此次不改变运行行为。
+职责建议：`internal/adapter` 处理鉴权、分页、响应解析与来源字段转换；同步 service 在本轮内存中处理身份映射和关系校验；worker 驱动任务；repository 只写入图节点、已解析关系及 MySQL 同步控制状态。当前基础 worker/CMDB adapter 仍是未实现业务的占位结构，此次不改变运行行为。
 
 ### 已确认的同步约定
 
@@ -244,7 +236,7 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 建议的同步步骤：
 
 1. 按配置范围分页采集各类对象，保留来源标识及类型；API `idc_id` 与 `idc` 等筛选字段按对象分别映射。
-2. 设备按 `device_sn` 去重并建立 `inst_id → device_sn` 映射；网络设备额外建立 `device_uuid → device_sn` 别名索引。机柜、列头柜、UPS 组和成员等其他对象按类型建立 `inst_id → 稳定 UUID` 映射。端口的 `local_device_uuid` 先匹配 `device_view.device_uuid`，再以 `local_device_sn/device_sn`、`local_device_id/inst_id` 交叉校验，最终取得设备 `device_sn`。采集顺序不用于推断关系。
+2. 各实体的身份解析和临时数据规则以对应 `model/entities/*.md` 为准。接口按 [interface.md](../model/entities/interface.md) 直接使用稳定 `port_uuid`、设备 SN 或 UUID 查询，不要求保存数字端口 ID、端口组 ID 或整轮别名索引。其他只有数字引用的对象仍按其实体约定解析，采集顺序不用于推断关系。
 3. 保留 A/B 路属性；重复同步更新同一身份和关系，不因分页、重试或改名生成重复实体。
 4. 某次采集失败、分页不完整或权限不足，不作为来源删除，也不发布为完整同步成功。跨 API 不假设存在一致快照。
 5. 引用目标不在本批数据中时保留未解析状态，不伪造对象或故障结论。缺少目标可能来自采集范围，不能直接当作资产删除。
@@ -279,24 +271,27 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 
 ## 10. 网络设备端口及端口组
 
+本节是跨实体映射摘要。接口字段、端口组空值和同步约定以 [interface.md](../model/entities/interface.md) 为准。
+
 ### 端口身份、归属与连接
 
 | 来源字段 | 用途 | 证据与边界 |
 |---|---|---|
-| `port_uuid` / `local_interface_uuid` | 端口资源身份 | 十条样例两字段一致；按此建立接口节点 |
-| 顶层 `uuid` | 保留为端口视图来源记录标识 | 与 `port_uuid` 不同，不用它代替对端所引用的接口 UUID |
-| `inst_id` / `port_id` / `local_interface_id` | 端口数字引用解析 | 样例一致，转换到端口 UUID，而非视图顶层 UUID |
-| `device_uuid` / `local_device_uuid` | 所属网络设备的稳定来源别名 UUID | 匹配 `device_view.device_uuid`；再结合 `local_device_sn → device_view.device_sn` 和 `local_device_id → device_view.inst_id` 交叉校验，最终解析为设备 `device_sn`，不以管理 IP 作为归属键 |
-| `remote_interface_uuid` / `remote_device_uuid` | 对端端口及设备引用 | `remote_interface_uuid` 解析端口；`remote_device_uuid` 按网络设备 `device_uuid → device_sn` 别名规则解析，不代表实时可达性 |
-| `port_name` / `port_type` | 名称及物理/虚拟类别 | `physics`、`virtual`；Loopback、Null0、聚合接口也保留 |
+| `port_uuid` / `local_interface_uuid` | 端口资源身份 | 十条样例两字段一致；最终接口身份使用 `port_uuid` |
+| 顶层 `uuid` | 端口视图来源记录标识 | 与 `port_uuid` 不同，当前目标模型不保存 |
+| `inst_id` / `port_id` / `local_interface_id` | 来源数字别名 | 不保存，也不作为默认解析索引；稳定 `port_uuid` 已可直接查询和关联 |
+| `local_device_sn` | 所属网络设备身份 | 优先直接建立 `device(device_sn) → interface(port_uuid)` |
+| `device_uuid` / `local_device_uuid` | 所属设备的稳定查询条件 | 仅在缺少 SN 时用于查询设备 API 取得 `device_sn`，不保存 UUID 别名索引 |
+| `remote_interface_uuid` / `remote_device_sn` / `remote_device_uuid` | 对端引用 | 优先使用稳定端口 UUID 和设备 SN；只有缺少 SN 时才按设备 UUID 查询，不保存数字对端 ID |
+| `port_name` / `port_type` | 名称及物理/虚拟类别 | `port_type` 按 CMDB 原值保存：`physics` 或 `virtual` |
 | `port_speed` / `port_operation_status` | 速率及运行状态原值 | 单位和枚举未说明前不自行转换或解释 |
-| `local_if_index` / `snmp_ifindex` | 接口索引 | 作为属性保留，不替代 UUID |
+| `local_if_index` / `snmp_ifindex` | 接口索引 | 当前拓扑身份、归属和连线均不依赖，暂不保存 |
 
 ```text
 设备 SN ─拥有→ 本端口 UUID ─CMDB连接信息→ 对端口 UUID ←拥有─ 对端设备 SN
 ```
 
-对端为空时只保留端口；对端尚未采集到时保留待解析引用，不伪造完整对端资产。两端上报同一连接时去重，但不同端口对不能因设备相同而合并。
+对端为空时只保留端口。对端尚未解析时本轮不生成连接边并记录诊断，不把待解析数字 ID 或别名写入图。两端上报同一连接时去重，但不同端口对不能因设备相同而合并。
 
 ### 服务器上联不建立本端端口
 
@@ -306,24 +301,34 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 服务器 SN ─server_uplink→ ToR 端口 UUID ←owns_interface─ ToR 设备 SN
 ```
 
-五台服务器样例均有 `server_tor_ports`，唯一网络设备样例为空。同步规则是先以 `server_tor_ports[].sn` 匹配 `device_view.device_sn`，再在已解析 ToR 设备范围内以每个 `ports[]` 值匹配 `port_view.port_name`。但是当前提供的设备与端口样例不包含这些服务器所引用的 ToR SN 和端口，因此只能验证来源字段和解析规则，不能验证已解析的 `server_uplink` 端点；本批数据应保留为 `unresolved`。关系保留来源 ToR IP、IP 类型、AS 号、端口名和解析状态；没有服务器本端端口身份时，不生成服务器 `interface` 节点，也不生成虚假的 `links_to`。
+同步时直接以 `server_tor_ports[].sn` 和每个 `ports[]` 值查询或匹配 `port_view.local_device_sn + port_name`，取得 `port_uuid`，不要求保存 `SN + 端口名 → UUID` 内存索引。`device_server_tor_demo.md` 已验证两组 `SN + 25GE1/0/26 → port_uuid` 的闭环，因此引用这些精确组合的数据可生成 `server_uplink`；其他组合按实际 API 查询结果处理。来源 ToR IP、IP 类型和 AS 号不保存。没有服务器本端端口身份时，不生成服务器 `interface` 节点，也不生成虚假的 `links_to`。
 
 ### 端口组：链路级与本端成员级分开
 
-| 字段 | 当前采用含义 | 样例与证据边界 |
+| 字段 | 当前采用含义 | 保存规则 |
 |---|---|---|
-| `group_id` / `group_uuid` | 端口组链路 ID / UUID | `2328` / `4564510b-78bb-9bcb-5eaf-4e73c9ab1e39` |
-| `port_group_id` / `port_group_uuid` | 本端端口组成员的 `inst_id` / UUID | `4212` / `bd30c202-4f2f-579e-64a5-5527e5d4d815` |
-| `port_group_name` | 本端端口组名称 | 只作展示，不用名称判断身份 |
-| `group_type` | 一级分类 | 1=专线（DCI），2=出口（POP），3=机房内端口组（inner_link） |
-| `port_group_type` | 二级分类 | 样例 `13`，名称“POD上联” |
-| `group_subtype` | 三级分类，按用户最新说明 | 样例 `6`；原始补充称链路子类型，不能与二级编号合并 |
+| `group_id` / `group_uuid` | 端口组链路 ID / UUID | 只保存稳定 `group_uuid`，不保存 `group_id` |
+| `port_group_id` / `port_group_uuid` | 本端端口组成员的 `inst_id` / UUID | 只保存稳定 `port_group_uuid`，不保存 `port_group_id` |
+| `port_group_name` | 本端端口组名称 | 保存作展示，不用名称判断身份 |
+| `group_type` | 一级分类 | 保存 CMDB 原始编号；1=专线（DCI），2=出口（POP），3=机房内端口组（inner_link） |
+| `port_group_type` | 二级分类 | 保存 CMDB 原始编号；样例 `13`，名称“POD上联” |
+| `group_subtype` | 三级分类，按用户最新说明 | 保存 CMDB 原始编号；样例 `6`，不与二级编号合并 |
 
-**查询当前样例端口组链路的全部成员：调用 `port_group` 接口，条件 `port_group_link_id = group_id`。**样例传入 `2328`，不是本端成员 ID `4212`，并返回两条成员。用户最新说明是不再按三种一级类型调用不同接口；但旧 `device_netwok_group.md` 仍写有“不同接口”，且当前只提供 `group_type=3` 的调用样例，因此 `group_type=1/2` 的实际接口适用性仍需联调验证。
+查询端口组成员时，直接使用 `port_view.port_group_uuid` 调用 `port_group` API：
+
+```json
+{
+  "condition": {
+    "uuid": "bd30c202-4f2f-579e-64a5-5527e5d4d815"
+  }
+}
+```
+
+该查询返回本端成员及其 `port_group_link_id`；若需要同一链路的全部成员，再立即以返回的 `port_group_link_id` 查询。这个数字只存在于当前请求处理过程，不作为同步内存状态，也不写入图。无需保存 `group_id` 或 `port_group_id` 才能完成查询。三种一级类型使用同一灵活查询接口，不再沿用旧文档中的“不同接口”限制。
 
 原始类型表把值 6 的“POD上联”写为二级分类；本文按用户最新确认将来源字段 `group_subtype` 作为三级字段，同时将 `port_group_type` 保留为二级字段。保持三套字段及原始编号独立，不根据同名“POD上联”推断编号等价，也不在缺少完整字典时强行推导分类父子关系。
 
-**当前决策：端口保存组标识及分类属性，不单独建立端口组节点。**本项目可基于已同步属性做组合过滤；来源 API 当前只验证了按数字 `group_id` 查询成员，尚未验证按 `group_uuid`、`port_group_uuid` 或多字段组合查询。未来若需独立组生命周期或空组查询，再评估组实体，当前不增加该范围。
+**当前决策：端口仅保存 `group_uuid`、`port_group_uuid`、`port_group_name`、`group_type`、`port_group_type` 和 `group_subtype`，不单独建立端口组节点。**端口未加入端口组时，来源空字符串和分类值 `0` 统一写为 `NULL`。未来若需独立组生命周期或空组查询，再评估组实体，当前不增加该范围。
 
 ### 不与 LAG 或硬件单元混同
 
@@ -344,7 +349,7 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 | `gpu_uplink.tor_sn = device_view.device_sn` | 上联网络设备 `device_sn` |
 | 已解析的上联设备 `device_sn` + `gpu_uplink.tor_port = port_view.port_name` | 上联网络端口 `port_uuid`；不能仅按端口名跨设备匹配 |
 
-样例的 8 张卡与 8 条上联记录已核对：服务器 SN、GPU SN、GPU 侧端口名（`conn_ports` ↔ `gpu_port`）与槽位均一一对应。当前样例未提供这 8 条记录所引用的 ToR 设备和端口，因此只能解析 GPU 端，不能验证 `tor_sn + tor_port → port_uuid` 的结果；ToR 端应保留为 `unresolved`。设备 SN 既是来源匹配键，也是最终设备身份；未匹配对象不伪造身份。
+样例的 8 张卡与 8 条上联记录已核对：服务器 SN、GPU SN、GPU 侧端口名（`conn_ports` ↔ `gpu_port`）与槽位均一一对应。上联记录已提供 `tor_sn + tor_port`；同步时直接以该组合查询 `port_view` 并取得稳定 `port_uuid`，解析成功后生成上联边。设备 SN 既是来源匹配键，也是最终设备身份；未匹配对象不伪造身份。
 
 ### 暂不建立网卡实体
 
@@ -356,7 +361,7 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 ```
 
 - GPU 保留 `conn_ports` 列表；上联关系保留 `gpu_port`、`gpu_port_speed`、`server_port_speed`、`tor_port_speed`、`bond_name` 及来源信息。
-- 按当前已确认的数据范围，GPU 卡 IP 的候选来源字段是 `gpu_uplink.gpu_ip`。按 `gpu_sn → server_gpu.parts_sn` 解析 GPU UUID 后，拟将非空 `gpu_ip` 合并到 GPU 的 `ip_addresses[]` 并去重；当前 8 条样例全部为空字符串，因此只能确认字段存在，尚未通过非空样例验证其值格式和归属语义。关系上仍保留原始 `gpu_ip` 以便溯源。
+- `gpu_uplink.gpu_ip` 是可选上联来源属性。当前 8 条样例全部为空字符串，因此不进入 GPU 节点；取得非空样例并确认卡级地址语义后再评估节点地址字段。
 - `gpu_uplink.uuid` 用于关系记录身份与溯源，不是 GPU UUID。多条上联不能仅因 GPU 与交换机相同就合并。
 - 网卡端口名只在所属服务器范围内识别；不为 `ib8` 虚构全局 UUID，不据此创建独立网卡/网卡端口节点。
 - 以后有网卡身份及管理需求时，可细化为 GPU → 网卡/网卡端口 → 交换机端口；保留当前上联查询作为汇总表达，GPU 与交换机端口身份不变。
@@ -364,7 +369,7 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 
 ## 12. 最终节点、关系与属性清单
 
-本节作为下一版 Go 领域模型、API 契约和 Nebula schema 的输入。当前 `docs/schema/current_graph.ngql` 中的地址节点及设备地址关系不再作为目标模型；设备和 GPU 地址改为内嵌属性，精确 IP 查询由 MySQL 辅助倒排索引解析资源稳定身份后再查询图。本项目开发空间允许在确认后按本节重建。
+本节作为下一版 Go 领域模型、API 契约和 Nebula schema 的输入。当前 `docs/schema/current_graph.ngql` 中的地址节点及设备地址关系不再作为目标模型；设备和 GPU 地址改为内嵌属性，精确 IP 查询直接匹配图节点地址属性。本项目开发空间允许在确认后按本节重建。
 
 ### 12.1 统一身份和同步属性
 
@@ -377,124 +382,163 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 | 属性 | 语义 |
 |---|---|
 | `scope_id` | 本项目租户或拓扑范围 |
-| `source_id` | MySQL 中配置的 CMDB 来源 |
+| `source_id` | CMDB 来源配置标识 |
 | 稳定身份字段 | 按节点类型保存：设备为 `device_sn`，其他节点按节点清单使用稳定 UUID |
-| `inst_id`、`obj_id` | 来源实例和对象类型标识，用于查询、解析与核对；设备顶层 `uuid` 不保存 |
 | `created_at` | 本项目首次入图时间，只在首次创建时写入 |
 | `synced_at` | 本项目最后见到时间，每轮统一刷新为 `T`，用于成功轮次后的清理 |
-| `source_created_at` | 来源 `create_time` 或 `created_at`；缺失时为空 |
-| `source_updated_at` | 来源 `last_time`、`updated_time` 或 `updated_at`；只作业务更新时间 |
-| `resolution_status` | `resolved`、`unresolved` 或 `conflict`，表示来源引用解析状态 |
 
-所有关系统一保留 `scope_id`、`source_id`、`relation_id`、`created_at`、`synced_at`、`source_updated_at` 和 `resolution_status`。`relation_id` 优先使用来源关系 UUID；没有关系 UUID 时，由关系类型、来源字段和两端稳定身份确定性生成。设备端稳定身份为 `device_sn`。Nebula 的起点、终点和 rank 必须与 `relation_id` 保持幂等映射。
+`inst_id`、`obj_id` 和各类来源别名默认只在当前请求流程中用于解析与核对，不作为通用节点属性保存；实体文档明确要求保留时例外，例如 POD 保存 `inst_id`、`phy_building_id` 和 `idc_logic_id`。图中只发布已成功解析的关系，不保存 `unresolved` 或 `conflict` 关系对象。
+
+所有关系统一保留 `scope_id`、`source_id`、`relation_id`、`created_at` 和 `synced_at`。`relation_id` 优先使用带 `scope_id/source_id` 限定的来源关系 UUID；没有关系 UUID 时，由关系类型和两端完整逻辑身份确定性生成。允许同端点存在多条逻辑关系时，还必须纳入 `plane`、`power_path` 等区分字段。设备端稳定身份为 `device_sn`。Nebula 的起点、终点和 rank 必须与 `relation_id` 保持幂等映射。
 
 ### 12.2 节点清单
 
 | 图节点 | 来源 | 身份 | 说明 |
 |---|---|---|---|
 | `device` | `device_view` | `device_sn` | 统一承载服务器、网络设备及其他设备；不保存会变化的顶层 `uuid`，网络设备 `device_uuid` 仅作端口归属别名；地址作为内嵌属性 |
-| `interface` | `port_view` | `port_uuid` | 网络设备端口；当前十条样例中 `port_uuid=local_interface_uuid`，顶层 `uuid` 仅保存为 `source_record_uuid`，不为服务器虚构端口；全量唯一性与长期稳定性仍以接口契约为准 |
-| `gpu` | `server_gpu`，地址候选来自 `gpu_uplink.gpu_ip` | `server_gpu.uuid` | GPU 卡实例；`parts_sn` 用于来源匹配和校验，非空 `gpu_ip` 的合并规则尚待非空样例验证 |
-| `data_center` | `idc` | `uuid` | 资产查询与同步范围；承载数据中心身份、位置和运营状态 |
-| `pod` | `pod` | `uuid` | 设备逻辑归属节点；以 `plane` 区分管理面、计算面、存储面和带外管理面 |
+| `interface` | `port_view` | `port_uuid` | 网络设备端口；详细字段、关系解析及同步约定见 [interface.md](../model/entities/interface.md) |
+| `gpu` | `server_gpu`、`gpu_uplink` | `server_gpu.uuid` | GPU 卡实例；查询顺序、字段、上联解析和同步约定见 [gpu.md](../model/entities/gpu.md) |
+| `data_center` | `idc` | `uuid` | 机柜顶层物理归属与同步范围；只承载身份、中文名称、短编码和展示位置 |
+| `pod` | `pod` | `uuid` | 设备逻辑归属节点；字段、数字 ID、设备关系和同步约定见 [pod.md](../model/entities/pod.md) |
 | `cabinet` | `cabinet` | `uuid` | 设备位置与 A/B 路供电链路的连接节点 |
 | `rpp` | `idc_RPP` | `uuid` | 列头柜；不另建“空开”节点 |
 | `ups_group` | `idc_ups_group` | `uuid` | UPS 组，不等同 UPS 设备 |
 | `ups` | `idc_ups` | `uuid` | UPS 设备实例 |
 | `transformer` | `idc_transformer` | `uuid` | 变压器；本阶段供电上游边界 |
 
-#### `device` 属性
+#### `device` 最小模型
 
-- 身份与名称：`device_sn`、`inst_id`、`obj_id`、`device_name`、`host_name`、`op_asset_number`、`ad_asset_number`；`device_uuid` 仅网络设备保留为端口归属别名；不保存 `device_view.uuid`。
-- 分类：`parent_type`、`parent_type_id`、`device_type`、`device_type_id`、`role`。
-- 厂商与规格：`manufacturer`、`model`、`configure`。
-- 状态与管理：`service_status`、`service_status_id`、`operation`、`asset`、`status_updated_at`。
-- 机柜引用：`cabinet_uuid`、`idc_cabinet_id`、`cabinet`、`u_position`、`u_start`、`u_end`、`height`。
-- 上层空间引用：`building_uuid`、`building_id`、`room_uuid`、`room_id`、`idc_id`、`idc`、`idc_module_id`、`logic_idc_uuid`、`logic_idc_id`。楼栋、房间、模组和逻辑 IDC 当前不生成节点。
-- POD 引用：`plane`、`pod_uuid`、`pod_id`、`pod_name`、`pod_mode`、`compute_plane`、`compute_pod_id`、`compute_pod_name`、`compute_building_id/code/name`；用于生成和校验 `device → pod` 关系。
-- 电力及 GPU 汇总：`power`、`rated_power`、`parts_gpu`、`pkg_gpu_count`、`pkg_gpu_manufacturer`、`pkg_gpu_model`、`gpu_is_domestic`、`gpu_performance`。GPU 汇总字段不替代 GPU 卡节点。
-- 地址：`all_ips[]` 保存规范化、去重后的全部有效 IP；`device_ip_info[]` 保存 `type`、`purpose`、`ip`、`gateway`、`mask`、`mac`、`port`、`vlan_id`。带外地址由 `ilo` 类型映射为 `purpose=out_of_band`，可经辅助 IP 索引反查设备 `device_sn`。
-- 上联来源：`server_tor_ports`、`server_tor_sn` 仅用于生成和校验普通服务器到 ToR 端口的 `server_uplink`，不据此生成服务器端口节点。
+设备字段的完整规则见 [device.md](../model/entities/device.md)。本文件只保留跨实体映射摘要：
 
-#### `interface` 属性
+1. **设备节点**：`scope_id`、`source_id`、`device_sn`、规范化 `name`、`parent_type_id`、`device_type_id`、`role`、`all_ips[]`、`synced_at`。
+2. **拓扑关系**：解析成功后发布 `located_in`、`member_of`、`owns_interface`、`server_uplink` 和 `contains_gpu`。
+3. **同步时临时数据**：`inst_id`、网络设备 `device_uuid`、`cabinet_uuid`、管理面/计算面 POD 引用、`server_tor_ports[].sn + ports[]` 只在本轮内存中用于建边，不写入 MySQL 或图节点。
 
-- 来源记录：`source_record_uuid`（`port_view.uuid`）、`port_id`、`local_interface_id`。
-- 归属：`device_uuid`、`local_device_uuid`、`local_device_id`、`local_device_sn`；当前目标模型只为 `port_view` 返回了 `port_uuid` 的网络设备端口建立接口节点，长期稳定性待接口契约确认。
-- 接口：`port_name`、`port_type`、`port_speed`、`port_operation_status`、`port_role`、`local_if_index`、`snmp_ifindex`、`local_slot`、`local_inter_ip`、`port_limit_bandwidth`。
-- 对端待解析引用：`remote_interface_uuid`、`remote_interface_id`、`remote_device_uuid`、`remote_device_id`、`remote_device_sn`。
-- 端口组：`group_id`、`group_uuid`、`group_type`、`group_subtype`、`port_group_id`、`port_group_uuid`、`port_group_name`、`port_group_type`、`port_group_type_name`、`port_group_role`、`port_group_physics_bandwidth`。
-- 位置引用：`rack_uuid`、`room_uuid`、`local_pod_uuid`、`local_logic_idc_uuid`。
+`device_id` 不重复处理；`device_view.uuid`、`obj_id`、状态管理字段、U 位、功耗、厂商型号、资产管理字段、详细地址属性和 GPU 汇总当前不进入结构化模型。
 
-#### `gpu` 属性
+#### `interface` 最小模型
 
-- 资产：`parts_sn`、`parts_number`、`manufacturer`、`model`、`specification`。
-- 位置：`index`、`slot`、`bmc_slot`、`bus_address`、`connector`、`conn_ports`。
-- 规格：`VRAM`、`tdp`、`driver_ver`、`firmware_ver`、`computer_perf`、`gpu_fp`、`gpu_fp64`、`FP16_Tensor_Sparsity`、`FP4`、`INT4`、`INT8`、`TF16`、`TF32`。
-- 管理：`is_domestic`、`maintenance_status`、`maintenance_end`、`device_sn`。
-- 地址：拟使用 `ip_addresses[]` 汇总已匹配 GPU 的非空 `gpu_uplink.gpu_ip`，过滤空值并去重；当前 `server_gpu` 样例没有卡级 IP 字段，8 条 `gpu_uplink.gpu_ip` 也全部为空，需用非空样例确认后再固化契约。
-- `server_gpu.id`、槽位和卡序号不作为 GPU 实例身份。
+接口字段、端口组空值、API 查询方式、关系解析及同步约定统一以 [interface.md](../model/entities/interface.md) 为准。本文件只保留跨实体摘要：
 
-#### `data_center` 属性
+- 身份使用 `port_uuid`。
+- 保存端口基础属性，以及 `group_uuid`、`port_group_uuid`、规范化 `group_name` 和三级分类原值。
+- 不保存 `group_id`、`port_group_id`、`snmp_ifindex` 或其他数字别名。
+- `port_group` 先按 `port_group_uuid` 查询；返回的 `port_group_link_id` 只用于当前请求继续查询成员，不作为同步内存状态。
 
-- 身份与名称：`uuid`、`inst_id`、`obj_id`、`code`、`cn_name`、`alias`；UUID 为最终身份，数字 ID 仅用于引用解析。
-- 位置：`address`、`location`、`city_id`、`zone_id`、`geographic_location_id`、`latitude`、`longitude`；当前样例经纬度均为 0，来源文档未定义其含义，本项目暂按未知坐标处理而不是有效的 `(0,0)`。
-- 状态：`status`、`is_delete`、`idc_ops_status`、`idc_service_level`、`open_at`、`close_at`。
-- 统计快照：`cabinet_num`、`cabinet_power_num`、`device_num`、`server_num`、`network_device_num`、`external_num`、`other_num`；可用于展示和核对，不能替代图中实际关系计数。
-- 联系人、电话、邮箱及支持人员列表不进入图模型；若有运维查询需求，保留在业务存储或受控接口中。
+#### `gpu` 最小模型
 
-#### `pod` 属性
+GPU 字段、两阶段查询顺序、上联匹配、交叉校验及同步约定统一以 [gpu.md](../model/entities/gpu.md) 为准。本文件只保留跨实体摘要：
 
-- 身份与名称：`uuid`、`inst_id`、`obj_id`、`basic_code`、`name`、`full_name`；UUID 为最终身份，`inst_id` 用于设备引用解析。
-- 平面与网络：`plane`、`mode`、`rdma`；`plane` 保留来源数值，当前已验证 1=管理面、2=计算面，其他枚举按接口定义保留。
-- 归属引用：`phy_building_id`、`idc_logic_id`；楼宇仅用于交叉校验，逻辑 IDC 关系尚未确认。
-- 状态与时间：`is_delete`、`is_sync`、`source_created_at`、`source_updated_at`。
-- 同一 `pod` 类型承载所有平面，不因管理面或计算面拆成不同节点类型；`compute_plane` 本身不是节点。
+- GPU 节点身份使用 `server_gpu.uuid`，`parts_sn` 仅作为资产属性和 `gpu_uplink.gpu_sn` 匹配键。
+- 先按 GPU 服务器 `device_sn` 查询 `server_gpu`，再按同一 `device_sn` 查询 `gpu_uplink`。
+- `gpu_uplink` 通过 `gpu_sn → parts_sn` 定位 GPU，通过 `tor_sn + tor_port` 查询 `interface.port_uuid`。
+- `gpu_port` 是 GPU 关联网卡端口名称，只保存在上联关系中，不创建网卡或 GPU 侧接口节点。
+- `gpu_ip` 当前样例均为空，不进入 GPU 节点；仅作为上联关系可选来源属性。
 
-#### `cabinet` 属性
+#### `data_center` 最小模型
 
-- 编码与位置：`code`、`dc_colo_rack`、`isp_rack_code`、`rack`、`rack_column_code`、`rack_row`、`idc_rows_code`。
-- 空间引用：`idc_id`、`phy_idc_id`、`phy_building_id`、`phy_room_id`、`idc_module_id`、`idc_building_structure_id`、`pod_id`、`pod_ids`。
-- 容量：`u_num`、`spare_u_num`、`used_u_num`、`device_num`、`server_num`、`network_device_num`、`gpu_device_num`。
-- 状态与类型：`is_delete`、`status`、`ops_status`、`usage_type`、`power_status`、`power_state`、`power_type`。
-- 电力：`rated_current`、`isp_rated_current`、`maximum_current`、`allow_use_current`、`tec_max_current`、`pdu_num`、`outlets_10a`、`outlets_16a`。
-- TOR 规划：`rack_tor_fix`、`rack_tor_inter_speed`、`rack_tor_type`，只作属性。
-- 供电引用：`row_switch_id_A`、`row_switch_id_B` 均解析到 `idc_RPP.inst_id`，分别生成 `power_path=A/B` 的 `power_upstream` 关系；两路使用相同逻辑。
+数据中心字段、关系身份及同步约定统一以 [data_center.md](../model/entities/data_center.md) 为准。本文件只保留跨实体摘要：
 
-#### 供电节点属性
+- 身份使用 `idc.uuid`；保留 `inst_id` 用于查询、解析 `cabinet.idc_id` 和来源追溯。
+- 只保存 `code`、`cn_name`、`address`、`location` 及来源时间；中文名称只使用 `cn_name`。
+- `alias`、`en_name`、地域数字 ID 和经纬度全部丢弃，不解析地域层级。
+- 不保存运行状态、服务等级、容量统计、联系人、组织和业务运营字段。
+- 当前只建立 `cabinet → data_center` 的 `located_in`；不建立 `device → data_center` 捷径或 `pod → data_center` 关系。
 
-| 节点 | 类型专属属性 |
-|---|---|
-| `rpp` | `code`、`idc`、`building`、`idc_room`、`module`、`row_in_num`、`row_power_type`、`row_rated_current`、`row_rated_voltage`、`ups_group`、`transformer_group_a` |
-| `ups_group` | `code`、`idc`、`building`、`module`、`ups_group_id_tag`、`ups_group_num`、`ups_external_bypass`、`ups_only_IT`、`ups_only_jd`、`ups_proportion_jd`、`transformer_id_up` |
-| `ups` | `code`、`idc`、`building`、`module`、`ups_group`、`transformer_id_up`、`ups_brand`、`ups_type`、`ups_capacity`、`ups_group_id_tag`、`ups_product_date`、`ups_exprie_date`、`ups_capacitor_change_date`、`battery_brand`、`battery_type`、`battery_group_num`、`battery_num`、`battery_voltage`、`battery_resistance`、`battery_product_time` |
-| `transformer` | `code`、`idc`、`building`、`module`、`standby_transformer`、`transformer_brand`、`transformer_type`、`transformer_capacity`、`transformer_id_tag`、`transformer_insulation_level`、`transformer_only_IT`、`transformer_only_jd`、`transformer_over_temperature_alarm`、`transformer_over_temperature_cut`、`transformer_product_time`、`transformer_expire_time`、`LVP_busbar`、`LVP_generator_num`、`LVP_logic_state` |
+#### `pod` 最小模型
 
-单位或枚举未明确的属性先按来源类型或字符串原值保存，不提前转换。未列入上述清单的来源字段不自动进入 Nebula；后续若成为查询、关系解析或审计所需字段，再通过显式 schema 变更加入。
+POD 字段、数字 ID、设备引用解析、关系身份及同步约定统一以 [pod.md](../model/entities/pod.md) 为准。本文件只保留跨实体摘要：
+
+- POD 节点身份使用 `pod.uuid`；按用户确认保留 `inst_id`、`phy_building_id` 和 `idc_logic_id`，但数字 ID 不替代 UUID。
+- 保存 `basic_code`、`name`、`full_name`、`plane`、`mode`、`rdma`、来源状态和时间字段。
+- 管理面优先使用 `device.pod_uuid`；计算面逐项使用 `compute_plane[].pod_id → pod.inst_id` 查询 UUID。
+- `member_of.plane` 统一取解析后的 `pod.plane`；`compute_plane[]` 本身没有 `plane` 字段，也不建立节点。
+- 当前不建立 POD 到楼宇、逻辑 IDC 或数据中心的关系。
+
+#### `cabinet` 最小模型
+
+机柜字段、关系身份及同步约定统一以 [cabinet.md](../model/entities/cabinet.md) 为准。本文件只保留跨实体摘要：
+
+- 身份使用 `cabinet.uuid`；保留 `inst_id` 用于查询、引用解析和来源追溯。
+- 保存机柜编码和展示位置，以及 `idc_id`、楼宇/房间/模组/列数字 ID、`pod_ids[]`、`row_switch_id_A/B`。
+- `phy_idc_id` 与 `idc_id` 冗余，只保留 `idc_id`；`pod_id` 无业务意义并丢弃。
+- 不保存容量、状态、电力指标、PDU、TOR 规划、租赁、JIRA、组织和业务运营字段。
+- `pod_ids[]` 逐项解析到 POD 并生成 `tagged_with`；该标签关系不能推导柜内设备的 POD 归属。
+- `row_switch_id_A/B` 分别解析到 `idc_RPP.inst_id`，生成 `power_path=A/B` 的 `power_upstream` 关系。
+
+#### `rpp` 最小模型
+
+RPP 字段、关系身份及同步约定统一以 [rpp.md](../model/entities/rpp.md) 为准。本文件只保留跨实体摘要：
+
+- 身份使用 `idc_RPP.uuid`；保留 `inst_id` 用于查询和解析机柜 `row_switch_id_A/B`。
+- 保存 `code`、`ups_group`、`transformer_group_a`、来源时间，以及后续版本预留的数据中心引用 `idc`。
+- `idc` 当前只保存，不解析、不建立 `rpp → data_center`，也不记录该引用的关系解析诊断。
+- `building`、`idc_room`、`module`、`city`、回路数量、电源类型、额定电流和额定电压均不保存。
+- `ups_group` 解析到 UPS 组并生成 `power_upstream`；`transformer_group_a` 只校验经 UPS 组解析出的变压器，不建立直连边。
+
+#### `ups_group` 最小模型
+
+UPS 组字段、关系身份及同步约定统一以 [ups_group.md](../model/entities/ups_group.md) 为准。本文件只保留跨实体摘要：
+
+- 身份使用 `idc_ups_group.uuid`；保留 `inst_id` 用于查询和解析 RPP、UPS 设备的组引用。
+- 保存 `code`、`transformer_id_up`、来源时间，以及后续版本预留的数据中心引用 `idc`。
+- `idc` 当前只保存，不解析、不建立 `ups_group → data_center`，也不记录该引用的关系解析诊断。
+- `building`、`module`、`city`、组数量、组标签、旁路和业务专用字段均不保存。
+- UPS 成员通过实际 `member_of` 关系计算；`ups_group_num` 不作为成员数量事实。
+- 只建立 `rpp → ups_group`、`ups → ups_group` 和 `ups_group → transformer`；不建立 RPP 或 UPS 到变压器的跨层捷径。
+
+#### `ups` 核心规格模型
+
+UPS 字段、关系身份及同步约定统一以 [ups.md](../model/entities/ups.md) 为准。本文件只保留跨实体摘要：
+
+- 身份使用 `idc_ups.uuid`；保留 `inst_id` 用于查询和来源追溯。
+- 保存 `code`、`ups_group`、`transformer_id_up`、品牌、型号、额定容量和来源时间。
+- 保存 `idc` 作为后续数据中心关系入口；当前不解析、不建立 `ups → data_center`，也不记录该引用的关系诊断。
+- `ups_group` 解析到 UPS 组并生成 `member_of`；组标签不作为关系键。
+- `transformer_id_up` 只与 UPS 组的上游引用进行一致性校验，不建立 `ups → transformer`。
+- `building`、`module`、`city`、生命周期日期、维护日期和电池明细均不保存。
+- 额定容量按来源原始数值保存，单位未知；不汇总组容量或推断冗余等级。
+
+#### `transformer` 核心规格模型
+
+变压器字段、关系身份及同步约定统一以 [transformer.md](../model/entities/transformer.md) 为准。本文件只保留跨实体摘要：
+
+- 身份使用 `idc_transformer.uuid`；保留 `inst_id` 用于查询和解析 UPS 组、备用变压器及校验引用。
+- 保存 `code`、`standby_transformer`、品牌、型号、额定容量和来源时间。
+- 保存 `idc` 作为后续数据中心关系入口；当前不解析、不建立 `transformer → data_center`，也不记录该引用的关系诊断。
+- `standby_transformer` 唯一解析后建立 `has_standby`；自引用或循环引用不发布关系。
+- `has_standby` 不属于默认供电路径，也不表示备用对象当前可用或已切换。
+- `building`、`module`、`city`、标签、绝缘、温控、低压侧、业务属性和生命周期日期均不保存。
+- 额定容量按来源原始数值保存，单位未知；不用于推断实际负载或冗余能力。
+- 不展开馈线、电力线路、发电机和市电关系；变压器是当前主供电链上游边界。
 
 ### 12.3 关系清单
 
+关系分类、通用身份、方向、解析和同步约定统一见 [实体关系模型总览](../model/relationships/README.md)。关系按空间、资源组成、网络和电力四类维护；本节保留跨实体总表。
+
 | 图关系 | 方向 | 来源与关系身份 | 关系属性 |
 |---|---|---|---|
-| `owns_interface` | `device → interface` | `local_device_uuid → device_view.device_uuid`，并以 `local_device_sn/device_sn`、`local_device_id/inst_id` 交叉校验，解析为设备 `device_sn` 后关联 `port_uuid` | 按设备 SN 与端口 UUID 确定性生成；当前不为服务器生成该关系 |
-| `server_uplink` | `device → interface` | 服务器 `server_tor_ports[].sn` 直接解析 ToR `device_sn`，再以 `ports[]` 在该设备范围内解析 `port_uuid`；无来源关系 UUID，按服务器 SN、ToR 端口 UUID 和规范化来源字段集合确定性生成 | `tor_sn`、`tor_port`、`tor_ip`、`ip_type`、`as_number`；当前样例端点未闭环，只能得到 `unresolved` 引用 |
-| `links_to` | `interface → interface` | 网络端口的本端 `port_uuid` 与 `remote_interface_uuid`；按端点对确定唯一逻辑关系，合并可能的两端重复上报 | `local_source_record_uuid`、`remote_source_record_uuid`；去重是模型规则，当前十条样例未包含可成对验证的双端记录；不把 CMDB 连接直接解释为实时可达 |
-| `contains_gpu` | `device → gpu` | `server_gpu.device_sn = device_view.device_sn`，设备端使用 `device_sn`，GPU 端使用 `server_gpu.uuid` | `device_sn`、`parts_sn` |
-| `gpu_uplink` | `gpu → interface` | `gpu_uplink.uuid`；先由 `gpu_sn` 解析 GPU，再由 `tor_sn` 和 `tor_port` 解析网络端口 | `gpu_port`、`gpu_port_speed`、`gpu_ip`、`gpu_slot`、`server_port_speed`、`bond_name`、`tor_port`、`tor_port_speed`、`tor_role`、`source`；当前样例只闭环 GPU 端，ToR 端为 `unresolved`；非空 `gpu_ip` 汇总规则待样例验证 |
-| `member_of` | `device → pod` | 管理面：`pod_uuid → pod.uuid`；计算面：逐项解析 `compute_plane[].pod_id → pod.inst_id`；解析后按设备 SN、POD UUID 和关系类型去重 | `plane`、`source_fields`、`building_id`；`pod_id/name`、`compute_pod_id/name` 仅用于校验，冲突时标记 `conflict` |
-| `located_in` | `device → cabinet` | `device.cabinet_uuid → cabinet.uuid`，按设备 SN 与机柜 UUID 建立关系 | `link_kind=device_cabinet`、`u_position`、`u_start`、`u_end` |
-| `located_in` | `cabinet → data_center` | `cabinet.idc_id/phy_idc_id → data_center.inst_id`，解析后使用两端 UUID | `link_kind=cabinet_data_center`、`source_field`；双字段不一致时标记 `conflict` |
-| `power_upstream` | `cabinet → rpp` | `row_switch_id_A/B → rpp.inst_id`，按来源字段和两端 UUID 生成 | `link_kind=cabinet_rpp`、`power_path=A/B`、`source_field` |
-| `power_upstream` | `rpp → ups_group` | `rpp.ups_group → ups_group.inst_id` | `link_kind=rpp_ups_group`、`source_field` |
-| `member_of` | `ups → ups_group` | `ups.ups_group → ups_group.inst_id` | `ups_group_id_tag` |
-| `power_upstream` | `ups_group → transformer` | `ups_group.transformer_id_up → transformer.inst_id` | `link_kind=ups_group_transformer`、`source_field` |
-| `has_standby` | `transformer → transformer` | 当前变压器的 `standby_transformer` 解析到备用变压器 `inst_id` | `source_field=standby_transformer`；当前样例目标 1593 未提供，只保留 `unresolved` 引用，默认不计入当前供电路径 |
+| `owns_interface` | `device → interface` | 优先使用 `local_device_sn → device.device_sn`；缺少 SN 时按 `local_device_uuid` 查询设备 API，取得 `device_sn` 后关联 `port_uuid` | 按设备 SN 与端口 UUID 确定性生成；当前不为服务器生成该关系 |
+| `server_uplink` | `device → interface` | 以服务器 `server_tor_ports[].sn + ports[]` 查询或匹配 `port_view.local_device_sn + port_name`，取得 `port_uuid`；按服务器 SN 与 ToR 端口 UUID 确定性生成 | `scope_id`、`source_id`、`synced_at`；补充样例已闭环两组 `SN + 25GE1/0/26`，其他组合按实际结果解析 |
+| `links_to` | `interface → interface` | 本端 `port_uuid` 与 `remote_interface_uuid`；按两个端口 UUID 规范化排序后确定唯一逻辑关系，不使用双端各自不同的 `port_view.uuid` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at`；LLDP 补充样例已验证双端互指并合并为一条逻辑连接；查询按双向处理，不解释为实时可达 |
+| `contains_gpu` | `device → gpu` | `server_gpu.device_sn = device.device_sn`；关系 ID 由关系类型、设备 SN 和 GPU UUID 确定性生成 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
+| `gpu_uplink` | `gpu → interface` | `gpu_uplink.uuid` 是来源关系身份，图中使用 `scope_id:source_id:gpu_uplink:uuid` 作为关系 ID；先由 `device_sn + gpu_sn` 解析 GPU，再由 `tor_sn + tor_port` 查询网络端口 | `relation_id`、`gpu_port`、`gpu_port_speed`、`gpu_ip`、`gpu_slot`、`server_port_speed`、`bond_name`、`tor_port`、`tor_port_speed`、`tor_role`、`source`、`scope_id`、`source_id`、`created_at`、`synced_at` |
+| `member_of` | `device → pod` | 管理面：`pod_uuid → pod.uuid`；计算面：逐项解析 `compute_plane[].pod_id → pod.inst_id`；关系 ID 由两端完整逻辑身份和解析后的 `pod.plane` 确定性生成 | `relation_id`、`plane`、`scope_id`、`source_id`、`created_at`、`synced_at` |
+| `located_in` | `device → cabinet` | `device.cabinet_uuid → cabinet.uuid`，按设备 SN 与机柜 UUID 建立关系 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at`；当前不保存 U 位 |
+| `located_in` | `cabinet → data_center` | 只使用 `cabinet.idc_id → data_center.inst_id`，解析后使用两端 UUID；`phy_idc_id` 丢弃 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
+| `tagged_with` | `cabinet → pod` | 逐项解析 `cabinet.pod_ids[] → pod.inst_id`；`pod_id` 丢弃；按两端完整逻辑身份确定性生成 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
+| `power_upstream` | `cabinet → rpp` | `row_switch_id_A/B → rpp.inst_id`，关系身份包含来源路别和两端完整逻辑身份 | `relation_id`、`power_path=A/B`、`scope_id`、`source_id`、`created_at`、`synced_at` |
+| `power_upstream` | `rpp → ups_group` | `rpp.ups_group → ups_group.inst_id`，解析后使用两端 UUID；按两端完整逻辑身份确定性生成 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
+| `member_of` | `ups → ups_group` | `ups.ups_group → ups_group.inst_id`，解析后使用两端 UUID；按两端完整逻辑身份确定性生成，不使用组标签关联 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
+| `power_upstream` | `ups_group → transformer` | `ups_group.transformer_id_up → transformer.inst_id`，解析后使用两端 UUID；按两端完整逻辑身份确定性生成 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
+| `has_standby` | `transformer(primary) → transformer(standby)` | `standby_transformer → transformer.inst_id`，唯一解析且通过自引用、循环检查后使用两端 UUID；按两端完整逻辑身份确定性生成 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at`；当前样例目标 1593 未提供，不生成关系；默认不计入供电路径 |
 
-端口物理连接只保存一个逻辑关系，查询时按双向遍历处理；不能因为同一设备间有多条端口连接就合并。供电统一沿“下游对象指向上游对象”保存，影响范围查询反向遍历。来源引用冲突时标记 `conflict`，不静默选择一条关系。
+端口物理连接只保存一个逻辑关系，查询时按双向遍历处理；不能因为同一设备间有多条端口连接就合并。供电统一沿“下游对象指向上游对象”保存，影响范围查询反向遍历。来源引用冲突时不生成边，并计入本轮同步诊断。
 
 ### 12.4 明确不建立的节点和关系
 
 - 不拆分“服务器节点”和“网络设备节点”；通过 `parent_type`、`device_type` 和 `role` 筛选统一 `device`。
-- 不建立地址节点及 `owns_address`、`has_address` 关系。设备保存 `all_ips[]` 和结构化 `device_ip_info[]`，GPU 保存 `ip_addresses[]`；精确 IP 反查使用 MySQL 辅助索引，不把 IP 当作图身份。
+- 不建立地址节点及 `owns_address`、`has_address` 关系。设备只保存 `all_ips[]`，GPU 可保存已确认的 `ip_addresses[]`；精确 IP 直接查询图节点地址属性，不把 IP 当作图身份。
 - 不建立服务器端口节点。普通服务器使用 `server_tor_ports` 直接生成 `device → ToR interface` 的 `server_uplink`；网络设备端口仍由 `port_view` 建立。
 - 不建立网卡及网卡端口节点；`ib8` 等保存在 `gpu_uplink.gpu_port`，GPU 卡地址只从 `gpu_uplink.gpu_ip` 汇总。
 - 不建立端口组节点；组 UUID、成员 UUID 和三级分类保存在端口属性中。
@@ -504,7 +548,7 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 - 不根据 `row_switch_id_A/B` 建立独立空开节点，也不根据 `transformer_group_a` 建立“变压器组”节点。
 - 不建立 `rpp → transformer` 图关系；`rpp.transformer_group_a` 仅作为节点属性和同步校验字段，不参与供电路径遍历。
 - 不建立 `ups → transformer` 图关系；`ups.transformer_id_up` 仅用于与所属 UPS 组的上游变压器做一致性校验。
-- 不建立 GPU 上联记录节点、端口视图记录节点或来源同步记录节点；这些使用关系属性或 MySQL 同步控制数据表达。
+- 不建立 GPU 上联记录节点、端口视图记录节点或来源同步记录节点；已解析结果使用图关系表达，来源引用只在本轮同步内存中使用，MySQL 仅保存任务控制和统计。
 - 不展开 PDU、馈线、市电和发电机关系；变压器是本阶段供电上游边界。
 
 ### 12.5 时间清理对模型的要求
@@ -519,7 +563,7 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 ## 13. 后续执行顺序
 
 1. 以本节清单为目标，重建本项目独立 Nebula schema：调整 VID，删除地址节点及其关系，不建立服务器端口节点，加入 `server_uplink`、统一 `pod` 和 `device → pod` 的 `member_of`，删除没有来源支撑的 `aggregates`。
-2. 同步调整 Go 领域模型、图 repository、API DTO 和查询过滤：设备增加 `all_ips[]`、结构化 `device_ip_info[]`，GPU 增加 `ip_addresses[]`，MySQL 增加精确 IP 反查辅助索引，并保留当前态读取的 scope/epoch 保护。
+2. 同步调整 Go 领域模型、图 repository、API DTO 和查询过滤：设备增加最小属性 `all_ips[]`，GPU 地址只在语义确认后增加 `ip_addresses[]`；MySQL 继续只承担同步任务、发布状态和 scope/epoch 保护。
 3. 实现 11 类 CMDB adapter、统一分页器、5 并发限制、`inst_id → uuid` 解析及 SN 辅助匹配。
 4. 实现 worker 全量轮次：统一时间 `T`、幂等写入、全成功后按 `synced_at<T` 清理；失败不清理。
 5. 增加 fake repository 单元测试、Nebula 查询测试和独立开发空间只读/写入验证，再接入定时执行。

@@ -1,37 +1,41 @@
 # Device 实体定义
 
-状态：最小拓扑模型设计稿。依据截至 2026-09-18 已确认的 CMDB 规则和样例整理；用于网络、电力、空间、智算分析，不复制完整 CMDB 设备档案。
+状态：最小拓扑模型设计稿。依据截至 2026-09-20 已确认的 CMDB 规则和样例整理；用于网络、电力、空间、智算分析，不复制完整 CMDB 设备档案。
 
 ## 1. 设计目标
 
 `device_view` 是 CMDB 全部设备的统一视图。`device` 统一表示服务器、存储设备、网络设备和其他设备，不再拆成多套设备节点。
 
-当前阶段只保存：
+本项目遵守以下边界：
 
-1. 图查询和设备识别必须使用的节点属性。
-2. 构造、重试和核对关系必须使用的来源引用。
-3. 已解析关系及其必要属性。
+1. CMDB 是设备完整信息和来源引用的事实源。
+2. NebulaGraph 只保存分析拓扑需要的最小节点属性和已经解析成功的边。
+3. MySQL 只保存同步任务、进度、发布状态和统计，不保存设备、设备引用或关系候选。
+4. 稳定 UUID、设备 SN 等字段可直接作为 CMDB API 查询条件，不要求建立整轮内存索引；同步重试或图重建时重新读取 CMDB。
 
-其他 CMDB 字段列为后续扩展，不进入当前模型。
+## 2. 数据处理结构
 
-## 2. 三层存储模型
+这里不是三层持久化模型，而是“两类图数据 + 一类关系解析输入”。
 
-设备数据分为三层，不能简单理解为“全部存到设备节点”或“建完边就全部丢弃”。
+| 类别 | 是否持久化 | 位置 | 职责 |
+|---|---|---|---|
+| 设备节点 | 是 | NebulaGraph | 保存设备身份、分类及直接查询所需的最小属性 |
+| 拓扑关系 | 是 | NebulaGraph | 保存解析成功的设备关系及关系自身属性 |
+| 关系解析输入 | 否 | 当前 API 响应或请求流程 | 使用稳定 UUID/SN 直接关联或查询；只有数字独占引用才临时查询目标稳定身份 |
 
-| 层次 | 存储位置 | 职责 |
-|---|---|---|
-| 第一层：设备节点 | NebulaGraph `device` 节点 | 保存设备身份、分类及直接查询所需的最小属性 |
-| 第二层：同步解析数据 | MySQL 身份绑定、关系候选及解析诊断 | 保存来源别名和建边引用，支持跨接口解析、失败重试、冲突诊断和全量重建 |
-| 第三层：拓扑关系 | NebulaGraph 边 | 保存成功解析后的设备关系及关系自身属性 |
+MySQL 可以保存 `run_id`、同步状态、页码或检查点、记录数量、错误统计、发布代次和就绪状态，但不得保存以下设备事实：
 
-规则：
+- `inst_id`
+- `device_uuid`
+- `cabinet_uuid`
+- POD 引用
+- `server_tor_ports`
+- 未解析关系明细
+- 原始 `device_view` 响应
 
-- 关系来源字段不等于设备节点属性。
-- 已成功建边后，关系来源仍应保留在第二层的当前关系候选中，供重建和核对使用。
-- 未解析或冲突的关系候选只保存在第二层，不伪造图端点。
-- 原始 API JSON 可选作短期审计存档，但不能替代结构化的身份绑定和关系候选。
+目标引用暂时无法解析时，本轮不生成对应图边；同步结果只记录必要的错误类型和数量。后续重试重新读取 CMDB 并重新解析，不在 MySQL 中维护设备关系候选。
 
-## 3. 第一层：设备节点
+## 3. Device 图节点
 
 ### 3.1 当前必须存储的字段
 
@@ -45,6 +49,7 @@
 | `device_type_id` | 设备子类型，用于区分 GPU 服务器、通用服务器、交换机等 |
 | `role` | 网络设备角色，例如 T0/T1；非网络设备允许为空 |
 | `all_ips[]` | 规范化、去重后的有效设备 IP，用于按 IP 定位设备 |
+| `created_at` | 本项目首次入图时间，只在首次创建时写入 |
 | `synced_at` | 本轮完整同步最后见到时间，用于安全清理旧节点 |
 
 逻辑设备身份：
@@ -65,7 +70,7 @@ device_name 非空 → device_name
 否则 → device_sn
 ```
 
-`device_name` 和 `host_name` 可在采集时读取，但生成 `name` 后不作为当前设备节点属性保存。
+`device_name` 和 `host_name` 只在同步时读取；生成 `name` 后不再保存。
 
 ### 3.3 类型分类
 
@@ -91,13 +96,13 @@ device_name 非空 → device_name
 - `parent_type_id` 用于高频大类筛选。
 - `device_type_id` 用于具体拓扑能力和子类型判断。
 - `parent_type`、`device_type` 名称不进设备节点，展示时通过字典解析。
-- 同步时必须校验 `device_type_id` 对应字典项的 `pid` 等于 `parent_type_id`。
+- 同步时校验 `device_type_id` 对应字典项的 `pid` 等于 `parent_type_id`。
 
 ### 3.4 地址处理
 
 `device_ip_info` 是地址主来源；顶层 `eth_ip`、`ilo_ip`、`management_ip` 只用于补全和校验。
 
-当前只将有效 IP 规范化、去重后写入 `all_ips[]`。以下详细信息暂不进入设备节点：
+当前只将有效 IP 规范化、去重后写入 `all_ips[]`。以下详细信息暂不保存：
 
 - `gateway`
 - `mask`
@@ -106,58 +111,31 @@ device_name 非空 → device_name
 - `vlanid`
 - 地址来源类型和用途
 
-精确 IP 查询可由 MySQL 维护 `IP → source_id/device_sn` 索引。IP 不是设备身份，也不建立 IP 图节点。
+IP 不是设备身份，也不建立 IP 图节点。
 
-## 4. 第二层：同步解析数据
+## 4. 关系解析输入
 
-第二层数据必须持久化，但不作为设备图节点属性。
+本节字段只用于读取来源和解析关系，不写入 MySQL，也不作为设备节点属性。API 调用中的局部变量不等于同步状态；能够用稳定 UUID/SN 重新查询的数字 ID 或别名不保留。
 
-### 4.1 身份别名
+### 4.1 身份与查询
 
-| 字段 | 保存规则 | 用途 |
-|---|---|---|
-| `inst_id` | 所有设备保存 | CMDB 查询、数字引用解析和身份交叉校验 |
-| `device_uuid` | 仅网络设备非空时保存 | 将 `port_view.local_device_uuid` 解析为设备 `device_sn` |
+`device_sn` 是设备最终身份，可直接确定设备 VID。
 
-已确认 `device_view.inst_id = device_id`，因此只保存 `inst_id`，不重复保存 `device_id`。
+- 来源已提供 `device_sn` 时直接使用。
+- 来源只提供稳定 `device_uuid` 时，以该 UUID 查询设备 API 取得 `device_sn`，不预存 `device_uuid → device_sn` 索引。
+- 只有来源仅提供数字 ID、没有稳定 UUID/SN 时，才在当前请求处理中以 `inst_id` 查询稳定身份。
 
-`obj_id` 固定为 `device_view`，由采集器和来源类型确定，不作为每台设备的属性重复保存。
+已确认 `device_view.inst_id = device_id`；需要数字查询时只使用其中一个字段。`inst_id`、`device_id`、`device_uuid` 均不进入目标模型。`obj_id` 固定为 `device_view`，不保存；顶层 `uuid` 会变化，不参与身份和建边。
 
-`device_view` 顶层 `uuid` 会变化，不进入设备节点、身份绑定或关系候选；如需审计，只能存在原始响应存档中。
+### 4.2 设备到机柜
 
-身份索引至少包括：
-
-```text
-(source_id, device_sn)   → device VID
-(source_id, inst_id)     → device_sn
-(source_id, device_uuid) → network device_sn
-```
-
-### 4.2 关系候选公共字段
-
-每条候选关系至少保存：
-
-- `scope_id`
-- `source_id`
-- `relation_kind`
-- 来源设备 `device_sn`
-- 规范化目标引用
-- `resolution_status`：`resolved`、`unresolved`、`conflict`
-- 失败或冲突原因
-- 已解析的目标稳定身份
-- `synced_at`
-
-只有 `resolved` 候选能够发布到图。
-
-### 4.3 设备到机柜候选
-
-从 `device_view.cabinet_uuid` 生成：
+使用稳定 `device_view.cabinet_uuid` 直接生成：
 
 ```text
-device_sn → cabinet_uuid
+device(device_sn) → cabinet(uuid)
 ```
 
-当前不保存：
+`cabinet_uuid` 是当前响应中的关系输入，不复制到设备节点，也不要求另建内存映射。当前不读取或保存以下非必要字段：
 
 - `idc_cabinet_id`
 - `cabinet`
@@ -165,31 +143,31 @@ device_sn → cabinet_uuid
 - `u_start`
 - `u_end`
 
-这些字段不是当前拓扑建边的必要条件。当前空间拓扑只表达设备位于哪个机柜，不表达设备占用的 U 位。
+当前空间拓扑只表达设备位于哪个机柜，不表达设备占用的 U 位。
 
-### 4.4 设备到 POD 候选
+### 4.3 设备到 POD
 
-管理面来源：
+管理面优先使用稳定 UUID：
 
 ```text
 device_sn → pod_uuid
-edge.plane = plane
+edge.plane = resolved pod.plane
 ```
 
-计算面来源：逐项读取 `compute_plane[]`，优先使用其中的 `pod_id` 解析 POD：
+同时使用 `pod_id`、`pod_name` 和设备侧中文 `plane` 校验目标 POD。
+
+计算面逐项读取 `compute_plane[]`。当前来源只提供 `pod_id`，因此按 `pod.inst_id` 查询 POD UUID：
 
 ```text
-device_sn → pod(inst_id = compute_plane[].pod_id)
-edge.plane = compute_plane[].plane
+device_sn → pod(uuid resolved by compute_plane[].pod_id)
+edge.plane = resolved pod.plane
 ```
 
-第二层只保存规范化后的逐条 POD 候选，不必把完整 `compute_plane[]`、`compute_pod_id[]`、`compute_pod_name[]` 复制到设备节点。
+`compute_plane[]` 当前没有独立 `plane` 字段，不能读取 `compute_plane[].plane`。`pod_id`、`pod_name`、`compute_pod_id[]` 和 `compute_pod_name[]` 等来源引用不保存到设备节点；完整规则见 [pod.md](pod.md)。
 
-`pod_id`、`pod_name` 等重复字段只在采集时用于校验；关系候选形成后不重复保存无必要副本。
+### 4.4 普通服务器 ToR 上联
 
-### 4.5 普通服务器 ToR 上联候选
-
-从每个 `server_tor_ports[]` 项拆成“一台服务器、一个 ToR、一个端口”的候选关系：
+从每个 `server_tor_ports[]` 项取得 ToR SN 和端口名：
 
 ```text
 source_device_sn = 当前服务器 device_sn
@@ -197,18 +175,9 @@ target_device_sn = server_tor_ports[].sn
 target_port_name = server_tor_ports[].ports[]
 ```
 
-解析方式：
+按 `target_device_sn + target_port_name` 直接查询或匹配 `port_view.local_device_sn + port_name`，取得稳定 `port_uuid`。具体接口约定见 [interface.md](interface.md)。
 
-```text
-(target_device_sn, target_port_name) → port_view.port_uuid
-```
-
-当前建边只需要 `sn` 和 `ports[]`。以下字段暂不保存：
-
-- `server_tor_sn`：它是 `server_tor_ports[].sn` 的重复汇总字段
-- `ip`
-- `ip_type`
-- `as_number`
+不建立 `(ToR SN, port_name) → port_uuid` 整轮内存索引。当前建边只使用 `sn` 和 `ports[]`；`server_tor_sn`、`ip`、`ip_type`、`as_number` 不保存。
 
 新样例 [device_server_tor_demo.md](../../cmdb/device_server_tor_demo.md) 已验证：
 
@@ -217,61 +186,59 @@ target_port_name = server_tor_ports[].ports[]
 | `21980114493GN1002115` | `25GE1/0/26` | `f00eabc6-b5fc-15e8-efcd-96a26f0498ee` |
 | `21980114493GN1001855` | `25GE1/0/26` | `fc93c428-a2b1-1cd3-cc94-720b85456c2c` |
 
-因此，引用这两个精确 SN 和端口名的普通服务器上联可以解析，不再统一标记为 `unresolved`。其他 SN 或端口仍按实际解析结果处理。
+引用这些精确 SN 和端口名的普通服务器上联可以解析。其他引用按 CMDB API 实际查询结果解析；无法解析时不生成边。
 
-## 5. 第三层：拓扑关系
+## 5. 拓扑关系
 
 设备参与的当前最小关系如下：
 
 | 关系 | 端点 | 必要边属性 | 来源 |
 |---|---|---|---|
-| `located_in` | `device(device_sn) → cabinet(uuid)` | `scope_id`、`source_id`、`synced_at` | `device_view.cabinet_uuid` |
-| `member_of` | `device(device_sn) → pod(uuid)` | `plane`、`scope_id`、`source_id`、`synced_at` | 管理面 POD 或计算面 POD 候选 |
-| `owns_interface` | `device(device_sn) → interface(port_uuid)` | `scope_id`、`source_id`、`synced_at` | `port_view` 的本端设备引用 |
-| `server_uplink` | `device(device_sn) → interface(port_uuid)` | `scope_id`、`source_id`、`synced_at` | `server_tor_ports[].sn + ports[]` |
-| `contains_gpu` | `device(device_sn) → gpu(uuid)` | `scope_id`、`source_id`、`synced_at` | `server_gpu.device_sn` |
+| `located_in` | `device(device_sn) → cabinet(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `device_view.cabinet_uuid` |
+| `member_of` | `device(device_sn) → pod(uuid)` | `plane`、`relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 管理面 POD 或计算面 POD 引用 |
+| `owns_interface` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 详见 [interface.md](interface.md) |
+| `server_uplink` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `server_tor_ports[].sn + ports[]` |
+| `contains_gpu` | `device(device_sn) → gpu(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `server_gpu.device_sn` |
+
+`relation_id` 优先使用带 `scope_id/source_id` 限定的来源关系 UUID；没有来源关系 UUID 时，由关系类型和两端完整逻辑身份确定性生成。`member_of` 允许业务属性参与唯一性，其关系 ID 还必须包含规范化 `plane`。
 
 说明：
 
+- 关系端点和必要关系属性必须存，因为它们就是分析拓扑本身。
 - 普通服务器来源没有服务器本端接口 UUID，因此 `server_uplink` 直接指向 ToR 接口，不伪造服务器接口节点。
-- 网络设备端口归属主要由 `port_view` 生成，不把端口列表复制到设备节点。
+- 网络设备端口归属由 `port_view` 生成，不把端口列表复制到设备节点。
 - 电力影响路径从 `device → cabinet` 开始，再沿机柜、RPP、UPS 和变压器关系遍历；设备自身无需保存功耗字段。
-- GPU 卡及 GPU 上联分别由 GPU 实体和 GPU 关系文档定义，不把 GPU 汇总复制到设备节点。
+- GPU 卡及 GPU 上联分别由 GPU 实体和 GPU 关系定义，不把 GPU 汇总复制到设备节点。
 
 ## 6. 当前明确不存储的字段
 
-### 6.1 不进入任何结构化当前模型
-
 - `device_view.uuid`
-- `device_id`，因为已确认等于 `inst_id`
-- `obj_id`，因为固定为 `device_view`
+- `inst_id`、`device_id`、`device_uuid`：不进入目标模型；稳定 UUID/SN 直接查询，只有数字独占引用才在当前请求处理中使用 `inst_id`
+- `obj_id`
 - `service_status` / `service_status_id`
 - `operation`、`asset` 等资产状态
+- `cabinet_uuid`、POD 引用、`server_tor_ports`：只作为当前响应中的关系解析输入，不复制到设备节点或同步状态
 - `u_position`、`u_start`、`u_end`
 - `power`、`rated_power` 及其他设备功耗字段
-
-### 6.2 后续扩展字段
-
-以下字段当前不需要，只有出现明确分析需求后再扩展：
-
-- 厂商、型号和配置：`manufacturer`、`model`、`configure`
+- 厂商、型号和配置
 - 资产编号、部门、业务、应用和负责人
 - 操作系统、固件、维保和采购信息
-- 设备详细地址属性：网关、掩码、MAC、VLAN、地址用途
+- 网关、掩码、MAC、VLAN、地址用途
 - 楼栋、房间、模组和逻辑 IDC 的设备冗余引用
-- GPU 汇总：`parts_gpu`、`pkg_gpu_count`、`pkg_gpu_manufacturer`、`pkg_gpu_model` 等
-- ToR 候选中的 `ip`、`ip_type`、`as_number`
-- 设备功耗和容量规格
+- GPU 汇总字段
+- ToR 引用中的 `ip`、`ip_type`、`as_number`
 
-## 7. 最小校验规则
+## 7. 同步与校验规则
 
-1. `device_sn` 必须非空，并在同一 `source_id` 下唯一。
-2. 同一 `device_sn` 不得对应多个 `inst_id`。
-3. 同一 `inst_id` 不得对应多个 `device_sn`。
-4. 网络设备非空 `device_uuid` 必须唯一映射到一个 `device_sn`。
-5. `device_type_id` 的字典父 ID 必须等于记录的 `parent_type_id`。
-6. 关系候选无法唯一解析时不发布图边，保留 `unresolved` 或 `conflict` 诊断。
-7. 完整同步成功后才能按 `synced_at` 清理旧关系和旧节点；先清关系，再清节点。
+1. 设备按 `device_sn` 去重；`device_sn` 必须非空，并在同一 `source_id` 下唯一。
+2. 关系来源提供稳定 UUID/SN 时直接查询或关联，不建立 `inst_id → device_sn`、`device_uuid → device_sn` 等整轮内存索引。
+3. 只有数字独占引用才按目标对象类型使用 `inst_id` 查询稳定身份；数字 ID 不进入节点、关系或同步状态。
+4. `device_type_id` 的字典父 ID 必须等于记录的 `parent_type_id`。
+5. 引用为空或无法唯一解析时不生成图边，并计入本轮同步诊断。
+6. 只有完整分页采集、关系解析和图写入成功后，才能发布本轮设备拓扑。
+7. 本轮所有设备节点和成功解析的关系统一刷新 `synced_at=T`；`created_at` 仅在首次创建时写入。
+8. 完整同步成功后才能清理 `synced_at<T` 的受管旧关系和旧节点；先清关系，再清节点。
+9. 重试、恢复或图重建均重新读取 CMDB，不依赖 MySQL 中的设备快照、关系候选或临时别名索引。
 
 ## 8. 来源证据
 

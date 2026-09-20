@@ -7,37 +7,51 @@
 - 功能：网络端口组链路（可分页、可选字段、可按 idc_id 过滤）。
 
 ## 请求体示例
+
+### 先按稳定 UUID 查询本端端口组
+
 ```json
 {
     "page": {
         "start": 0,
-        "limit": 2,
+        "limit": 100,
         "sort": "inst_id"
     },
     "condition": {
-        // "inst_id": "4564510b-78bb-9bcb-5eaf-4e73c9ab1e39"
-        // "uuid":"4564510b-78bb-9bcb-5eaf-4e73c9ab1e39"
-        // "inst_id":1001990
-        "port_group_link_id": 2328        
-        // "inst_id": 4213
+        "uuid": "bd30c202-4f2f-579e-64a5-5527e5d4d815"
     }
 }
 ```
+
+### 再按返回的链路 ID 查询同一链路成员
+
+```json
+{
+    "page": {
+        "start": 0,
+        "limit": 100,
+        "sort": "inst_id"
+    },
+    "condition": {
+        "port_group_link_id": 2328
+    }
+}
+```
+
 - `fields`：可选，列出需要返回的字段；不指定时可返回全字段。
 - `page.start` / `page.limit` / `page.sort`：分页与排序。
-- `condition.device_uuid`：按设备UUID过滤。
-- `condition.remote_device_uuid`：按对端设备UUID过滤。
-- `condition.port_type`：按端口类型过滤。physics \ virtual
-- `condition.remote_device_sn`：按对端SN 过滤
-- `condition.local_device_sn`：按本端SN过滤
-
-
+- `condition.uuid`：按稳定端口组成员 UUID 查询。
+- `condition.inst_id`：按端口组成员数字 ID 查询；已有 UUID 时不需要使用。
+- `condition.port_group_link_id`：查询同一端口组链路下的全部成员。
+- API 支持灵活条件查询；同步模型不需要保存 `group_id` 或 `port_group_id`。返回的 `port_group_link_id` 只用于当前请求继续查询成员。
 
 ## 返回字段补充
 
- - port_group_uuid  端口组uuid
- - group_id 端口组id
- - group_type  端口组类型 (type:3,inner_link,机房内端口组) (type:1, dci:专线) (type:2，pop:出口) 要调用不同的接口获取
+- `uuid`：本端端口组成员 UUID，对应 `port_view.port_group_uuid`。
+- `inst_id`：本端端口组成员数字 ID，对应 `port_view.port_group_id`，不进入目标模型。
+- `port_group_link_id`：端口组链路数字 ID，对应 `port_view.group_id`，不进入目标模型。
+- `group_uuid`：链路稳定 UUID 来自 `port_view.group_uuid`，保存在接口属性中。
+- `group_type`：端口组一级类型；3=inner_link（机房内端口组）、1=DCI（专线）、2=POP（出口）。三种类型统一使用本接口查询。
 
 ## 返回示例
 ```json
