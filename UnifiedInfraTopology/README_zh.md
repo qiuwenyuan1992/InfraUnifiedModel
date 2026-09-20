@@ -100,46 +100,10 @@ MySQL DDL 可能部分提交，SQLite 回滚测试不代表 MySQL 兼容性已�
 SQLite 部署/测试必须为**每个池连接**开启外键，例如使用驱动支持的
 `file:inventory.db?_pragma=foreign_keys(1)` DSN。
 
-## 当前图存储与初始化
+## 模型开发基线
 
-Nebula 保存当前设备、接口、地址和关系；MySQL 保存控制与身份元数据，不保存逐批次资产副本。
-VID 为 `scope_id + ':d:' / ':i:' / ':a:' + entity_id`，固定 67 字节，空间类型为 `FIXED_STRING(67)`；
-VID 不包含 `generation_id`。原有 `0000`/`0001` 迁移及校验和保持不变，
-`0002` 增加投影状态与 epoch。旧资产表不再使用，但不会自动删除。
-来源历史归属外部 CMDB ClickHouse，尚无历史适配器；本节优先于早期 foundation 计划中的快照读取假设。
-
-审阅 `docs/schema/current_graph.ngql`，仅在**新建专用空间**逐阶段手工执行，禁止用于遗留空间。
-先审阅分区和副本设置，再按顺序操作：
-
-1. 创建专用空间，等待元数据传播。
-2. 选择该空间并创建标签与边类型，等待元数据传播。
-3. 创建索引，等待索引可用后再接入读取服务；导入已有数据后的索引重建需单独运维审核。
-
-配置中的空间名必须与实际空间一致：
-
-```yaml
-inventory:
-  # 与上面的 cursor_key/grants 合并，不要重复定义 inventory。
-  graph:
-    hosts: ["127.0.0.1:9669"]
-    space: "unified_inventory_current"
-    username: "DEPLOYMENT_USER"
-    password: "DEPLOYMENT_SECRET"
-    timeout_seconds: 5
-```
-
-启动永不创建图 schema。缺少 hosts 或 space 时资产读取不可用且不会回退到 SQL，控制接口仍可启动。
-显式配置错误或图服务不可达可能导致启动失败。SDK socket 超时只约束单次网络操作，
-不是整个 HTTP 请求的截止时间；取消检查在 SDK 调用前后执行，不能中断进行中的调用。
-
-作用域初始为 `uninitialized`。未来发布器必须在**任何图修改之前**持久化 `updating` 状态并递增
-单调 epoch，完成并验证全部图写入后，再在 MySQL 中原子发布当前批次和 `ready` 状态。
-失败必须保持不可用，不能在部分写入后恢复就绪。读取端在图访问后复查状态、epoch 和当前批次。
-这是写入隔离协议，不是分布式事务；没有发布器或 CMDB 采集 worker，建好 schema 不会导入资产或使作用域就绪。
-
-图中地址为文本 IP，读取后转换为领域字节表示；IPv4 内部为映射的 16 字节编码，JSON 输出点分十进制，
-IPv6 保持 IPv6。列表限制只约束返回量，生产前须用真实规模数据执行 EXPLAIN/PROFILE 检查扫描与排序成本；
-尚未证明百万接口规模的性能。
+旧的 NebulaGraph 可执行 Schema 和当前图初始化说明已在 2026-09-20 开发基线重置时废弃。
+不得使用历史代码或文档初始化图空间。下一版 Schema 必须根据 `docs/model/` 下的权威实体与关系定义重新生成并评审。
 
 ## 开发与验证
 
@@ -166,7 +130,7 @@ INVENTORY_GRAPH_TEST_CONFIG=/absolute/path/to/development.yml \
 执行前先初始化专用空间的 schema；常规测试不会验证真实环境。
 `make test`、`make coverage` 和 `make race` 显式关闭实时检查；需使用上面的直接命令单独启用。
 实时 MySQL DDL 兼容性、大规模图性能及生产部署仍未验证。
-更多契约见 `docs/schema/current_graph.ngql` 和 `docs/superpowers/` 下的 API/存储文档。
+当前实体与关系模型统一以 `docs/model/` 为准，历史实施计划和规格不再作为开发依据。
 
 ## 许可证
 

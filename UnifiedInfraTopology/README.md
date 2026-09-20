@@ -114,55 +114,12 @@ Asset reads require a ready scope and its current published batch with both inve
 and graph readiness. Otherwise they report `projection_not_ready`. A `generation_id`
 selects only that current batch; a non-current selector returns a conflict, not history.
 
-## Current graph storage and initialization
+## Model baseline
 
-Nebula stores current devices, interfaces, addresses and relationships using stable
-67-byte VIDs: `scope_id + ':d:' / ':i:' / ':a:' + entity_id`, with `FIXED_STRING(67)`.
-VIDs never contain a generation ID. MySQL stores control and identity metadata, not asset copies
-per batch. Existing `0000`/`0001` migrations remain checksummed and unchanged;
-`0002` adds projection state/epoch. The old asset tables are unused, not auto-dropped.
-Source history belongs to the external CMDB ClickHouse; no history adapter is implemented.
-This section supersedes snapshot-read assumptions in the earlier foundation plan.
-
-Review `docs/schema/current_graph.ngql` and execute its phases manually in a **new,
-dedicated space**. Do not run it in legacy spaces. Review partition/replica settings:
-
-1. Create the dedicated space and wait for metadata propagation.
-2. Select that space and create tags/edges; wait for their metadata to propagate.
-3. Create indexes and wait until available before enabling readers. Any index rebuild
-   after importing existing data requires separate operator review.
-
-Configure the same space name:
-
-```yaml
-inventory:
-  # Merge with cursor_key/grants above; do not create a second inventory key.
-  graph:
-    hosts: ["127.0.0.1:9669"]
-    space: "unified_inventory_current"
-    username: "DEPLOYMENT_USER"
-    password: "DEPLOYMENT_SECRET"
-    timeout_seconds: 5
-```
-
-Startup never creates graph schema. Missing hosts or space leaves asset reads
-unavailable without SQL fallback; control APIs can still start. An explicitly configured
-but invalid/unreachable graph may fail startup. SDK socket timeouts bound individual
-network operations, not the total HTTP deadline; cancellation is checked before/after
-SDK execution and does not interrupt an in-flight call.
-
-Scopes start `uninitialized`. A future publisher must durably mark the scope `updating`
-and increment its monotonic epoch **before any graph mutation**, complete and validate
-all writes, then publish the current batch and `ready` state atomically in MySQL.
-Failure must leave the scope unavailable, never restore readiness over partial writes.
-Readers recheck state, epoch and active batch after graph access. This is a write-fence
-protocol, not a distributed transaction. No publisher or CMDB collection worker is
-included; initializing schema does not import assets or make a scope ready.
-
-Graph addresses are textual IPs, decoded into domain bytes; IPv4 uses mapped sixteen-byte
-encoding internally and renders dotted-quad JSON. IPv6 remains IPv6. Graph list limits
-bound response size only: validate scan/sort cost with EXPLAIN/PROFILE on realistic
-volumes before production; million-interface performance is not established.
+The previous executable NebulaGraph schema and current-graph initialization instructions
+were retired during the 2026-09-20 development baseline reset. Do not initialize a graph
+space from historical code or documentation. The next schema must be generated and
+reviewed from the authoritative entity and relationship definitions under `docs/model/`.
 
 ## Development and verification
 
@@ -190,8 +147,8 @@ This opt-in test checks schema and queries read-only in `unified_inventory_curre
 Initialize the dedicated schema before running this check; default tests do not verify it.
 `make test`, `make coverage` and `make race` explicitly disable live checks; use the direct
 command above to opt in. Do not target production or perform production writes for verification. Live MySQL DDL compatibility, large-scale graph performance and production
-deployment remain unverified. See `docs/schema/current_graph.ngql` and API/storage
-contracts under `docs/superpowers/` for details.
+deployment remain unverified. The current entity and relationship model is defined
+under `docs/model/`; legacy implementation plans and specifications are no longer authoritative.
 
 ## License
 
