@@ -39,19 +39,14 @@ go run ./cmd/worker -conf config/local.example.yml
 
 ## 已实现的 API
 
-`/v1/inventory` 提供经身份认证的设备、接口、地址、来源和已发布批次读取，
-以及持久化同步任务的创建、列表、详情和取消；已有用户接口仍保留。
-同步任务**只入队，不执行**。尚无采集 worker、发布流水线、拓扑查询或上游写入。
-证据、来源进度、检查点和覆盖摘要尚未开放；生成的 Swagger 仅覆盖已有用户路由，
-不是完整的 inventory API 文档。
+`/v1/inventory` 当前提供经身份认证的来源列表，以及同步任务的创建、列表、详情和取消；已有用户接口仍保留。
+同步任务**只入队，不执行**。尚无资产读取、采集 worker、发布流水线、拓扑查询或上游写入。
+证据、来源进度、检查点和覆盖摘要尚未开放；生成的 Swagger 仅覆盖已有用户路由，不是完整的 inventory API 文档。
 
-创建同步任务需要认证、`Content-Type: application/json` 和 `Idempotency-Key` 请求头。
-请求接受 `source_ids`、`mode: "full"` 以及可空的 `base_generation_id`，返回 HTTP 202 和 `Location`。
+创建同步任务需要认证、`Content-Type: application/json` 和唯一的 `Idempotency-Key` 请求头。
+请求接受单个 `source_id` 和 `mode: "full"`，返回 HTTP 202 和 `Location`。
 相同规范化请求体与幂等键重放时返回原任务；创建成功不代表已执行。
-
-资产读取要求作用域为 `ready`，且当前已发布批次的 inventory 与 graph 均就绪，
-否则返回 `projection_not_ready`。`generation_id` 只能选择当前批次；非当前批次返回冲突，不能读取历史。
-资产 ID 为 32 位小写十六进制字符串。
+资源 ID 为 32 位小写十六进制字符串。列表游标版本为 v1，绑定调用方、资源和过滤条件；轮换至少 32 字节的独立游标签名密钥会使已有游标失效。
 
 ## 配置与启动
 
@@ -75,13 +70,11 @@ inventory:
   cursor_key: "REPLACE_WITH_DEPLOYMENT_MANAGED_SECRET"
   grants:
     - user_id: "authenticated-user-id"
-      permissions: ["inventory:read", "sync:read", "sync:write"]
+      permissions: ["sync:read", "sync:write"]
 ```
 
 没有默认授权。来源记录由部署方管理，不提供种子数据或配置 CRUD 接口。
-缺少游标配置时列表操作不可用。v3 游标绑定调用方、资源、过滤条件、当前发布批次和投影 epoch；
-旧格式游标、非当前批次选择器以及图更新后失效的游标不能读取历史资产，必须从当前批次重新分页。
-轮换签名密钥也会使已有游标失效。
+缺少游标配置时列表操作不可用。v1 游标绑定调用方、资源和过滤条件；轮换签名密钥会使已有游标失效。
 
 **核实实际目标配置并备份目标数据库后**，显式执行：
 
@@ -101,8 +94,13 @@ SQLite 部署/测试必须为**每个池连接**开启外键，例如使用驱�
 
 ## 模型开发基线
 
-旧的 NebulaGraph 可执行 Schema 和当前图初始化说明已在 2026-09-20 开发基线重置时废弃。
-不得使用历史代码或文档初始化图空间。下一版 Schema 必须根据 `docs/model/` 下的权威实体与关系定义重新生成并评审。
+当前 NebulaGraph 基线为 `internal/migration/nebula/0001_topology.ngql`，由 `docs/model/` 下的权威实体与关系定义生成：
+
+- Space：`unified_infra_topology`。
+- 10 个 Tag：`device`、`interface`、`gpu`、`pod`、`cabinet`、`data_center`、`rpp`、`ups_group`、`ups`、`transformer`。
+- 4 个 Edge Type：`spatial_relation`、`composition_relation`、`network_relation`、`power_relation`；具体语义由 `relation_kind` 区分。
+
+server 和 worker 不自动执行图 DDL。Schema 必须由运维在专用 Space 显式执行，并检查每条语句的 Nebula 返回结果。首次初始化分三阶段执行：创建 Space 后等待至少两个 heartbeat 周期，再执行 `USE`、Tag 和 Edge；随后再等待至少两个 heartbeat 周期，最后创建索引。某些 Console 用法会按换行拆分多行语句，不能只依据进程退出码判断成功。
 
 ## 开发与验证
 
@@ -118,17 +116,16 @@ make swag   # 仅生成已有用户路由的 Swagger 元数据
 
 `make test` 包含同目录测试和已有服务测试；`make wire` 重新生成依赖装配；
 `make swag` 不会补齐 inventory 接口文档。常规测试使用隔离 SQLite fixture 与 mock，不连接配置中的数据库。
-实时图检查默认跳过，仅在专用开发空间显式启用，配置路径应为绝对路径：
+真实图验收默认跳过，仅在已初始化 `unified_infra_topology` 的专用开发 Space 显式启用，配置路径必须为绝对路径：
 
 ```sh
-INVENTORY_GRAPH_TEST_CONFIG=/absolute/path/to/development.yml \
-  go test ./internal/repository -run '^TestGraphInventoryLiveReadOnly$' -count=1
+TOPOLOGY_GRAPH_TEST_CONFIG=/absolute/path/to/development.yml \
+  go test ./internal/repository \
+  -run '^TestTopologyGraphLiveWriteRefreshAndCleanup$' -count=1 -v
 ```
 
-该测试只读检查 `unified_inventory_current` 的 schema 和查询。不要指向生产环境，禁止为验证执行生产写入。
-执行前先初始化专用空间的 schema；常规测试不会验证真实环境。
-`make test`、`make coverage` 和 `make race` 显式关闭实时检查；需使用上面的直接命令单独启用。
-实时 MySQL DDL 兼容性、大规模图性能及生产部署仍未验证。
+该测试会真实写入并清理专用验收数据，验证节点、GPU 保留字段、关系、`created_at` 保留、UTC 微秒 `synced_at` 刷新、旧关系删除和孤立节点删除。禁止指向生产环境或共享 Space。
+常规测试不会连接真实 NebulaGraph；实时 MySQL DDL 兼容性、大规模图性能及生产部署仍未验证。
 当前实体与关系模型统一以 `docs/model/` 为准，历史实施计划和规格不再作为开发依据。
 
 ## 许可证

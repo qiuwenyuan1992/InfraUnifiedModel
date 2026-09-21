@@ -17,8 +17,8 @@ type InventoryHandler struct {
 	service service.InventoryService
 }
 
-func NewInventoryHandler(h *Handler, s service.InventoryService) *InventoryHandler {
-	return &InventoryHandler{Handler: h, service: s}
+func NewInventoryHandler(handler *Handler, inventory service.InventoryService) *InventoryHandler {
+	return &InventoryHandler{Handler: handler, service: inventory}
 }
 
 func inventorySuccess(c *gin.Context, status int, data interface{}) {
@@ -35,7 +35,7 @@ func inventoryError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrInventoryNotFound):
 		status, code, message = 404, 40401, "not_found"
 	case errors.Is(err, service.ErrInventoryNotReady):
-		status, code, message = 409, 40902, "projection_not_ready"
+		status, code, message = 409, 40902, "inventory_not_ready"
 	case errors.Is(err, service.ErrInventoryConflict):
 		status, code, message = 409, 40903, "state_conflict"
 	case errors.Is(err, service.ErrInventoryIdempotency):
@@ -46,79 +46,58 @@ func inventoryError(c *gin.Context, err error) {
 	c.JSON(status, v1.Response{Code: code, Message: message, Data: gin.H{}})
 }
 
-func inventoryQuery(c *gin.Context, allowed ...string) (url.Values, error) {
-	q, err := url.ParseQuery(c.Request.URL.RawQuery)
+func inventoryQuery(context *gin.Context, allowed ...string) (url.Values, error) {
+	query, err := url.ParseQuery(context.Request.URL.RawQuery)
 	if err != nil {
 		return nil, service.ErrInventoryInvalid
 	}
-	for key, values := range q {
-		ok := false
+	for key, values := range query {
+		valid := false
 		for _, name := range allowed {
 			if key == name {
-				ok = true
+				valid = true
 				break
 			}
 		}
-		if !ok || len(values) != 1 || values[0] == "" {
+		if !valid || len(values) != 1 || values[0] == "" {
 			return nil, service.ErrInventoryInvalid
 		}
 	}
-	return q, nil
+	return query, nil
 }
 
 func (h *InventoryHandler) List(resource string) gin.HandlerFunc {
-	return func(c *gin.Context) {
+	return func(context *gin.Context) {
 		allowed := []string{"limit", "cursor"}
-		switch resource {
-		case "devices":
-			allowed = append(allowed, "generation_id", "device_kind", "name", "lifecycle")
-		case "interfaces":
-			allowed = append(allowed, "generation_id", "interface_kind")
-		case "addresses":
-			allowed = append(allowed, "generation_id", "address_family")
-		case "sync-runs":
+		if resource == "sync-runs" {
 			allowed = append(allowed, "status", "source_id")
 		}
-		q, err := inventoryQuery(c, allowed...)
+		query, err := inventoryQuery(context, allowed...)
 		if err != nil {
-			inventoryError(c, err)
+			inventoryError(context, err)
 			return
 		}
 		limit := 0
-		if q.Has("limit") {
-			limit, err = strconv.Atoi(q.Get("limit"))
+		if query.Has("limit") {
+			limit, err = strconv.Atoi(query.Get("limit"))
 			if err != nil || limit < 1 || limit > 200 {
-				inventoryError(c, service.ErrInventoryInvalid)
+				inventoryError(context, service.ErrInventoryInvalid)
 				return
 			}
 		}
-		page, err := h.service.List(c.Request.Context(), GetUserIdFromCtx(c), resource, c.Param("device_id"), service.InventoryQuery{
-			Limit: limit, Cursor: q.Get("cursor"), GenerationID: q.Get("generation_id"), DeviceKind: q.Get("device_kind"), Name: q.Get("name"), Lifecycle: q.Get("lifecycle"), InterfaceKind: q.Get("interface_kind"), AddressFamily: q.Get("address_family"), Status: q.Get("status"), SourceID: q.Get("source_id"),
+		page, err := h.service.List(context.Request.Context(), GetUserIdFromCtx(context), resource, "", service.InventoryQuery{
+			Limit: limit, Cursor: query.Get("cursor"), Status: query.Get("status"), SourceID: query.Get("source_id"),
 		})
 		if err != nil {
-			inventoryError(c, err)
+			inventoryError(context, err)
 			return
 		}
 		items, err := v1.InventoryItems(page.Items)
 		if err != nil {
-			inventoryError(c, err)
+			inventoryError(context, err)
 			return
 		}
 		page.Items = items
-		inventorySuccess(c, http.StatusOK, page)
+		inventorySuccess(context, http.StatusOK, page)
 	}
-}
-
-func (h *InventoryHandler) GetDevice(c *gin.Context) {
-	q, err := inventoryQuery(c, "generation_id")
-	if err != nil {
-		inventoryError(c, err)
-		return
-	}
-	d, err := h.service.GetDevice(c.Request.Context(), GetUserIdFromCtx(c), c.Param("device_id"), q.Get("generation_id"))
-	if err != nil {
-		inventoryError(c, err)
-		return
-	}
-	inventorySuccess(c, 200, gin.H{"device": v1.InventoryDevice(d.Device), "generation": v1.InventoryGeneration(d.Generation)})
 }

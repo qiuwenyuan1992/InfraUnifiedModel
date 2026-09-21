@@ -35,11 +35,7 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 	userService := service.NewUserService(serviceService, userRepository)
 	userHandler := handler.NewUserHandler(handlerHandler, userService)
 	inventoryRepository := repository.NewInventoryRepository(repositoryRepository)
-	graphInventoryRepository, cleanup, err := repository.NewGraphInventoryRepository(viperViper)
-	if err != nil {
-		return nil, nil, err
-	}
-	inventoryService := service.NewInventoryService(inventoryRepository, graphInventoryRepository, viperViper)
+	inventoryService := service.NewInventoryService(inventoryRepository, viperViper)
 	inventoryHandler := handler.NewInventoryHandler(handlerHandler, inventoryService)
 	routerDeps := router.RouterDeps{
 		Logger:           logger,
@@ -51,13 +47,12 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 	httpServer := server.NewHTTPServer(routerDeps)
 	appApp := newApp(httpServer)
 	return appApp, func() {
-		cleanup()
 	}, nil
 }
 
 // wire.go:
 
-var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewInventoryRepository, repository.NewGraphInventoryRepository)
+var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewInventoryRepository)
 
 var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewInventoryService)
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/viper"
 	nebulago "github.com/vesoft-inc/nebula-go/v3"
+	nebulatype "github.com/vesoft-inc/nebula-go/v3/nebula"
 )
 
 type Client interface {
@@ -124,11 +125,23 @@ func (c *client) ExecuteParameter(ctx context.Context, statement string, params 
 	}
 	// SDK 无上下文接口；socket 超时约束每次网络读写，重试次数由 SDK 有限限定。
 	// 不创建请求 goroutine；取消在调用前后检查，不能中断正在进行的 SDK 调用。
-	result, err := c.pool.ExecuteWithParameter(statement, params)
+	result, err := c.pool.ExecuteWithParameter(statement, normalizeParameters(params))
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
 	}
 	return result, err
+}
+
+func normalizeParameters(params map[string]interface{}) map[string]interface{} {
+	normalized := make(map[string]interface{}, len(params))
+	for name, value := range params {
+		if integer, ok := value.(int64); ok {
+			normalized[name] = nebulatype.Value{IVal: &integer}
+			continue
+		}
+		normalized[name] = value
+	}
+	return normalized
 }
 
 func (c *client) Close() {

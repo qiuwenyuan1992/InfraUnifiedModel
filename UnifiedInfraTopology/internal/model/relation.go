@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +43,20 @@ var relationSpecs = map[RelationSpec]struct{}{
 	{EdgeType: EdgePower, Kind: RelationHasStandby, From: EntityTransformer, To: EntityTransformer}:   {},
 }
 
+var relationPropertyNames = map[RelationSpec]map[string]struct{}{
+	{EdgeType: EdgeSpatial, Kind: RelationMemberOf, From: EntityDevice, To: EntityPod}: {
+		"plane": {},
+	},
+	{EdgeType: EdgeNetwork, Kind: RelationGPUUplink, From: EntityGPU, To: EntityInterface}: {
+		"gpu_port": {}, "gpu_port_speed": {}, "gpu_ip": {}, "gpu_slot": {},
+		"server_port_speed": {}, "bond_name": {}, "tor_port": {}, "tor_port_speed": {},
+		"tor_role": {}, "source": {},
+	},
+	{EdgeType: EdgePower, Kind: RelationPowerUpstream, From: EntityCabinet, To: EntityRPP}: {
+		"power_path": {},
+	},
+}
+
 func ValidateRelation(relation Relation) error {
 	_, err := NormalizeRelation(relation)
 	return err
@@ -69,6 +84,9 @@ func NormalizeRelation(relation Relation) (Relation, error) {
 	}
 
 	relation.Properties = cloneProperties(relation.Properties)
+	if err := validateRelationProperties(spec, relation.Properties); err != nil {
+		return Relation{}, err
+	}
 	relation.Identity.Discriminator = ""
 
 	switch spec {
@@ -117,6 +135,21 @@ func NormalizeRelation(relation Relation) (Relation, error) {
 		return Relation{}, errors.New("source relation ID is only supported for GPU uplinks")
 	}
 	return relation, nil
+}
+
+func validateRelationProperties(spec RelationSpec, properties map[string]any) error {
+	allowed := relationPropertyNames[spec]
+	invalid := make([]string, 0)
+	for name := range properties {
+		if _, ok := allowed[name]; !ok {
+			invalid = append(invalid, name)
+		}
+	}
+	if len(invalid) == 0 {
+		return nil
+	}
+	sort.Strings(invalid)
+	return fmt.Errorf("unsupported relation property %q", invalid[0])
 }
 
 func cloneProperties(properties map[string]any) map[string]any {

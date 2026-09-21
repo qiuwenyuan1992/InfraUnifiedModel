@@ -2,12 +2,14 @@ package nebula
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	nebulago "github.com/vesoft-inc/nebula-go/v3"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
 )
 
 func TestParseConfig(t *testing.T) {
@@ -53,16 +55,32 @@ func TestParseConfig(t *testing.T) {
 type fakeSessionPool struct {
 	calls, closes int
 	after         func()
+	params        map[string]interface{}
 }
 
-func (p *fakeSessionPool) ExecuteWithParameter(string, map[string]interface{}) (*nebulago.ResultSet, error) {
+func (p *fakeSessionPool) ExecuteWithParameter(_ string, params map[string]interface{}) (*nebulago.ResultSet, error) {
 	p.calls++
+	p.params = params
 	if p.after != nil {
 		p.after()
 	}
 	return nil, nil
 }
 func (p *fakeSessionPool) Close() { p.closes++ }
+
+func TestClientConvertsInt64ParametersForSDK(t *testing.T) {
+	pool := &fakeSessionPool{}
+	client := &client{pool: pool}
+
+	_, err := client.ExecuteParameter(context.Background(), "query", map[string]interface{}{
+		"rank": int64(math.MaxInt64),
+	})
+	require.NoError(t, err)
+	value, ok := pool.params["rank"].(nebula.Value)
+	require.True(t, ok)
+	require.NotNil(t, value.IVal)
+	require.Equal(t, int64(math.MaxInt64), *value.IVal)
+}
 
 func TestClientCancellationAndCleanup(t *testing.T) {
 	pool := &fakeSessionPool{}

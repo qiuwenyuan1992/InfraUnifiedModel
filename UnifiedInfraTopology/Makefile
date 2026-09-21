@@ -34,14 +34,14 @@ migrate:
 	$(GO) run ./cmd/migration -conf "$(CONF)"
 
 test:
-	INVENTORY_GRAPH_TEST_CONFIG= $(GO) test ./... -count=1 -timeout=90s
+	INVENTORY_GRAPH_TEST_CONFIG= TOPOLOGY_GRAPH_TEST_CONFIG= $(GO) test ./... -count=1 -timeout=90s
 
 coverage:
-	INVENTORY_GRAPH_TEST_CONFIG= $(GO) test ./... -coverprofile=coverage.out -count=1 -timeout=90s
+	INVENTORY_GRAPH_TEST_CONFIG= TOPOLOGY_GRAPH_TEST_CONFIG= $(GO) test ./... -coverprofile=coverage.out -count=1 -timeout=90s
 	$(GO) tool cover -html=coverage.out -o coverage.html
 
 race:
-	INVENTORY_GRAPH_TEST_CONFIG= $(GO) test -race ./... -count=1 -timeout=90s
+	INVENTORY_GRAPH_TEST_CONFIG= TOPOLOGY_GRAPH_TEST_CONFIG= $(GO) test -race ./... -count=1 -timeout=90s
 
 vet:
 	$(GO) vet ./...

@@ -37,7 +37,7 @@ func (h *InventoryHandler) Enqueue(c *gin.Context) {
 			return
 		}
 		name, ok := token.(string)
-		if !ok || (name != "source_ids" && name != "mode" && name != "base_generation_id") {
+		if !ok || (name != "source_id" && name != "mode") {
 			inventoryError(c, service.ErrInventoryInvalid)
 			return
 		}

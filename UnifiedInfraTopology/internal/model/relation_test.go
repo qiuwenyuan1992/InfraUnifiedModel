@@ -102,15 +102,32 @@ func TestValidateRelationRejectsInvalidRelations(t *testing.T) {
 	require.Error(t, ValidateRelation(standby))
 }
 
+func TestNormalizeRelationRejectsPropertiesForWrongKind(t *testing.T) {
+	tests := []Relation{
+		testRelation(EdgeSpatial, RelationLocatedIn, EntityDevice, EntityCabinet),
+		testRelation(EdgePower, RelationPowerUpstream, EntityRPP, EntityUPSGroup),
+		testRelation(EdgeNetwork, RelationServerUplink, EntityDevice, EntityInterface),
+		testRelation(EdgeNetwork, RelationLinksTo, EntityInterface, EntityInterface),
+	}
+	properties := []map[string]any{
+		{"plane": int64(1)},
+		{"power_path": "A"},
+		{"gpu_ip": "192.0.2.10"},
+		{"tor_port": "Ethernet1/1"},
+	}
+	for index := range tests {
+		tests[index].Properties = properties[index]
+		require.ErrorContains(t, ValidateRelation(tests[index]), "unsupported relation property")
+	}
+}
+
 func TestNormalizeRelationCanonicalizesLinksTo(t *testing.T) {
 	left := testEntity(EntityInterface, "port-a")
 	right := testEntity(EntityInterface, "port-z")
-	properties := map[string]any{"note": "preserved"}
 
 	forward := testRelation(EdgeNetwork, RelationLinksTo, EntityInterface, EntityInterface)
 	forward.Identity.From = right
 	forward.Identity.To = left
-	forward.Properties = properties
 
 	reverse := forward
 	reverse.Identity.From = left
@@ -122,7 +139,7 @@ func TestNormalizeRelationCanonicalizesLinksTo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, left, normalizedForward.Identity.From)
 	require.Equal(t, right, normalizedForward.Identity.To)
-	require.Equal(t, properties, normalizedForward.Properties)
+	require.Empty(t, normalizedForward.Properties)
 
 	forwardID, err := normalizedForward.Identity.ID()
 	require.NoError(t, err)

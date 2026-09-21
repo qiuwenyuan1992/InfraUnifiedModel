@@ -201,8 +201,8 @@ func (i RelationIdentity) Rank() (int64, error)
 
 - `created_at`：节点或关系首次成功写入图的 UTC 时间，后续 upsert 不得覆盖。
 - `synced_at`：最近一次完整同步确认该对象存在的 UTC 时间。
-- 系统时间截断到秒。
-- 来源时间解析后转换为 UTC，并截断到秒。
+- 系统时间转换为 UTC，并截断到微秒；同一轮同步的所有节点和关系使用完全相同的 `synced_at=T`。
+- 来源时间解析后转换为 UTC，并截断到微秒。
 - `0000-00-00`、Unix epoch 占位、明显超出业务范围或解析失败的来源时间写为 NULL，并产生 warning。
 
 ## 10. 同步、清理与发布
@@ -216,7 +216,7 @@ func (i RelationIdentity) Rank() (int64, error)
 5. `spatial_relation`、`composition_relation`
 6. `network_relation`、`power_relation`
 
-只有取得某资源类型的完整范围证明后，才允许清理该来源下本轮未见对象。清理顺序固定为：
+只有取得某资源类型的完整范围证明后，才允许清理该来源下本轮未见对象。同一来源的写入与清理必须串行：单进程由图仓储来源锁阻止写入和清理重叠，多实例由 MySQL 来源行锁保证同一来源只有一个活动执行者。清理顺序固定为：
 
 1. 删除由该范围拥有、且本轮未见的边。
 2. 删除仍无入边和出边、且由该范围拥有的节点。

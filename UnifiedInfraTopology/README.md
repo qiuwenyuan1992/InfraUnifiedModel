@@ -40,13 +40,8 @@ Collection result contracts will be defined with real integrations; no fake asse
 
 ## Implemented API
 
-The implemented `/v1/inventory` API provides authenticated device, interface,
-address, source and published-generation reads, plus durable sync-run
-creation, listing, retrieval and cancellation. Existing user endpoints remain available.
-Sync runs are **queued only**: no collection worker, publication pipeline, topology
-queries or upstream writes are included. Evidence, source progress, checkpoints and
-coverage summaries are not yet exposed. Generated Swagger covers only existing user
-routes, not the full inventory API.
+The implemented `/v1/inventory` API provides authenticated source listing and durable sync-run creation, listing, retrieval and cancellation. Existing user endpoints remain available.
+Sync runs are **queued only**: asset reads, collection workers, publication pipelines, topology queries and upstream writes are not implemented. Evidence, source progress, checkpoints and coverage summaries are not yet exposed. Generated Swagger covers only existing user routes, not the full inventory API.
 
 ## Configuration and startup
 
@@ -73,17 +68,10 @@ inventory:
   cursor_key: "REPLACE_WITH_DEPLOYMENT_MANAGED_SECRET"
   grants:
     - user_id: "authenticated-user-id"
-      permissions: ["inventory:read", "sync:read", "sync:write"]
+      permissions: ["sync:read", "sync:write"]
 ```
 
-There are no default grants. Source records are deployment-managed; no seed data or
-configuration CRUD endpoints are provided. Missing cursor configuration makes list
-operations unavailable. Cursors bind the caller, resource, filters and current
-publication batch plus projection epoch (cursor format v3). Old cursors,
-non-current batch selectors and cursors invalidated by a graph update cannot read
-historical assets; restart pagination against the current batch. Changing the signing
-secret also invalidates existing cursors.
-Inventory IDs are 32 lowercase hexadecimal characters.
+There are no default grants. Source records are deployment-managed; no seed data or configuration CRUD endpoints are provided. Missing cursor configuration makes list operations unavailable. Version 1 cursors bind the caller, resource and filters. Changing the signing secret invalidates existing cursors. Inventory IDs are 32 lowercase hexadecimal characters.
 
 Run these commands from this module directory **only after verifying the target
 configuration and backing up the target database**:
@@ -105,20 +93,17 @@ DDL can commit partially; SQLite rollback tests do not establish MySQL compatibi
 For SQLite deployments/tests, enable foreign keys on **every pooled connection**, for
 example with the supported driver DSN `file:inventory.db?_pragma=foreign_keys(1)`.
 
-Enqueue requires `Content-Type: application/json`, authentication and an
-`Idempotency-Key` header. It accepts `source_ids`, `mode: "full"` and nullable
-`base_generation_id`, and returns HTTP 202 with `Location`. Replaying the same
-normalized body/key returns the original run. Creating a run does not execute it.
-Asset reads require a ready scope and its current published batch with both inventory
-and graph readiness. Otherwise they report `projection_not_ready`. A `generation_id`
-selects only that current batch; a non-current selector returns a conflict, not history.
+Enqueue requires `Content-Type: application/json`, authentication and exactly one `Idempotency-Key` header. It accepts one `source_id` and `mode: "full"`, and returns HTTP 202 with `Location`. Replaying the same normalized body and key returns the original run. Creating a run does not execute it.
 
 ## Model baseline
 
-The previous executable NebulaGraph schema and current-graph initialization instructions
-were retired during the 2026-09-20 development baseline reset. Do not initialize a graph
-space from historical code or documentation. The next schema must be generated and
-reviewed from the authoritative entity and relationship definitions under `docs/model/`.
+The current NebulaGraph baseline is `internal/migration/nebula/0001_topology.ngql`, generated from the authoritative entity and relationship definitions under `docs/model/`:
+
+- Space: `unified_infra_topology`.
+- Ten tags: `device`, `interface`, `gpu`, `pod`, `cabinet`, `data_center`, `rpp`, `ups_group`, `ups`, and `transformer`.
+- Four edge types: `spatial_relation`, `composition_relation`, `network_relation`, and `power_relation`; `relation_kind` carries the business semantics.
+
+The server and worker never execute graph DDL automatically. Operators must apply the schema explicitly to a dedicated space and inspect every Nebula result. For first-time initialization, run it in three phases: create the space and wait at least two heartbeat intervals; run `USE`, tags and edges and wait at least two more heartbeat intervals; then create indexes. Some Console invocation modes split multiline statements at newlines, so process exit status alone is not sufficient evidence of success.
 
 ## Development and verification
 
@@ -134,19 +119,16 @@ make swag   # 仅生成已有用户路由的 Swagger 元数据
 
 `make test` includes colocated tests and existing server tests. `make wire` regenerates
 dependency wiring; `make swag` does not add inventory endpoint coverage. Ordinary tests
-use isolated SQLite fixtures and mocks, not the configured database. Live graph checks
-are skipped unless explicitly enabled against a dedicated development space:
+use isolated SQLite fixtures and mocks, not the configured database. Live graph verification
+is skipped unless explicitly enabled against a dedicated, initialized `unified_infra_topology` space:
 
 ```sh
-INVENTORY_GRAPH_TEST_CONFIG=/absolute/path/to/development.yml \
-  go test ./internal/repository -run '^TestGraphInventoryLiveReadOnly$' -count=1
+TOPOLOGY_GRAPH_TEST_CONFIG=/absolute/path/to/development.yml \
+  go test ./internal/repository \
+  -run '^TestTopologyGraphLiveWriteRefreshAndCleanup$' -count=1 -v
 ```
 
-This opt-in test checks schema and queries read-only in `unified_inventory_current`.
-Initialize the dedicated schema before running this check; default tests do not verify it.
-`make test`, `make coverage` and `make race` explicitly disable live checks; use the direct
-command above to opt in. Do not target production or perform production writes for verification. Live MySQL DDL compatibility, large-scale graph performance and production
-deployment remain unverified. The current entity and relationship model is defined
+This test writes and removes dedicated verification data. It covers vertices, the reserved GPU property, relations, preserved `created_at`, UTC microsecond `synced_at` refreshes, stale-relation deletion and orphan-vertex deletion. Never target production or a shared space. Ordinary tests do not connect to NebulaGraph. Live MySQL DDL compatibility, large-scale graph performance and production deployment remain unverified. The current entity and relationship model is defined
 under `docs/model/`; legacy implementation plans and specifications are no longer authoritative.
 
 ## License

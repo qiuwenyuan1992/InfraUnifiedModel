@@ -72,7 +72,7 @@ NebulaGraph 只保存当前有效拓扑：
 
 ## 6. 时间与空值
 
-- 系统生成时间统一使用 UTC、秒精度。
+- 系统生成时间统一使用 UTC、微秒精度；同一轮同步的节点和关系使用完全相同的 `synced_at=T`。
 - 来源时间先解析为 UTC；无法证明有效的占位时间归一为 NULL。
 - 空字符串、缺失和 NULL 的语义由实体文档逐字段定义，不得全局互换。
 - NebulaGraph 可空属性必须显式声明 NULL；不得用零值冒充缺失值。
@@ -83,7 +83,7 @@ NebulaGraph 只保存当前有效拓扑：
 
 1. 新增测试在实现前失败，失败原因与目标行为一致。
 2. 任务专项测试通过。
-3. `INVENTORY_GRAPH_TEST_CONFIG= go test ./... -count=1 -timeout=90s` 通过。
+3. `INVENTORY_GRAPH_TEST_CONFIG= TOPOLOGY_GRAPH_TEST_CONFIG= go test ./... -count=1 -timeout=90s` 通过。
 4. `go vet ./...` 通过。
 5. 以下入口均可构建：
    - `go build ./cmd/server`

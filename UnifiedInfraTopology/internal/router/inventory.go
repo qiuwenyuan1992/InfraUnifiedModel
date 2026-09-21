@@ -27,12 +27,7 @@ func InitInventoryRouter(deps RouterDeps, r *gin.RouterGroup) {
 		c.Next()
 	})
 	h := deps.InventoryHandler
-	g.GET("/devices", h.List("devices"))
-	g.GET("/devices/:device_id", h.GetDevice)
-	g.GET("/devices/:device_id/interfaces", h.List("interfaces"))
-	g.GET("/devices/:device_id/addresses", h.List("addresses"))
 	g.GET("/sources", h.List("sources"))
-	g.GET("/generations", h.List("generations"))
 	g.GET("/sync-runs", h.List("sync-runs"))
 	g.POST("/sync-runs", h.Enqueue)
 	g.GET("/sync-runs/:run_id", h.GetRun)

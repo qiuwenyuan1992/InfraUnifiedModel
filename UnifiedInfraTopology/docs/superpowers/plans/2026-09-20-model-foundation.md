@@ -480,8 +480,8 @@ type TopologyGraphRepository interface {
 
 断言：
 
-- VID 通过参数传入。
-- 所有属性值都通过参数传入。
+- VID 由内部确定性算法生成，必须匹配 64 位小写十六进制后才能作为 nGQL 字面量写入；NebulaGraph 3.8 的原生 DML VID 位置不支持参数。
+- 所有业务属性值都通过参数传入。
 - 标签名称只能来自封闭枚举。
 - `created_at` 只在首次写入时设置。
 - 每次成功观察到节点时都更新 `synced_at`。
@@ -558,7 +558,7 @@ go test ./internal/model ./internal/migration ./internal/repository ./internal/s
 - [ ] **步骤 3：运行完整测试套件**
 
 ```bash
-INVENTORY_GRAPH_TEST_CONFIG= go test ./... -count=1 -timeout=90s
+INVENTORY_GRAPH_TEST_CONFIG= TOPOLOGY_GRAPH_TEST_CONFIG= go test ./... -count=1 -timeout=90s
 ```
 
 预期：全部通过，并且不依赖真实 NebulaGraph 服务。

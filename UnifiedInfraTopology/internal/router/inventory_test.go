@@ -109,7 +109,7 @@ func TestInventoryAcceptedAndCancellationStatus(t *testing.T) {
 	s := &inventoryStub{}
 	r, token := inventoryRouter(t, s)
 	path := "/v1/inventory/sync-runs"
-	req := httptest.NewRequest("POST", path, strings.NewReader(`{"source_ids":["cccccccccccccccccccccccccccccccc"],"mode":"full","base_generation_id":null}`))
+	req := httptest.NewRequest("POST", path, strings.NewReader(`{"source_id":"cccccccccccccccccccccccccccccccc","mode":"full"}`))
 	req.Header.Set("Authorization", token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", "key")
@@ -138,6 +138,23 @@ func TestInventoryAcceptedAndCancellationStatus(t *testing.T) {
 		require.Equal(t, want, w.Code)
 	}
 }
+func TestInventoryObsoleteAssetRoutesAreNotRegistered(t *testing.T) {
+	s := &inventoryStub{}
+	router, token := inventoryRouter(t, s)
+	for _, path := range []string{
+		"/v1/inventory/devices",
+		"/v1/inventory/generations",
+		"/v1/inventory/devices/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/interfaces",
+	} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", token)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		require.Equal(t, http.StatusNotFound, response.Code, path)
+	}
+	require.False(t, s.called)
+}
+
 func TestInventoryErrorSanitization(t *testing.T) {
 	for _, tc := range []struct {
 		err    error

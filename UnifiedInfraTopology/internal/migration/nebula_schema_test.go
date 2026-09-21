@@ -20,6 +20,9 @@ func TestNebulaSchemaContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取 NebulaGraph Schema %q 失败: %v", schemaPath, err)
 	}
+	if !regexp.MustCompile("(?m)^\\s*`int8`\\s+STRING\\s+NULL,?$").Match(raw) {
+		t.Fatal("NebulaGraph 保留字 int8 必须使用反引号转义")
+	}
 
 	statements := splitNebulaStatements(string(raw))
 	wantTags := expectedNebulaTags()
@@ -27,6 +30,7 @@ func TestNebulaSchemaContract(t *testing.T) {
 	tags := make(map[string]map[string]nebulaField)
 	edges := make(map[string]map[string]nebulaField)
 	indexes := make(map[string][]string)
+	edgeIndexes := make(map[string][]string)
 	spaceCount := 0
 	useCount := 0
 
@@ -34,11 +38,17 @@ func TestNebulaSchemaContract(t *testing.T) {
 		upper := strings.ToUpper(statement)
 		switch {
 		case strings.HasPrefix(upper, "CREATE TAG INDEX"):
-			tag, fields := parseNebulaTagIndex(t, statement)
+			tag, fields := parseNebulaIndex(t, statement, "TAG")
 			if _, exists := indexes[tag]; exists {
 				t.Fatalf("Tag %q 存在重复身份索引", tag)
 			}
 			indexes[tag] = fields
+		case strings.HasPrefix(upper, "CREATE EDGE INDEX"):
+			edge, fields := parseNebulaIndex(t, statement, "EDGE")
+			if _, exists := edgeIndexes[edge]; exists {
+				t.Fatalf("Edge Type %q 存在重复清理索引", edge)
+			}
+			edgeIndexes[edge] = fields
 		case strings.HasPrefix(upper, "CREATE SPACE"):
 			spaceCount++
 			assertNebulaSpace(t, statement)
@@ -73,13 +83,15 @@ func TestNebulaSchemaContract(t *testing.T) {
 	assertNebulaDefinitions(t, "Tag", tags, wantTags)
 	assertNebulaDefinitions(t, "Edge Type", edges, wantEdges)
 	assertNebulaIdentityIndexes(t, indexes, wantTags)
+	assertNebulaCleanupIndexes(t, edgeIndexes, wantEdges)
 
 	forbidden := regexp.MustCompile(`(?i)\b(scope_id|generation|lifecycle|resolution_status)\b`)
 	if match := forbidden.FindString(stripNebulaComments(string(raw))); match != "" {
 		t.Fatalf("Schema 包含禁止字段 %q", match)
 	}
-	if len(statements) != 1+1+len(wantTags)+len(wantEdges)+len(wantTags) {
-		t.Fatalf("Schema 语句数量错误: got %d, want %d", len(statements), 2+len(wantTags)+len(wantEdges)+len(wantTags))
+	wantStatementCount := 2 + len(wantTags) + len(wantEdges) + len(wantTags) + len(wantEdges)
+	if len(statements) != wantStatementCount {
+		t.Fatalf("Schema 语句数量错误: got %d, want %d", len(statements), wantStatementCount)
 	}
 }
 
@@ -137,14 +149,18 @@ func parseNebulaDefinition(t *testing.T, statement, kind string) (string, map[st
 	}
 
 	fields := make(map[string]nebulaField)
-	fieldPattern := regexp.MustCompile(`(?i)^([a-z_][a-z0-9_]*)\s+(STRING|INT|DOUBLE|BOOL|DATETIME)\s+(NULL|NOT\s+NULL)$`)
+	fieldPattern := regexp.MustCompile("(?i)^(`?[a-z_][a-z0-9_]*`?)\\s+(STRING|INT|DOUBLE|BOOL|DATETIME)\\s+(NULL|NOT\\s+NULL)$")
 	for _, rawField := range strings.Split(match[2], ",") {
 		field := strings.TrimSpace(rawField)
 		parts := fieldPattern.FindStringSubmatch(field)
 		if parts == nil {
 			t.Fatalf("%s %q 的字段定义无法解析或未显式声明 NULL/NOT NULL: %s", kind, match[1], field)
 		}
-		name := strings.ToLower(parts[1])
+		rawName := parts[1]
+		if strings.HasPrefix(rawName, "`") != strings.HasSuffix(rawName, "`") {
+			t.Fatalf("%s %q 的字段标识符反引号不成对: %s", kind, match[1], rawName)
+		}
+		name := strings.ToLower(strings.Trim(rawName, "`"))
 		if _, exists := fields[name]; exists {
 			t.Fatalf("%s %q 存在重复字段 %q", kind, match[1], name)
 		}
@@ -156,11 +172,12 @@ func parseNebulaDefinition(t *testing.T, statement, kind string) (string, map[st
 	return strings.ToLower(match[1]), fields
 }
 
-func parseNebulaTagIndex(t *testing.T, statement string) (string, []string) {
+func parseNebulaIndex(t *testing.T, statement, kind string) (string, []string) {
 	t.Helper()
-	match := regexp.MustCompile(`(?is)^CREATE\s+TAG\s+INDEX\s+IF\s+NOT\s+EXISTS\s+[a-z_][a-z0-9_]*\s+ON\s+([a-z_][a-z0-9_]*)\s*\((.*)\)$`).FindStringSubmatch(statement)
+	pattern := `(?is)^CREATE\s+` + kind + `\s+INDEX\s+IF\s+NOT\s+EXISTS\s+[a-z_][a-z0-9_]*\s+ON\s+([a-z_][a-z0-9_]*)\s*\((.*)\)$`
+	match := regexp.MustCompile(pattern).FindStringSubmatch(statement)
 	if match == nil {
-		t.Fatalf("无法解析 CREATE TAG INDEX 语句: %s", statement)
+		t.Fatalf("无法解析 CREATE %s INDEX 语句: %s", kind, statement)
 	}
 	var fields []string
 	for _, rawField := range strings.Split(match[2], ",") {
@@ -195,6 +212,19 @@ func assertNebulaIdentityIndexes(t *testing.T, indexes map[string][]string, tags
 		got := indexes[tag]
 		if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 			t.Fatalf("Tag %q 身份索引字段错误: got %v, want %v", tag, got, want)
+		}
+	}
+}
+
+func assertNebulaCleanupIndexes(t *testing.T, indexes map[string][]string, edges map[string]map[string]nebulaField) {
+	t.Helper()
+	if diff := diffNameSet(indexes, edges); diff != "" {
+		t.Fatalf("Edge Type 清理索引不符合精确白名单:\n%s", diff)
+	}
+	for edge, fields := range indexes {
+		want := []string{"source_id(64)", "synced_at"}
+		if len(fields) != len(want) || fields[0] != want[0] || fields[1] != want[1] {
+			t.Fatalf("Edge Type %q 清理索引字段错误: got %v, want %v", edge, fields, want)
 		}
 	}
 }

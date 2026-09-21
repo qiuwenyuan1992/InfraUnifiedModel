@@ -26,7 +26,6 @@ var repositorySet = wire.NewSet(
 	repository.NewTransaction,
 	repository.NewUserRepository,
 	repository.NewInventoryRepository,
-	repository.NewGraphInventoryRepository,
 )
 
 var serviceSet = wire.NewSet(

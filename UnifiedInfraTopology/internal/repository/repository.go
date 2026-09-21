@@ -2,12 +2,13 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"UnifiedInfraTopology/pkg/log"
 	"UnifiedInfraTopology/pkg/zapgorm2"
+	"github.com/glebarez/sqlite"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -18,6 +19,14 @@ import (
 )
 
 const ctxTxKey = "TxKey"
+
+var (
+	ErrInventoryNotFound    = errors.New("inventory resource not found")
+	ErrInventoryNotReady    = errors.New("inventory generation not ready")
+	ErrInventoryConflict    = errors.New("inventory state conflict")
+	ErrInventoryIdempotency = errors.New("inventory idempotency conflict")
+	ErrInventorySource      = errors.New("inventory source unavailable")
+)
 
 type Repository struct {
 	db *gorm.DB

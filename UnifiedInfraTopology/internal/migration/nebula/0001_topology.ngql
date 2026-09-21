@@ -57,7 +57,7 @@ CREATE TAG IF NOT EXISTS gpu (
   fp16_tensor_sparsity STRING NULL,
   fp4 STRING NULL,
   int4 STRING NULL,
-  int8 STRING NULL,
+  `int8` STRING NULL,
   tf16 STRING NULL,
   tf32 STRING NULL,
   driver_ver STRING NULL,
@@ -243,3 +243,8 @@ CREATE TAG INDEX IF NOT EXISTS idx_rpp_identity ON rpp (source_id(64), uuid(192)
 CREATE TAG INDEX IF NOT EXISTS idx_ups_group_identity ON ups_group (source_id(64), uuid(192));
 CREATE TAG INDEX IF NOT EXISTS idx_ups_identity ON ups (source_id(64), uuid(192));
 CREATE TAG INDEX IF NOT EXISTS idx_transformer_identity ON transformer (source_id(64), uuid(192));
+
+CREATE EDGE INDEX IF NOT EXISTS idx_spatial_relation_cleanup ON spatial_relation (source_id(64), synced_at);
+CREATE EDGE INDEX IF NOT EXISTS idx_composition_relation_cleanup ON composition_relation (source_id(64), synced_at);
+CREATE EDGE INDEX IF NOT EXISTS idx_network_relation_cleanup ON network_relation (source_id(64), synced_at);
+CREATE EDGE INDEX IF NOT EXISTS idx_power_relation_cleanup ON power_relation (source_id(64), synced_at);

@@ -79,7 +79,7 @@
 - VID、关系 ID 和 Rank 必须确定性生成；禁止使用随机 UUID 或写入顺序。
 - 来源凭据只保存引用，不得写入日志、错误、任务详情或图属性。
 - 未确认的来源语义不得自行推断；应保留原值并记录诊断，或阻止受影响资源发布。
-- 系统生成时间统一使用 UTC、秒精度。
+- 系统生成时间统一使用 UTC、微秒精度；同一轮同步的节点和关系使用完全相同的 `synced_at=T`。
 - 空字符串、缺失和 NULL 的含义服从对应实体文档，不得全局互换。
 
 ## 7. 数据库和迁移
@@ -98,7 +98,7 @@
 2. 运行：
 
    ```bash
-   INVENTORY_GRAPH_TEST_CONFIG= go test ./... -count=1 -timeout=90s
+   INVENTORY_GRAPH_TEST_CONFIG= TOPOLOGY_GRAPH_TEST_CONFIG= go test ./... -count=1 -timeout=90s
    ```
 
 3. 运行：
