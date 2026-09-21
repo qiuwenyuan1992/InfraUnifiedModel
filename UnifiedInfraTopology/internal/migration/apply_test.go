@@ -25,7 +25,7 @@ func testDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestApplyCreatesSchemaAndChecksumsAndReruns(t *testing.T) {
+func TestApplyCreatesOnlyControlPlaneSchemaAndReruns(t *testing.T) {
 	db := testDB(t)
 	require.NoError(t, Apply(context.Background(), db))
 	require.NoError(t, Apply(context.Background(), db))
@@ -43,8 +43,11 @@ func TestApplyCreatesSchemaAndChecksumsAndReruns(t *testing.T) {
 		require.Equal(t, "applied", row.State)
 		require.NotNil(t, row.AppliedAt)
 	}
-	for _, table := range []string{"inventory_state", "sources", "generations", "sync_runs", "sync_run_sources", "entities", "source_keys", "identity_bindings", "device_versions", "interface_versions", "address_versions"} {
+	for _, table := range []string{"sources", "sync_runs", "sync_checkpoints", "sync_diagnostics", "publications", "topology_schema_migrations"} {
 		require.True(t, db.Migrator().HasTable(table), table)
+	}
+	for _, table := range []string{"inventory_state", "generations", "sync_run_sources", "entities", "source_keys", "identity_bindings", "device_versions", "interface_versions", "address_versions"} {
+		require.False(t, db.Migrator().HasTable(table), table)
 	}
 }
 
@@ -78,7 +81,7 @@ func TestApplyFailureIsRecordedAndCannotRetry(t *testing.T) {
 	var state string
 	require.NoError(t, db.Raw("SELECT state FROM topology_schema_migrations WHERE version = 1").Scan(&state).Error)
 	require.Equal(t, "failed", state)
-	require.False(t, db.Migrator().HasTable("inventory_state"), "SQLite DDL 应回滚但保留失败账本")
+	require.False(t, db.Migrator().HasTable("sync_runs"), "SQLite DDL 应回滚但保留失败账本")
 	require.ErrorContains(t, Apply(context.Background(), db), "failed")
 }
 
@@ -121,20 +124,8 @@ func TestApplyRejectsUnknownLedgerVersion(t *testing.T) {
 	require.ErrorContains(t, Apply(context.Background(), db), "unknown migration")
 }
 
-func TestApplySeedsConstrainedInventoryState(t *testing.T) {
+func TestApplyDoesNotCreateLegacyProjectionState(t *testing.T) {
 	db := testDB(t)
 	require.NoError(t, Apply(context.Background(), db))
-
-	var state struct {
-		ID              uint
-		ProjectionState string
-		ProjectionEpoch int64
-	}
-	require.NoError(t, db.Table("inventory_state").First(&state).Error)
-	require.EqualValues(t, 1, state.ID)
-	require.Equal(t, "uninitialized", state.ProjectionState)
-	require.Zero(t, state.ProjectionEpoch)
-	require.Error(t, db.Exec("INSERT INTO inventory_state (id) VALUES (2)").Error)
-	require.Error(t, db.Exec("UPDATE inventory_state SET projection_state = 'unknown' WHERE id = 1").Error)
-	require.Error(t, db.Exec("UPDATE inventory_state SET projection_epoch = -1 WHERE id = 1").Error)
+	require.False(t, db.Migrator().HasTable("inventory_state"))
 }
