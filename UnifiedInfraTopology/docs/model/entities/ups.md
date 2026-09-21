@@ -85,7 +85,7 @@ ups.uuid
 逻辑 UPS 身份：
 
 ```text
-scope_id:source_id:ups:uuid
+source_id:ups:uuid
 ```
 
 以下字段均不能替代 UUID：
@@ -104,7 +104,6 @@ scope_id:source_id:ups:uuid
 
 | 目标字段 | 来源 | 必要性 |
 |---|---|---|
-| `scope_id` | 同步上下文 | 隔离租户或拓扑范围 |
 | `source_id` | 同步配置 | 避免不同 CMDB 来源之间发生身份碰撞 |
 | `uuid` | `idc_ups.uuid` | UPS 稳定身份 |
 | `inst_id` | `idc_ups.inst_id` | CMDB 数字 ID，用于查询和来源追溯 |
@@ -274,13 +273,13 @@ ups -[spatial_relation {relation_kind: "located_in"}]-> data_center
 
 | Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
 |---|---|---|---|---|---|
-| `power_relation` | `member_of` | `ups(uuid) → ups_group(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `ups.ups_group_id` |
+| `power_relation` | `member_of` | `ups(uuid) → ups_group(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `ups.ups_group_id` |
 
 关系身份规则：
 
 - 来源没有独立关系 UUID。
 - `relation_id` 由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。
-- 两端完整逻辑身份必须包含 `scope_id`、`source_id`、对象类型和稳定 UUID。
+- 两端完整逻辑身份必须包含 `source_id`、对象类型和稳定 UUID。
 - 不使用 `ups_group_id_tag` 或数字引用直接作为最终关系身份。
 
 ## 6. 同步与清理约定

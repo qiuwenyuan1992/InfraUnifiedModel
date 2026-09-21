@@ -375,21 +375,20 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 
 设备节点统一使用 `device_sn` 作为最终身份，`device_view.uuid` 不保存。网络设备的 `device_uuid` 只作为端口归属别名。其他 CMDB 资源节点继续使用各自已确认的稳定资源 UUID；网络端口使用 `port_uuid`，端口视图顶层 `uuid` 仅作来源记录身份。GPU 上联不是节点，使用 `gpu_uplink.uuid` 标识来源关系记录。
 
-建议 VID 采用 `scope_id:kind_code:stable_identity`，其中设备的 `stable_identity=device_sn`，其他节点按节点清单使用稳定 UUID。现有 `FIXED_STRING(67)` 和“资源 ID 必须为 32 位十六进制”的限制不再适用；重建 schema 时应按 SN 和 UUID 的实际最大长度统一调整，暂不在本文固化长度。
+实体完整逻辑身份统一由 `source_id + 实体类型 + 稳定身份` 组成。VID 按运行时契约对 `["vertex", source_id, entity_type, stable_id]` 的规范 JSON 计算 SHA-256，NebulaGraph Space 使用 `FIXED_STRING(64)`；设备的稳定身份为 `device_sn`，其他节点按节点清单使用稳定 UUID。
 
 所有节点统一保留：
 
 | 属性 | 语义 |
 |---|---|
-| `scope_id` | 本项目租户或拓扑范围 |
-| `source_id` | CMDB 来源配置标识 |
+| `source_id` | CMDB 来源配置标识，也是完整逻辑身份的来源边界 |
 | 稳定身份字段 | 按节点类型保存：设备为 `device_sn`，其他节点按节点清单使用稳定 UUID |
 | `created_at` | 本项目首次入图时间，只在首次创建时写入 |
 | `synced_at` | 本项目最后见到时间，每轮统一刷新为 `T`，用于成功轮次后的清理 |
 
-`inst_id`、`obj_id` 和各类来源别名默认只在当前请求流程中用于解析与核对，不作为通用节点属性保存；实体文档明确要求保留时例外，例如 POD 保存 `inst_id`、`phy_building_id` 和 `idc_logic_id`。图中只发布已成功解析的关系，不保存 `unresolved` 或 `conflict` 关系对象。
+`inst_id`、`obj_id` 和各类来源别名默认只在当前请求流程中用于解析与核对，不作为通用节点属性保存；实体文档明确要求保留时例外，例如 POD 保存 `inst_id`、`phy_building_id` 和 `idc_logic_id`。所有数字引用都只能在同一 `source_id` 下唯一解析到目标稳定身份。图中只发布已成功解析的关系，不保存 `unresolved` 或 `conflict` 关系对象。
 
-所有关系统一保留 `scope_id`、`source_id`、`relation_id`、`created_at` 和 `synced_at`。`relation_id` 优先使用带 `scope_id/source_id` 限定的来源关系 UUID；没有关系 UUID 时，由关系类型和两端完整逻辑身份确定性生成。允许同端点存在多条逻辑关系时，还必须纳入 `plane`、`power_path` 等区分字段。设备端稳定身份为 `device_sn`。Nebula 的起点、终点和 rank 必须与 `relation_id` 保持幂等映射。
+所有关系统一保留 `relation_id`、适用的 `relation_kind`、`source_id`、`created_at`、`synced_at` 及领域属性。`relation_id` 优先使用由 `source_id` 限定的来源关系 UUID；没有关系 UUID 时，由 Edge Type、`relation_kind`、两端完整逻辑身份和必要业务区分字段确定性生成。允许同端点存在多条逻辑关系时，还必须纳入 `plane`、`power_path` 等区分字段。设备端稳定身份为 `device_sn`。Nebula 的起点、终点和 rank 必须与 `relation_id` 保持幂等映射。
 
 ### 12.2 节点清单
 
@@ -410,7 +409,7 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 
 设备字段的完整规则见 [device.md](../model/entities/device.md)。本文件只保留跨实体映射摘要：
 
-1. **设备节点**：`scope_id`、`source_id`、`device_sn`、规范化 `name`、`parent_type_id`、`device_type_id`、`role`、`all_ips[]`、`synced_at`。
+1. **设备节点**：`source_id`、`device_sn`、规范化 `name`、`parent_type_id`、`device_type_id`、`role`、`all_ips[]`、`synced_at`。
 2. **拓扑关系**：解析成功后发布 `located_in`、`member_of`、`owns_interface`、`server_uplink` 和 `contains_gpu`。
 3. **同步时临时数据**：`inst_id`、网络设备 `device_uuid`、`cabinet_uuid`、管理面/计算面 POD 引用、`server_tor_ports[].sn + ports[]` 只在本轮内存中用于建边，不写入 MySQL 或图节点。
 
@@ -518,20 +517,20 @@ UPS 字段、关系身份及同步约定统一以 [ups.md](../model/entities/ups
 
 | 图关系 | 方向 | 来源与关系身份 | 关系属性 |
 |---|---|---|---|
-| `owns_interface` | `device → interface` | 优先使用 `local_device_sn → device.device_sn`；缺少 SN 时按 `local_device_uuid` 查询设备 API，取得 `device_sn` 后关联 `port_uuid` | 按设备 SN 与端口 UUID 确定性生成；当前不为服务器生成该关系 |
-| `server_uplink` | `device → interface` | 以服务器 `server_tor_ports[].sn + ports[]` 查询或匹配 `port_view.local_device_sn + port_name`，取得 `port_uuid`；按服务器 SN 与 ToR 端口 UUID 确定性生成 | `scope_id`、`source_id`、`synced_at`；补充样例已闭环两组 `SN + 25GE1/0/26`，其他组合按实际结果解析 |
-| `links_to` | `interface → interface` | 本端 `port_uuid` 与 `remote_interface_uuid`；按两个端口 UUID 规范化排序后确定唯一逻辑关系，不使用双端各自不同的 `port_view.uuid` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at`；LLDP 补充样例已验证双端互指并合并为一条逻辑连接；查询按双向处理，不解释为实时可达 |
-| `contains_gpu` | `device → gpu` | `server_gpu.device_sn = device.device_sn`；关系 ID 由关系类型、设备 SN 和 GPU UUID 确定性生成 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
-| `gpu_uplink` | `gpu → interface` | `gpu_uplink.uuid` 是来源关系身份，图中使用 `scope_id:source_id:gpu_uplink:uuid` 作为关系 ID；先由 `device_sn + gpu_sn` 解析 GPU，再由 `tor_sn + tor_port` 查询网络端口 | `relation_id`、`gpu_port`、`gpu_port_speed`、`gpu_ip`、`gpu_slot`、`server_port_speed`、`bond_name`、`tor_port`、`tor_port_speed`、`tor_role`、`source`、`scope_id`、`source_id`、`created_at`、`synced_at` |
-| `member_of` | `device → pod` | 管理面：`pod_uuid → pod.uuid`；计算面：逐项解析 `compute_plane[].pod_id → pod.inst_id`；关系 ID 由两端完整逻辑身份和解析后的 `pod.plane` 确定性生成 | `relation_id`、`plane`、`scope_id`、`source_id`、`created_at`、`synced_at` |
-| `located_in` | `device → cabinet` | `device.cabinet_uuid → cabinet.uuid`，按设备 SN 与机柜 UUID 建立关系 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at`；当前不保存 U 位 |
-| `located_in` | `cabinet → data_center` | 只使用 `cabinet.idc_id → data_center.inst_id`，解析后使用两端 UUID；`phy_idc_id` 丢弃 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
-| `tagged_with` | `cabinet → pod` | 逐项解析 `cabinet.pod_ids[] → pod.inst_id`；`pod_id` 丢弃；按两端完整逻辑身份确定性生成 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
-| `power_upstream` | `cabinet → rpp` | `row_switch_id_A/B → rpp.inst_id`，关系身份包含来源路别和两端完整逻辑身份 | `relation_id`、`power_path=A/B`、`scope_id`、`source_id`、`created_at`、`synced_at` |
-| `power_upstream` | `rpp → ups_group` | `rpp.ups_group → ups_group.inst_id`，解析后使用两端 UUID；按两端完整逻辑身份确定性生成 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
-| `member_of` | `ups → ups_group` | `ups.ups_group → ups_group.inst_id`，解析后使用两端 UUID；按两端完整逻辑身份确定性生成，不使用组标签关联 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
-| `power_upstream` | `ups_group → transformer` | `ups_group.transformer_id_up → transformer.inst_id`，解析后使用两端 UUID；按两端完整逻辑身份确定性生成 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` |
-| `has_standby` | `transformer(primary) → transformer(standby)` | `standby_transformer → transformer.inst_id`，唯一解析且通过自引用、循环检查后使用两端 UUID；按两端完整逻辑身份确定性生成 | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at`；当前样例目标 1593 未提供，不生成关系；默认不计入供电路径 |
+| `owns_interface` | `device → interface` | 优先使用 `local_device_sn → device.device_sn`；缺少 SN 时按 `local_device_uuid` 查询设备 API，取得 `device_sn` 后关联 `port_uuid` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`；当前不为服务器生成该关系 |
+| `server_uplink` | `device → interface` | 以服务器 `server_tor_ports[].sn + ports[]` 查询或匹配 `port_view.local_device_sn + port_name`，取得 `port_uuid`；按服务器 SN 与 ToR 端口 UUID 确定性生成 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`；补充样例已闭环两组 `SN + 25GE1/0/26`，其他组合按实际结果解析 |
+| `links_to` | `interface → interface` | 本端 `port_uuid` 与 `remote_interface_uuid`；按两个端口 UUID 规范化排序后确定唯一逻辑关系，不使用双端各自不同的 `port_view.uuid` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`；LLDP 补充样例已验证双端互指并合并为一条逻辑连接；查询按双向处理，不解释为实时可达 |
+| `contains_gpu` | `device → gpu` | `server_gpu.device_sn = device.device_sn`；关系 ID 由关系类型、设备 SN 和 GPU UUID 确定性生成 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` |
+| `gpu_uplink` | `gpu → interface` | `gpu_uplink.uuid` 是来源关系身份，图中使用 `source_id:network_relation:gpu_uplink:uuid` 作为关系 ID；先由 `device_sn + gpu_sn` 解析 GPU，再由 `tor_sn + tor_port` 查询网络端口 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`，以及 `gpu_port`、`gpu_port_speed`、`gpu_ip`、`gpu_slot`、`server_port_speed`、`bond_name`、`tor_port`、`tor_port_speed`、`tor_role`、`source` |
+| `member_of` | `device → pod` | 管理面：`pod_uuid → pod.uuid`；计算面：逐项解析 `compute_plane[].pod_id → pod.inst_id`；关系 ID 由两端完整逻辑身份和解析后的 `pod.plane` 确定性生成 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`、`plane` |
+| `located_in` | `device → cabinet` | `device.cabinet_uuid → cabinet.uuid`，按设备 SN 与机柜 UUID 建立关系 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`；当前不保存 U 位 |
+| `located_in` | `cabinet → data_center` | 只使用 `cabinet.idc_id → data_center.inst_id`，解析后使用两端 UUID；`phy_idc_id` 丢弃 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` |
+| `tagged_with` | `cabinet → pod` | 逐项解析 `cabinet.pod_ids[] → pod.inst_id`；`pod_id` 丢弃；按两端完整逻辑身份确定性生成 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` |
+| `power_upstream` | `cabinet → rpp` | `row_switch_id_A/B → rpp.inst_id`，关系身份包含来源路别和两端完整逻辑身份 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`、`power_path=A/B` |
+| `power_upstream` | `rpp → ups_group` | `rpp.ups_group → ups_group.inst_id`，解析后使用两端 UUID；按两端完整逻辑身份确定性生成 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` |
+| `member_of` | `ups → ups_group` | `ups.ups_group → ups_group.inst_id`，解析后使用两端 UUID；按两端完整逻辑身份确定性生成，不使用组标签关联 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` |
+| `power_upstream` | `ups_group → transformer` | `ups_group.transformer_id_up → transformer.inst_id`，解析后使用两端 UUID；按两端完整逻辑身份确定性生成 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` |
+| `has_standby` | `transformer(primary) → transformer(standby)` | `standby_transformer → transformer.inst_id`，唯一解析且通过自引用、循环检查后使用两端 UUID；按两端完整逻辑身份确定性生成 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`；当前样例目标 1593 未提供，不生成关系；默认不计入供电路径 |
 
 端口物理连接只保存一个逻辑关系，查询时按双向遍历处理；不能因为同一设备间有多条端口连接就合并。供电统一沿“下游对象指向上游对象”保存，影响范围查询反向遍历。来源引用冲突时不生成边，并计入本轮同步诊断。
 

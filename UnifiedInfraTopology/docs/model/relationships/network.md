@@ -108,7 +108,6 @@ interface(max_uuid)
 ```text
 relation_id
 relation_kind
-scope_id
 source_id
 created_at
 synced_at
@@ -129,7 +128,7 @@ synced_at
 来源提供稳定关系 UUID 时，优先使用来源身份。当前 GPU 上联关系为：
 
 ```text
-scope_id:source_id:network_relation:gpu_uplink:uuid
+source_id:network_relation:gpu_uplink:uuid
 ```
 
 其他网络关系确定性生成：

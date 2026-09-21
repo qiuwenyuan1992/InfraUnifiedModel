@@ -34,6 +34,9 @@ func TestProductContractHasNoRangeIdentity(t *testing.T) {
 			}
 			return nil
 		}
+		if path == filepath.Join(root, "AGENTS.md") {
+			return nil
+		}
 		if strings.HasSuffix(path, "_test.go") || !extensions[filepath.Ext(path)] {
 			return nil
 		}

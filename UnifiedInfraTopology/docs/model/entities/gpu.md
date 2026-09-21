@@ -93,7 +93,7 @@ server_gpu.uuid
 逻辑 GPU 身份：
 
 ```text
-scope_id:source_id:gpu:uuid
+source_id:gpu:uuid
 ```
 
 以下字段均不能替代 GPU UUID：
@@ -111,7 +111,6 @@ scope_id:source_id:gpu:uuid
 
 | 目标字段 | 来源 | 必要性 |
 |---|---|---|
-| `scope_id` | 同步上下文 | 隔离租户或拓扑范围 |
 | `source_id` | 同步配置 | 避免不同 CMDB 来源之间发生身份碰撞 |
 | `uuid` | `server_gpu.uuid` | GPU 卡稳定身份 |
 | `parts_sn` | `server_gpu.parts_sn` | GPU 资产 SN，也是上联匹配键 |
@@ -262,15 +261,15 @@ gpu(uuid) -[network_relation {relation_kind: "gpu_uplink"}]-> interface(port_uui
 
 | Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
 |---|---|---|---|---|---|
-| `composition_relation` | `contains_gpu` | `device(device_sn) → gpu(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `server_gpu.device_sn + uuid` |
-| `network_relation` | `gpu_uplink` | `gpu(uuid) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `tor_port` 是建边所需来源字段；边属性均允许为空：`gpu_port`、`gpu_port_speed`、`gpu_ip`、`gpu_slot`、`server_port_speed`、`bond_name`、`tor_port`、`tor_port_speed`、`tor_role`、`source` | `gpu_uplink` |
+| `composition_relation` | `contains_gpu` | `device(device_sn) → gpu(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `server_gpu.device_sn + uuid` |
+| `network_relation` | `gpu_uplink` | `gpu(uuid) → interface(port_uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `tor_port` 是建边所需来源字段；边属性均允许为空：`gpu_port`、`gpu_port_speed`、`gpu_ip`、`gpu_slot`、`server_port_speed`、`bond_name`、`tor_port`、`tor_port_speed`、`tor_role`、`source` | `gpu_uplink` |
 
 上联速率字段全部保持来源字符串，不进行单位换算或跨字段数值比较；当前样例的 `gpu_port_speed/server_port_speed` 使用 `400G/100G`，而 `tor_port_speed` 使用 `400000`，其单位尚未由接口契约明确。
 
 关系身份规则：
 
-- `gpu_uplink.uuid` 是来源关系身份；图中的 `relation_id` 使用 `scope_id:source_id:gpu_uplink:uuid`，避免不同范围或来源发生碰撞。
-- `contains_gpu` 没有独立来源关系 UUID，由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成；两端身份必须包含 `scope_id`、`source_id`、对象类型和稳定身份。
+- `gpu_uplink.uuid` 是来源关系身份；图中的 `relation_id` 使用 `source_id:network_relation:gpu_uplink:uuid`，避免不同来源发生碰撞。
+- `contains_gpu` 没有独立来源关系 UUID，由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成；两端身份必须包含 `source_id`、对象类型和稳定身份。
 - 同一 GPU 连接同一交换机但接口不同，必须保留为不同上联关系。
 - 上联边的终点是网络设备 `interface(port_uuid)`，不是网络 `device` 节点。
 - `gpu_port` 只是关系属性，不创建 GPU 侧接口节点。

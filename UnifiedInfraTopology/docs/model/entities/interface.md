@@ -42,7 +42,6 @@ source_id:interface:port_uuid
 
 | 字段 | 来源 | 必要性 |
 |---|---|---|
-| `scope_id` | 同步上下文 | 隔离租户或拓扑范围 |
 | `source_id` | 同步配置 | 避免不同 CMDB 来源之间发生身份碰撞 |
 | `port_uuid` | `port_view.port_uuid` | 接口稳定身份 |
 | `port_name` | `port_view.port_name` | 展示及按设备范围匹配端口 |
@@ -208,14 +207,14 @@ gpu(uuid) -[network_relation {relation_kind: "gpu_uplink"}]-> interface(port_uui
 
 | Edge Type | `relation_kind` | 端点 | 必要边属性 | 来源 |
 |---|---|---|---|---|
-| `composition_relation` | `owns_interface` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `port_view.local_device_sn`，缺失时按 `local_device_uuid` 查询 |
-| `network_relation` | `links_to` | `interface(port_uuid) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `remote_interface_uuid` |
-| `network_relation` | `server_uplink` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `server_tor_ports[].sn + ports[]` |
-| `network_relation` | `gpu_uplink` | `gpu(uuid) → interface(port_uuid)` | GPU 上联业务属性、`relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `gpu_uplink.tor_sn + tor_port` |
+| `composition_relation` | `owns_interface` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `port_view.local_device_sn`，缺失时按 `local_device_uuid` 查询 |
+| `network_relation` | `links_to` | `interface(port_uuid) → interface(port_uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `remote_interface_uuid` |
+| `network_relation` | `server_uplink` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `server_tor_ports[].sn + ports[]` |
+| `network_relation` | `gpu_uplink` | `gpu(uuid) → interface(port_uuid)` | GPU 上联业务属性、`relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `gpu_uplink.tor_sn + tor_port` |
 
 除 `links_to` 外，`relation_id` 优先使用明确的来源关系 UUID；没有来源关系 UUID 时，由 `Edge Type`、`relation_kind` 和两端稳定身份确定性生成。
 
-`links_to` 不使用 `port_view.uuid` 作为关系身份，因为同一物理连接的双端记录具有不同来源 UUID。其 `relation_id` 固定由 `scope_id`、`source_id`、`Edge Type`、`relation_kind` 和规范化后的端口 UUID 对确定性生成，避免双端重复上报产生两条逻辑连接。
+`links_to` 不使用 `port_view.uuid` 作为关系身份，因为同一物理连接的双端记录具有不同来源 UUID。其 `relation_id` 固定由 `source_id`、`Edge Type`、`relation_kind` 和规范化后的端口 UUID 对确定性生成，避免双端重复上报产生两条逻辑连接。
 
 ## 7. LLDP 双端样例闭环
 

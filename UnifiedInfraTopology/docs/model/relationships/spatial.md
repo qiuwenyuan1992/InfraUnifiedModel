@@ -90,7 +90,6 @@ pod
 ```text
 relation_id
 relation_kind
-scope_id
 source_id
 created_at
 synced_at

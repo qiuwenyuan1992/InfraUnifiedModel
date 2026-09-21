@@ -70,7 +70,7 @@ transformer.uuid
 逻辑变压器身份：
 
 ```text
-scope_id:source_id:transformer:uuid
+source_id:transformer:uuid
 ```
 
 以下字段均不能替代 UUID：
@@ -89,7 +89,6 @@ scope_id:source_id:transformer:uuid
 
 | 目标字段 | 来源 | 必要性 |
 |---|---|---|
-| `scope_id` | 同步上下文 | 隔离租户或拓扑范围 |
 | `source_id` | 同步配置 | 避免不同 CMDB 来源之间发生身份碰撞 |
 | `uuid` | `idc_transformer.uuid` | 变压器稳定身份 |
 | `inst_id` | `idc_transformer.inst_id` | CMDB 数字 ID，用于查询、关系解析和来源追溯 |
@@ -141,7 +140,7 @@ transformer.idc_id → data_center.inst_id
 #### 备用变压器引用
 
 - 来源 `standby_transformer` 规范保存为 `standby_transformer_id`。
-- `standby_transformer_id` 通过同一来源范围内的 `transformer.inst_id` 解析目标 UUID。
+- `standby_transformer_id` 通过同一 `source_id` 下的 `transformer.inst_id` 解析目标 UUID。
 - 引用为空时不建立备用关系，也不记录错误。
 - 目标不存在或匹配不唯一时不创建占位节点或关系，并记录 `unresolved`。
 - 当前变压器引用自身时记录 `self_reference`，不发布关系。
@@ -274,14 +273,14 @@ LVP_generator_incoming_id
 
 | Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
 |---|---|---|---|---|---|
-| `power_relation` | `power_upstream` | `ups_group(uuid) → transformer(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `ups_group.transformer_id_up` |
-| `power_relation` | `has_standby` | `transformer(primary_uuid) → transformer(standby_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `transformer.standby_transformer_id` |
+| `power_relation` | `power_upstream` | `ups_group(uuid) → transformer(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `ups_group.transformer_id_up` |
+| `power_relation` | `has_standby` | `transformer(primary_uuid) → transformer(standby_uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `transformer.standby_transformer_id` |
 
 关系身份规则：
 
 - 上述来源均没有独立关系 UUID。
 - 每条 `relation_id` 由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。
-- 两端完整逻辑身份必须包含 `scope_id`、`source_id`、对象类型和稳定 UUID。
+- 两端完整逻辑身份必须包含 `source_id`、对象类型和稳定 UUID。
 - 不使用数字引用、编码或标签直接作为最终关系身份。
 - `has_standby(A,B)` 与 `has_standby(B,A)` 是不同关系，但若共同形成循环则均不发布。
 

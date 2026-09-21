@@ -120,7 +120,6 @@ NebulaGraph 不自动限制 Edge Type 的合法端点组合。同步层必须根
 |---|---|
 | `relation_id` | 关系稳定身份 |
 | `relation_kind` | 领域内业务语义，必填 |
-| `scope_id` | 租户或拓扑范围 |
 | `source_id` | CMDB 来源身份 |
 | `created_at` | 本项目首次建边时间，只在首次创建时写入 |
 | `synced_at` | 本轮完整同步最后见到时间，用于安全清理 |
@@ -143,7 +142,7 @@ NebulaGraph 不自动限制 Edge Type 的合法端点组合。同步层必须根
 来源明确提供独立、稳定关系 UUID 时，优先使用来源关系身份。当前 GPU 上联为：
 
 ```text
-scope_id:source_id:network_relation:gpu_uplink:uuid
+source_id:network_relation:gpu_uplink:uuid
 ```
 
 ### 6.2 无来源关系 UUID
@@ -157,7 +156,7 @@ Edge Type + relation_kind + 两端完整逻辑身份 + 必要业务区分字段
 两端完整逻辑身份包含：
 
 ```text
-scope_id + source_id + 实体类型 + 稳定实体身份
+source_id + 实体类型 + 稳定实体身份
 ```
 
 必要业务区分字段包括：
@@ -255,7 +254,7 @@ ToR device
 ## 9. 关系解析与发布
 
 1. 最终端点必须使用实体稳定身份，不直接使用临时数字引用、编码或名称建边。
-2. 数字引用必须在同一 `scope_id` 和 `source_id` 下唯一解析到目标稳定身份。
+2. 数字引用必须在同一 `source_id` 下唯一解析到目标稳定身份。
 3. 同步层必须校验 Edge Type、`relation_kind`、端点 Tag 和方向符合端点矩阵。
 4. 引用为空、目标缺失、匹配不唯一、自引用或违反关系约束时，不创建占位节点或关系，并记录同步诊断。
 5. 只有完整采集、身份校验、关系解析和图写入全部成功后，才发布该同步范围。

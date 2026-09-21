@@ -76,7 +76,7 @@ pod.uuid
 逻辑 POD 身份：
 
 ```text
-scope_id:source_id:pod:uuid
+source_id:pod:uuid
 ```
 
 以下字段均不能替代 UUID：
@@ -92,7 +92,6 @@ scope_id:source_id:pod:uuid
 
 | 目标字段 | 来源 | 必要性 |
 |---|---|---|
-| `scope_id` | 同步上下文 | 隔离租户或拓扑范围 |
 | `source_id` | 同步配置 | 避免不同 CMDB 来源之间发生身份碰撞 |
 | `uuid` | `pod.uuid` | POD 稳定身份 |
 | `inst_id` | `pod.inst_id` | CMDB 数字 ID，用于数字引用解析和来源追溯；不作为图身份 |
@@ -233,7 +232,7 @@ device(device_sn) -[spatial_relation {relation_kind: "member_of"}]-> pod(uuid)
 
 | Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
 |---|---|---|---|---|---|
-| `spatial_relation` | `member_of` | `device(device_sn) → pod(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `plane` | 管理面 `pod_uuid/pod_id` 或计算面 `compute_plane[].pod_id` |
+| `spatial_relation` | `member_of` | `device(device_sn) → pod(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `plane` | 管理面 `pod_uuid/pod_id` 或计算面 `compute_plane[].pod_id` |
 
 当前不生成以下关系：
 

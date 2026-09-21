@@ -41,7 +41,6 @@ MySQL 可以保存 `run_id`、同步状态、页码或检查点、记录数量�
 
 | 字段 | 必要性 |
 |---|---|
-| `scope_id` | 隔离租户或拓扑范围 |
 | `source_id` | 标识设备来源，避免不同 CMDB 来源之间发生身份碰撞 |
 | `device_sn` | 所有设备统一使用的唯一、永久稳定且不复用的最终身份 |
 | `name` | 设备展示和检索名称 |
@@ -58,7 +57,7 @@ MySQL 可以保存 `run_id`、同步状态、页码或检查点、记录数量�
 source_id:device:device_sn
 ```
 
-图 VID 的最终编码还需统一考虑 `scope_id` 和长度限制，本文件不单独固化格式。
+图 VID 按 `source_id`、实体类型和稳定身份确定性生成，具体编码以运行时契约为准。
 
 ### 3.2 名称生成
 
@@ -194,13 +193,13 @@ target_port_name = server_tor_ports[].ports[]
 
 | Edge Type | `relation_kind` | 端点 | 必要边属性 | 来源 |
 |---|---|---|---|---|
-| `spatial_relation` | `located_in` | `device(device_sn) → cabinet(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `device_view.cabinet_uuid` |
-| `spatial_relation` | `member_of` | `device(device_sn) → pod(uuid)` | `plane`、`relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 管理面 POD 或计算面 POD 引用 |
-| `composition_relation` | `owns_interface` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 详见 [interface.md](interface.md) |
-| `network_relation` | `server_uplink` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `server_tor_ports[].sn + ports[]` |
-| `composition_relation` | `contains_gpu` | `device(device_sn) → gpu(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | `server_gpu.device_sn` |
+| `spatial_relation` | `located_in` | `device(device_sn) → cabinet(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `device_view.cabinet_uuid` |
+| `spatial_relation` | `member_of` | `device(device_sn) → pod(uuid)` | `plane`、`relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 管理面 POD 或计算面 POD 引用 |
+| `composition_relation` | `owns_interface` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 详见 [interface.md](interface.md) |
+| `network_relation` | `server_uplink` | `device(device_sn) → interface(port_uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `server_tor_ports[].sn + ports[]` |
+| `composition_relation` | `contains_gpu` | `device(device_sn) → gpu(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `server_gpu.device_sn` |
 
-`relation_id` 优先使用带 `scope_id/source_id` 限定的来源关系 UUID；没有来源关系 UUID 时，由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。`member_of` 允许业务属性参与唯一性，其关系 ID 还必须包含规范化 `plane`。
+`relation_id` 优先使用带 `source_id` 限定的来源关系 UUID；没有来源关系 UUID 时，由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。`member_of` 允许业务属性参与唯一性，其关系 ID 还必须包含规范化 `plane`。
 
 说明：
 

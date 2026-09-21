@@ -66,7 +66,7 @@ data_center.uuid
 逻辑数据中心身份：
 
 ```text
-scope_id:source_id:data_center:uuid
+source_id:data_center:uuid
 ```
 
 以下字段均不能替代 UUID：
@@ -83,7 +83,6 @@ scope_id:source_id:data_center:uuid
 
 | 目标字段 | 来源 | 必要性 |
 |---|---|---|
-| `scope_id` | 同步上下文 | 隔离租户或拓扑范围 |
 | `source_id` | 同步配置 | 避免不同 CMDB 来源之间发生身份碰撞 |
 | `uuid` | `idc.uuid` | 数据中心稳定身份 |
 | `inst_id` | `idc.inst_id` | CMDB 数字 ID，用于查询、机柜引用解析和来源追溯 |
@@ -229,13 +228,13 @@ data_center → logic_idc
 
 | Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
 |---|---|---|---|---|---|
-| `spatial_relation` | `located_in` | `cabinet(uuid) → data_center(uuid)` | `relation_id`、`scope_id`、`source_id`、`created_at`、`synced_at` | 无 | `cabinet.idc_id` |
+| `spatial_relation` | `located_in` | `cabinet(uuid) → data_center(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `cabinet.idc_id` |
 
 关系身份规则：
 
 - 来源没有独立关系 UUID。
 - `relation_id` 由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。
-- 两端完整逻辑身份必须包含 `scope_id`、`source_id`、对象类型和稳定 UUID。
+- 两端完整逻辑身份必须包含 `source_id`、对象类型和稳定 UUID。
 - 同一机柜在同一时刻只应有一条已发布的数据中心归属关系。
 
 ## 6. 同步与清理约定
