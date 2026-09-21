@@ -71,12 +71,12 @@ func (h *InventoryHandler) Enqueue(c *gin.Context) {
 		inventoryError(c, service.ErrInventoryInvalid)
 		return
 	}
-	run, err := h.service.Enqueue(c.Request.Context(), GetUserIdFromCtx(c), c.Param("scope_id"), c.GetHeader("Idempotency-Key"), request)
+	run, err := h.service.Enqueue(c.Request.Context(), GetUserIdFromCtx(c), c.GetHeader("Idempotency-Key"), request)
 	if err != nil {
 		inventoryError(c, err)
 		return
 	}
-	c.Header("Location", "/v1/scopes/"+c.Param("scope_id")+"/sync-runs/"+run.ID)
+	c.Header("Location", "/v1/inventory/sync-runs/"+run.ID)
 	inventorySuccess(c, http.StatusAccepted, v1.InventoryRun(*run))
 }
 
@@ -85,7 +85,7 @@ func (h *InventoryHandler) GetRun(c *gin.Context) {
 		inventoryError(c, err)
 		return
 	}
-	run, err := h.service.GetRun(c.Request.Context(), GetUserIdFromCtx(c), c.Param("scope_id"), c.Param("run_id"))
+	run, err := h.service.GetRun(c.Request.Context(), GetUserIdFromCtx(c), c.Param("run_id"))
 	if err != nil {
 		inventoryError(c, err)
 		return
@@ -98,7 +98,7 @@ func (h *InventoryHandler) CancelRun(c *gin.Context) {
 		inventoryError(c, err)
 		return
 	}
-	run, accepted, err := h.service.CancelRun(c.Request.Context(), GetUserIdFromCtx(c), c.Param("scope_id"), c.Param("run_id"))
+	run, accepted, err := h.service.CancelRun(c.Request.Context(), GetUserIdFromCtx(c), c.Param("run_id"))
 	if err != nil {
 		inventoryError(c, err)
 		return

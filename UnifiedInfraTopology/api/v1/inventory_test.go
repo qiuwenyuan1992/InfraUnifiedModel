@@ -22,19 +22,14 @@ func TestInventoryItemsMapsPublicFields(t *testing.T) {
 		want  string
 	}{
 		{
-			name:  "scopes",
-			items: []model.TopologyScope{{ID: "scope", Name: "lab", ActiveGenerationID: &active}},
-			want:  `[{"id":"scope","name":"lab","active_generation_id":"generation"}]`,
-		},
-		{
 			name:  "sources omit config reference",
-			items: []model.Source{{ID: "source", ScopeID: "scope", Name: "lab", AdapterKind: "fixture", ConfigRef: "secret-config", Enabled: true}},
-			want:  `[{"id":"source","scope_id":"scope","name":"lab","adapter_kind":"fixture","enabled":true}]`,
+			items: []model.Source{{ID: "source", Name: "lab", AdapterKind: "fixture", ConfigRef: "secret-config", Enabled: true}},
+			want:  `[{"id":"source","name":"lab","adapter_kind":"fixture","enabled":true}]`,
 		},
 		{
 			name:  "generations",
-			items: []model.Generation{{ID: "generation", ScopeID: "scope", RunID: "run", State: "published", InventoryReady: true, GraphReady: false, RoutingReady: false, CreatedAt: now, PublishedAt: &now}},
-			want:  `[{"id":"generation","scope_id":"scope","run_id":"run","state":"published","inventory_ready":true,"graph_ready":false,"routing_ready":false,"created_at":"2026-09-15T08:00:00Z","published_at":"2026-09-15T08:00:00Z"}]`,
+			items: []model.Generation{{ID: "generation", RunID: "run", State: "published", InventoryReady: true, GraphReady: false, RoutingReady: false, CreatedAt: now, PublishedAt: &now}},
+			want:  `[{"id":"generation","run_id":"run","state":"published","inventory_ready":true,"graph_ready":false,"routing_ready":false,"created_at":"2026-09-15T08:00:00Z","published_at":"2026-09-15T08:00:00Z"}]`,
 		},
 		{
 			name:  "devices stable entity ID",
@@ -53,8 +48,8 @@ func TestInventoryItemsMapsPublicFields(t *testing.T) {
 		},
 		{
 			name:  "runs omit internal request fields",
-			items: []model.SyncRun{{ID: "run", ScopeID: "scope", Status: "failed", Mode: "full", BaseGenerationID: &active, GenerationID: &active, RequestHash: "private-hash", IdempotencyKey: "private-key", RequestedBy: "private-user", CancelRequestedAt: &now, CreatedAt: now, StartedAt: &now, FinishedAt: &now, ErrorCode: "upstream_failure"}},
-			want:  `[{"id":"run","scope_id":"scope","status":"failed","mode":"full","base_generation_id":"generation","generation_id":"generation","cancel_requested_at":"2026-09-15T08:00:00Z","created_at":"2026-09-15T08:00:00Z","started_at":"2026-09-15T08:00:00Z","finished_at":"2026-09-15T08:00:00Z","error_code":"upstream_failure"}]`,
+			items: []model.SyncRun{{ID: "run", Status: "failed", Mode: "full", BaseGenerationID: &active, GenerationID: &active, RequestHash: "private-hash", IdempotencyKey: "private-key", RequestedBy: "private-user", CancelRequestedAt: &now, CreatedAt: now, StartedAt: &now, FinishedAt: &now, ErrorCode: "upstream_failure"}},
+			want:  `[{"id":"run","status":"failed","mode":"full","base_generation_id":"generation","generation_id":"generation","cancel_requested_at":"2026-09-15T08:00:00Z","created_at":"2026-09-15T08:00:00Z","started_at":"2026-09-15T08:00:00Z","finished_at":"2026-09-15T08:00:00Z","error_code":"upstream_failure"}]`,
 		},
 	}
 	for _, tt := range tests {
@@ -64,16 +59,17 @@ func TestInventoryItemsMapsPublicFields(t *testing.T) {
 			data, err := json.Marshal(got)
 			require.NoError(t, err)
 			require.JSONEq(t, tt.want, string(data))
+			require.NotContains(t, string(data), "\"scope"+"_"+"id\"")
 		})
 	}
 }
 
 func TestInventoryItemsEmptySlicesAreArrays(t *testing.T) {
 	for _, items := range []interface{}{
-		[]model.TopologyScope(nil), []model.Source(nil), []model.Generation(nil),
+		[]model.Source(nil), []model.Generation(nil),
 		[]model.Device(nil), []model.Interface(nil),
 		[]model.Address(nil), []model.SyncRun(nil),
-		[]model.TopologyScope{}, []model.Source{}, []model.Generation{},
+		[]model.Source{}, []model.Generation{},
 		[]model.Device{}, []model.Interface{},
 		[]model.Address{}, []model.SyncRun{},
 	} {
@@ -90,7 +86,6 @@ func TestInventoryItemsPreservesUnknownValues(t *testing.T) {
 		items interface{}
 		keys  []string
 	}{
-		{[]model.TopologyScope{{}}, []string{"active_generation_id"}},
 		{[]model.Device{{}}, []string{"serial_number"}},
 		{[]model.Interface{{}}, []string{"speed_bps"}},
 		{[]model.Address{{AddressFamily: 4, Address: []byte{192, 0, 2, 1}}}, []string{"interface_id", "prefix_length"}},

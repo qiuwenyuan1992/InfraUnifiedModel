@@ -15,12 +15,9 @@ func (r *inventoryRepository) List(ctx context.Context, resource string, q Inven
 	db := r.r.DB(ctx).WithContext(ctx)
 	idColumn := "id"
 	switch resource {
-	case "scopes":
-		db = db.Where("id IN ?", q.ScopeIDs)
 	case "devices", "interfaces", "addresses":
 		return nil, fmt.Errorf("asset resources require the graph inventory repository")
 	case "sources", "generations", "sync-runs":
-		db = db.Where("scope_id = ?", q.ScopeID)
 	default:
 		return nil, fmt.Errorf("invalid inventory resource")
 	}
@@ -51,8 +48,6 @@ func (r *inventoryRepository) List(ctx context.Context, resource string, q Inven
 	}
 	db = db.Limit(q.Limit + 1)
 	switch resource {
-	case "scopes":
-		return inventoryRows(db, q.Limit, func(v model.TopologyScope) string { return v.ID })
 	case "sources":
 		return inventoryRows(db, q.Limit, func(v model.Source) string { return v.ID })
 	case "generations":

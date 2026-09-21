@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 )
 
-func (s *inventoryService) Enqueue(ctx context.Context, userID, scopeID, key string, req EnqueueInventoryRun) (*model.SyncRun, error) {
-	if err := s.authorize(userID, scopeID, "write"); err != nil {
+func (s *inventoryService) Enqueue(ctx context.Context, userID, key string, req EnqueueInventoryRun) (*model.SyncRun, error) {
+	if err := s.authorize(userID, "write"); err != nil {
 		return nil, err
 	}
 	if len(key) < 1 || len(key) > 128 {
@@ -46,7 +46,7 @@ func (s *inventoryService) Enqueue(ctx context.Context, userID, scopeID, key str
 	canonical, _ := json.Marshal(req)
 	hash := sha256.Sum256(canonical)
 	run := &model.SyncRun{
-		ID: strings.ReplaceAll(uuid.NewString(), "-", ""), ScopeID: scopeID, Status: "queued", Mode: req.Mode,
+		ID: strings.ReplaceAll(uuid.NewString(), "-", ""), Status: "queued", Mode: req.Mode,
 		BaseGenerationID: req.BaseGenerationID, RequestHash: hex.EncodeToString(hash[:]), IdempotencyKey: key,
 		RequestedBy: userID, CreatedAt: time.Now().UTC(),
 	}
@@ -54,27 +54,27 @@ func (s *inventoryService) Enqueue(ctx context.Context, userID, scopeID, key str
 	return result, inventoryError(err)
 }
 
-func (s *inventoryService) GetRun(ctx context.Context, userID, scopeID, runID string) (*model.SyncRun, error) {
-	if err := s.authorize(userID, scopeID, "sync-runs"); err != nil {
+func (s *inventoryService) GetRun(ctx context.Context, userID, runID string) (*model.SyncRun, error) {
+	if err := s.authorize(userID, "sync-runs"); err != nil {
 		return nil, err
 	}
 	if !inventoryID(runID) {
 		return nil, ErrInventoryInvalid
 	}
-	if _, err := s.repo.Scope(ctx, scopeID); err != nil {
+	if _, err := s.repo.State(ctx); err != nil {
 		return nil, inventoryError(err)
 	}
-	run, err := s.repo.Run(ctx, scopeID, runID)
+	run, err := s.repo.Run(ctx, runID)
 	return run, inventoryError(err)
 }
 
-func (s *inventoryService) CancelRun(ctx context.Context, userID, scopeID, runID string) (*model.SyncRun, bool, error) {
-	if err := s.authorize(userID, scopeID, "write"); err != nil {
+func (s *inventoryService) CancelRun(ctx context.Context, userID, runID string) (*model.SyncRun, bool, error) {
+	if err := s.authorize(userID, "write"); err != nil {
 		return nil, false, err
 	}
 	if !inventoryID(runID) {
 		return nil, false, ErrInventoryInvalid
 	}
-	run, accepted, err := s.repo.Cancel(ctx, scopeID, runID)
+	run, accepted, err := s.repo.Cancel(ctx, runID)
 	return run, accepted, inventoryError(err)
 }

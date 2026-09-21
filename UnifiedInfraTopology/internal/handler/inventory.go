@@ -92,7 +92,7 @@ func (h *InventoryHandler) List(resource string) gin.HandlerFunc {
 				return
 			}
 		}
-		page, err := h.service.List(c.Request.Context(), GetUserIdFromCtx(c), c.Param("scope_id"), resource, c.Param("device_id"), service.InventoryQuery{
+		page, err := h.service.List(c.Request.Context(), GetUserIdFromCtx(c), resource, c.Param("device_id"), service.InventoryQuery{
 			Limit: limit, Cursor: q.Get("cursor"), GenerationID: q.Get("generation_id"), DeviceKind: q.Get("device_kind"), Name: q.Get("name"), Lifecycle: q.Get("lifecycle"), InterfaceKind: q.Get("interface_kind"), AddressFamily: q.Get("address_family"), Status: q.Get("status"), SourceID: q.Get("source_id"),
 		})
 		if err != nil {
@@ -115,7 +115,7 @@ func (h *InventoryHandler) GetDevice(c *gin.Context) {
 		inventoryError(c, err)
 		return
 	}
-	d, err := h.service.GetDevice(c.Request.Context(), GetUserIdFromCtx(c), c.Param("scope_id"), c.Param("device_id"), q.Get("generation_id"))
+	d, err := h.service.GetDevice(c.Request.Context(), GetUserIdFromCtx(c), c.Param("device_id"), q.Get("generation_id"))
 	if err != nil {
 		inventoryError(c, err)
 		return

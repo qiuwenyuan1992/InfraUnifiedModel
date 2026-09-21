@@ -40,15 +40,13 @@ func (f *inventoryGraphFake) call(ctx context.Context) error {
 	return f.err
 }
 
-func (f *inventoryGraphFake) Device(ctx context.Context, scopeID, id string) (*model.Device, error) {
+func (f *inventoryGraphFake) Device(ctx context.Context, id string) (*model.Device, error) {
 	if err := f.call(ctx); err != nil {
 		return nil, err
 	}
-	if scopeID == inventoryScope {
-		for _, d := range f.devices {
-			if d.EntityID == id {
-				return &d, nil
-			}
+	for _, d := range f.devices {
+		if d.EntityID == id {
+			return &d, nil
 		}
 	}
 	return nil, repository.ErrInventoryNotFound
@@ -65,7 +63,7 @@ func (f *inventoryGraphFake) List(ctx context.Context, resource string, q reposi
 	case "devices":
 		rows := []model.Device{}
 		for _, d := range f.devices {
-			if q.ScopeID == inventoryScope && d.EntityID > q.LastID && (q.Name == "" || d.Name == q.Name) && (q.DeviceKind == "" || d.DeviceKind == q.DeviceKind) && (q.Lifecycle == "" || d.Lifecycle == q.Lifecycle) {
+			if d.EntityID > q.LastID && (q.Name == "" || d.Name == q.Name) && (q.DeviceKind == "" || d.DeviceKind == q.DeviceKind) && (q.Lifecycle == "" || d.Lifecycle == q.Lifecycle) {
 				rows = append(rows, d)
 			}
 		}
@@ -81,7 +79,7 @@ func (f *inventoryGraphFake) List(ctx context.Context, resource string, q reposi
 	case "interfaces":
 		rows := []model.Interface{}
 		for _, item := range f.interfaces {
-			if q.ScopeID == inventoryScope && item.DeviceID == q.ParentID {
+			if item.DeviceID == q.ParentID {
 				rows = append(rows, item)
 			}
 		}
@@ -89,7 +87,7 @@ func (f *inventoryGraphFake) List(ctx context.Context, resource string, q reposi
 	case "addresses":
 		rows := []model.Address{}
 		for _, item := range f.addresses {
-			if q.ScopeID == inventoryScope && item.DeviceID == q.ParentID {
+			if item.DeviceID == q.ParentID {
 				rows = append(rows, item)
 			}
 		}
@@ -102,7 +100,7 @@ func (f *inventoryGraphFake) List(ctx context.Context, resource string, q reposi
 func TestInventoryCurrentGraphResponses(t *testing.T) {
 	s, _, _ := inventoryFixture(t)
 	ctx := context.Background()
-	d, err := s.GetDevice(ctx, "AliceCase", inventoryScope, inventoryDeviceA, inventoryGen)
+	d, err := s.GetDevice(ctx, "AliceCase", inventoryDeviceA, inventoryGen)
 	if err != nil || d.Device.GenerationID != inventoryGen {
 		t.Fatalf("device batch: %+v %v", d, err)
 	}
@@ -111,7 +109,7 @@ func TestInventoryCurrentGraphResponses(t *testing.T) {
 		if resource != "devices" {
 			parent = inventoryDeviceA
 		}
-		page, err := s.List(ctx, "AliceCase", inventoryScope, resource, parent, InventoryQuery{Limit: 1})
+		page, err := s.List(ctx, "AliceCase", resource, parent, InventoryQuery{Limit: 1})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,7 +131,7 @@ func TestInventoryCurrentGraphResponses(t *testing.T) {
 			}
 		}
 		if resource == "devices" {
-			next, err := s.List(ctx, "AliceCase", inventoryScope, resource, "", InventoryQuery{Limit: 1, Cursor: *page.NextCursor})
+			next, err := s.List(ctx, "AliceCase", resource, "", InventoryQuery{Limit: 1, Cursor: *page.NextCursor})
 			if err != nil || next.NextCursor != nil || next.Items.([]model.Device)[0].EntityID != inventoryDeviceB {
 				t.Fatalf("current cursor: %+v %v", next, err)
 			}

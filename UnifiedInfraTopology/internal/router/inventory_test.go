@@ -26,18 +26,23 @@ type inventoryStub struct {
 	accepted bool
 }
 
-func (s *inventoryStub) List(ctx context.Context, user, scope, resource, parent string, q service.InventoryQuery) (*service.InventoryPage, error) {
+func (s *inventoryStub) List(ctx context.Context, user, resource, parent string, q service.InventoryQuery) (*service.InventoryPage, error) {
 	s.called = true
 	if s.err != nil {
 		return nil, s.err
 	}
 	return &service.InventoryPage{Items: []model.Source{{ID: "source", ConfigRef: "secret-config"}}}, nil
 }
-func (s *inventoryStub) Enqueue(ctx context.Context, user, scope, key string, req service.EnqueueInventoryRun) (*model.SyncRun, error) {
+func (s *inventoryStub) Enqueue(ctx context.Context, user, key string, req service.EnqueueInventoryRun) (*model.SyncRun, error) {
 	s.called = true
-	return &model.SyncRun{ID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ScopeID: scope, Status: "queued", IdempotencyKey: key, RequestHash: "private-hash"}, s.err
+	return &model.SyncRun{ID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Status: "queued", IdempotencyKey: key, RequestHash: "private-hash"}, s.err
 }
-func (s *inventoryStub) CancelRun(ctx context.Context, user, scope, id string) (*model.SyncRun, bool, error) {
+func (s *inventoryStub) GetRun(ctx context.Context, user, id string) (*model.SyncRun, error) {
+	s.called = true
+	return &model.SyncRun{ID: id, Status: "queued", RequestHash: "private-hash"}, s.err
+}
+func (s *inventoryStub) CancelRun(ctx context.Context, user, id string) (*model.SyncRun, bool, error) {
+	s.called = true
 	return &model.SyncRun{ID: id, Status: "canceled"}, s.accepted, s.err
 }
 
@@ -57,7 +62,7 @@ func inventoryRouter(t *testing.T, s *inventoryStub) (*gin.Engine, string) {
 func TestInventoryRoutesRequireAuthAndHideSecrets(t *testing.T) {
 	s := &inventoryStub{}
 	r, token := inventoryRouter(t, s)
-	path := "/v1/scopes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sources"
+	path := "/v1/inventory/sources"
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 	require.Equal(t, 401, w.Code)
@@ -77,7 +82,7 @@ func TestInventoryRejectsMalformedInputBeforeService(t *testing.T) {
 		t.Run(query, func(t *testing.T) {
 			s := &inventoryStub{}
 			r, token := inventoryRouter(t, s)
-			req := httptest.NewRequest("GET", "/v1/scopes?"+query, nil)
+			req := httptest.NewRequest("GET", "/v1/inventory/sources?"+query, nil)
 			req.Header.Set("Authorization", token)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
@@ -89,7 +94,7 @@ func TestInventoryRejectsMalformedInputBeforeService(t *testing.T) {
 		t.Run(body, func(t *testing.T) {
 			s := &inventoryStub{}
 			r, token := inventoryRouter(t, s)
-			req := httptest.NewRequest("POST", "/v1/scopes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sync-runs", strings.NewReader(body))
+			req := httptest.NewRequest("POST", "/v1/inventory/sync-runs", strings.NewReader(body))
 			req.Header.Set("Authorization", token)
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Idempotency-Key", "key")
@@ -103,7 +108,7 @@ func TestInventoryRejectsMalformedInputBeforeService(t *testing.T) {
 func TestInventoryAcceptedAndCancellationStatus(t *testing.T) {
 	s := &inventoryStub{}
 	r, token := inventoryRouter(t, s)
-	path := "/v1/scopes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sync-runs"
+	path := "/v1/inventory/sync-runs"
 	req := httptest.NewRequest("POST", path, strings.NewReader(`{"source_ids":["cccccccccccccccccccccccccccccccc"],"mode":"full","base_generation_id":null}`))
 	req.Header.Set("Authorization", token)
 	req.Header.Set("Content-Type", "application/json")
@@ -111,7 +116,14 @@ func TestInventoryAcceptedAndCancellationStatus(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusAccepted, w.Code)
-	require.Equal(t, path+"/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", w.Header().Get("Location"))
+	runPath := path + "/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	require.Equal(t, runPath, w.Header().Get("Location"))
+	require.NotContains(t, w.Body.String(), "private-hash")
+	req = httptest.NewRequest("GET", runPath, nil)
+	req.Header.Set("Authorization", token)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
 	require.NotContains(t, w.Body.String(), "private-hash")
 	for _, accepted := range []bool{true, false} {
 		s.accepted = accepted
@@ -134,7 +146,7 @@ func TestInventoryErrorSanitization(t *testing.T) {
 	}{{service.ErrInventoryForbidden, 403, "40301"}, {service.ErrInventoryIdempotency, 409, "40904"}, {context.DeadlineExceeded, 504, "50401"}} {
 		s := &inventoryStub{err: tc.err}
 		r, token := inventoryRouter(t, s)
-		req := httptest.NewRequest("GET", "/v1/scopes", nil)
+		req := httptest.NewRequest("GET", "/v1/inventory/sources", nil)
 		req.Header.Set("Authorization", token)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)

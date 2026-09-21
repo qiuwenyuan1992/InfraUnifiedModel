@@ -47,17 +47,13 @@ func (r graphRow) nullableInteger(key string) (*int64, error) {
 	return &n, nil
 }
 
-func (r graphRow) identity(scope, kind, id string) error {
-	actualScope, err := r.text("scope_id")
-	if err != nil || actualScope != scope {
-		return graphMalformed()
-	}
+func (r graphRow) identity(kind, id string) error {
 	actualID, err := r.text("entity_id")
 	if err != nil || !graphEntityID.MatchString(actualID) || actualID != id {
 		return graphMalformed()
 	}
 	vid, err := r.text("vid")
-	if err != nil || vid != graphVID(scope, kind, id) || len(vid) != 67 {
+	if err != nil || vid != graphVID(kind, id) {
 		return graphMalformed()
 	}
 	return nil

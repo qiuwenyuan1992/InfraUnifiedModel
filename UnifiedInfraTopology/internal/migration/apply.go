@@ -50,8 +50,8 @@ func Apply(ctx context.Context, db *gorm.DB) error {
 }
 
 func loadSteps(dialect string) ([]migrationStep, error) {
-	steps := make([]migrationStep, 0, 3)
-	for version, name := range []string{"0000_ledger.sql", "0001_inventory.sql", "0002_current_graph.sql"} {
+	steps := make([]migrationStep, 0, 2)
+	for version, name := range []string{"0000_ledger.sql", "0001_inventory.sql"} {
 		data, err := scripts.ReadFile(dialect + "/" + name)
 		if err != nil {
 			return nil, fmt.Errorf("read migration: %w", err)

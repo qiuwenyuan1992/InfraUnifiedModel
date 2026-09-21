@@ -39,7 +39,7 @@ go run ./cmd/worker -conf config/local.example.yml
 
 ## 已实现的 API
 
-`/v1/scopes` 提供经身份认证的作用域、设备、接口、地址、来源和已发布批次读取，
+`/v1/inventory` 提供经身份认证的设备、接口、地址、来源和已发布批次读取，
 以及持久化同步任务的创建、列表、详情和取消；已有用户接口仍保留。
 同步任务**只入队，不执行**。尚无采集 worker、发布流水线、拓扑查询或上游写入。
 证据、来源进度、检查点和覆盖摘要尚未开放；生成的 Swagger 仅覆盖已有用户路由，
@@ -67,7 +67,7 @@ cp config/local.example.yml config/local.yml
 取消跟踪不会删除磁盘上的已有文件。历史提交中的默认值和密钥仍在 Git 历史中，
 应轮换已暴露凭据，生产环境禁止沿用默认凭据。
 
-资产控制数据使用 `data.db.main`。配置真实用户/作用域 ID，并独立生成至少 32 字节的游标签名密钥，
+资产控制数据使用 `data.db.main`。配置真实用户 ID，并独立生成至少 32 字节的游标签名密钥，
 不得复用 JWT 密钥：
 
 ```yaml
@@ -75,12 +75,11 @@ inventory:
   cursor_key: "REPLACE_WITH_DEPLOYMENT_MANAGED_SECRET"
   grants:
     - user_id: "authenticated-user-id"
-      scope_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       permissions: ["inventory:read", "sync:read", "sync:write"]
 ```
 
-没有默认授权。作用域和来源记录由部署方管理，不提供种子数据或配置 CRUD 接口。
-缺少游标配置时列表操作不可用。v2 游标绑定调用方、作用域、资源、过滤条件、当前发布批次和投影 epoch；
+没有默认授权。来源记录由部署方管理，不提供种子数据或配置 CRUD 接口。
+缺少游标配置时列表操作不可用。v3 游标绑定调用方、资源、过滤条件、当前发布批次和投影 epoch；
 旧格式游标、非当前批次选择器以及图更新后失效的游标不能读取历史资产，必须从当前批次重新分页。
 轮换签名密钥也会使已有游标失效。
 

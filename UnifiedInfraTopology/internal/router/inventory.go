@@ -10,7 +10,7 @@ import (
 )
 
 func InitInventoryRouter(deps RouterDeps, r *gin.RouterGroup) {
-	g := r.Group("/scopes")
+	g := r.Group("/inventory")
 	g.Use(func(c *gin.Context) {
 		if c.Writer.Header().Get("X-Request-ID") == "" {
 			c.Header("X-Request-ID", uuid.NewString())
@@ -27,15 +27,14 @@ func InitInventoryRouter(deps RouterDeps, r *gin.RouterGroup) {
 		c.Next()
 	})
 	h := deps.InventoryHandler
-	g.GET("", h.List("scopes"))
-	g.GET("/:scope_id/devices", h.List("devices"))
-	g.GET("/:scope_id/devices/:device_id", h.GetDevice)
-	g.GET("/:scope_id/devices/:device_id/interfaces", h.List("interfaces"))
-	g.GET("/:scope_id/devices/:device_id/addresses", h.List("addresses"))
-	g.GET("/:scope_id/sources", h.List("sources"))
-	g.GET("/:scope_id/generations", h.List("generations"))
-	g.GET("/:scope_id/sync-runs", h.List("sync-runs"))
-	g.POST("/:scope_id/sync-runs", h.Enqueue)
-	g.GET("/:scope_id/sync-runs/:run_id", h.GetRun)
-	g.POST("/:scope_id/sync-runs/:run_id/cancel", h.CancelRun)
+	g.GET("/devices", h.List("devices"))
+	g.GET("/devices/:device_id", h.GetDevice)
+	g.GET("/devices/:device_id/interfaces", h.List("interfaces"))
+	g.GET("/devices/:device_id/addresses", h.List("addresses"))
+	g.GET("/sources", h.List("sources"))
+	g.GET("/generations", h.List("generations"))
+	g.GET("/sync-runs", h.List("sync-runs"))
+	g.POST("/sync-runs", h.Enqueue)
+	g.GET("/sync-runs/:run_id", h.GetRun)
+	g.POST("/sync-runs/:run_id/cancel", h.CancelRun)
 }

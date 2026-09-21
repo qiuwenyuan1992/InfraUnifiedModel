@@ -24,7 +24,10 @@ func TestInventoryRepositoryUsesCallerTransaction(t *testing.T) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err = db.AutoMigrate(&model.TopologyScope{}, &model.Source{}, &model.Generation{}, &model.SyncRun{}, &model.SyncRunSource{}); err != nil {
+	if err = db.AutoMigrate(&model.InventoryState{}, &model.Source{}, &model.Generation{}, &model.SyncRun{}, &model.SyncRunSource{}); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Create(&model.InventoryState{ID: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
 	r := NewRepository(nil, db)
@@ -35,32 +38,28 @@ func TestInventoryRepositoryUsesCallerTransaction(t *testing.T) {
 			t.Fatalf("SQL accepted graph asset %s: %+v %v", resource, result, err)
 		}
 	}
-	scopeID := strings.Repeat("a", 32)
 	sourceID := strings.Repeat("b", 32)
-	if err = db.Create(&model.TopologyScope{ID: scopeID, Name: "transaction"}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err = db.Create(&model.Source{ID: sourceID, ScopeID: scopeID, Enabled: true}).Error; err != nil {
+	if err = db.Create(&model.Source{ID: sourceID, Enabled: true}).Error; err != nil {
 		t.Fatal(err)
 	}
 	rollback := errors.New("rollback outer transaction")
 	err = r.Transaction(ctx, func(txCtx context.Context) error {
-		request := &model.SyncRun{ID: strings.Repeat("c", 32), ScopeID: scopeID, Status: "queued", Mode: "full", IdempotencyKey: "transaction", RequestHash: "hash", CreatedAt: time.Now().UTC()}
+		request := &model.SyncRun{ID: strings.Repeat("c", 32), Status: "queued", Mode: "full", IdempotencyKey: "transaction", RequestHash: "hash", CreatedAt: time.Now().UTC()}
 		run, createErr := repo.Enqueue(txCtx, request, []string{sourceID})
 		if createErr != nil {
 			return createErr
 		}
-		if _, getErr := repo.Run(txCtx, scopeID, run.ID); getErr != nil {
+		if _, getErr := repo.Run(txCtx, run.ID); getErr != nil {
 			return getErr
 		}
-		canceled, accepted, cancelErr := repo.Cancel(txCtx, scopeID, run.ID)
+		canceled, accepted, cancelErr := repo.Cancel(txCtx, run.ID)
 		if cancelErr != nil {
 			return cancelErr
 		}
 		if !accepted || canceled.Status != "canceled" {
 			t.Fatalf("cancel: %+v accepted=%v", canceled, accepted)
 		}
-		again, accepted, cancelErr := repo.Cancel(txCtx, scopeID, run.ID)
+		again, accepted, cancelErr := repo.Cancel(txCtx, run.ID)
 		if cancelErr != nil || accepted || !again.FinishedAt.Equal(*canceled.FinishedAt) {
 			t.Fatalf("repeat cancel: %+v accepted=%v err=%v", again, accepted, cancelErr)
 		}

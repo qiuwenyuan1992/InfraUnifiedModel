@@ -18,13 +18,12 @@ func seedInventory(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	require.NoError(t, Apply(context.Background(), db))
 	rows := []any{
-		&model.TopologyScope{ID: testID(1), Name: "primary"},
-		&model.Source{ID: testID(2), ScopeID: testID(1), Name: "cmdb", AdapterKind: "fixture", ConfigRef: "source/cmdb", Enabled: true},
-		&model.SyncRun{ID: testID(3), ScopeID: testID(1), Status: "queued", Mode: "full", RequestHash: "hash", IdempotencyKey: "request-1", RequestedBy: "operator", CreatedAt: time.Now().UTC()},
-		&model.Generation{ID: testID(4), ScopeID: testID(1), RunID: testID(3), State: "published", InventoryReady: true, CreatedAt: time.Now().UTC()},
-		&model.Entity{ID: testID(5), ScopeID: testID(1), Kind: "device", CreatedAt: time.Now().UTC()},
-		&model.Entity{ID: testID(6), ScopeID: testID(1), Kind: "interface", CreatedAt: time.Now().UTC()},
-		&model.Entity{ID: testID(7), ScopeID: testID(1), Kind: "address", CreatedAt: time.Now().UTC()},
+		&model.Source{ID: testID(2), Name: "cmdb", AdapterKind: "fixture", ConfigRef: "source/cmdb", Enabled: true},
+		&model.SyncRun{ID: testID(3), Status: "queued", Mode: "full", RequestHash: "hash", IdempotencyKey: "request-1", RequestedBy: "operator", CreatedAt: time.Now().UTC()},
+		&model.Generation{ID: testID(4), RunID: testID(3), State: "published", InventoryReady: true, CreatedAt: time.Now().UTC()},
+		&model.Entity{ID: testID(5), Kind: "device", CreatedAt: time.Now().UTC()},
+		&model.Entity{ID: testID(6), Kind: "interface", CreatedAt: time.Now().UTC()},
+		&model.Entity{ID: testID(7), Kind: "address", CreatedAt: time.Now().UTC()},
 		&model.SyncRunSource{RunID: testID(3), SourceID: testID(2), Status: "queued"},
 		&model.SourceKey{ID: testID(8), SourceID: testID(2), KeyHash: make([]byte, 32), ObjectType: "device", Namespace: "cmdb", NativeID: "42"},
 		&model.IdentityBinding{ID: testID(9), SourceKeyID: testID(8), EntityID: testID(5), Incarnation: 1, FirstGenerationID: testID(4)},
@@ -41,9 +40,11 @@ func seedInventory(t *testing.T, db *gorm.DB) {
 func TestSchemaRoundTripsNullableFieldsAndKeys(t *testing.T) {
 	db := testDB(t)
 	seedInventory(t, db)
-	var scope model.TopologyScope
-	require.NoError(t, db.First(&scope).Error)
-	require.Nil(t, scope.ActiveGenerationID)
+	var state model.InventoryState
+	require.NoError(t, db.First(&state, 1).Error)
+	require.Nil(t, state.ActiveGenerationID)
+	require.Equal(t, "uninitialized", state.ProjectionState)
+	require.Zero(t, state.ProjectionEpoch)
 	var run model.SyncRun
 	require.NoError(t, db.First(&run).Error)
 	require.Nil(t, run.BaseGenerationID)
@@ -104,25 +105,30 @@ func TestSchemaRejectsBrokenReferencesAndDuplicateKeys(t *testing.T) {
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) { require.Error(t, db.Exec(check.sql, check.args...).Error) })
 	}
-	duplicate := model.SyncRun{ID: testID(30), ScopeID: testID(1), Status: "queued", Mode: "full", RequestHash: "other", IdempotencyKey: "request-1", RequestedBy: "operator", CreatedAt: time.Now().UTC()}
-	require.Error(t, db.Create(&duplicate).Error)
+	duplicateRun := model.SyncRun{ID: testID(30), Status: "queued", Mode: "full", RequestHash: "other", IdempotencyKey: "request-1", RequestedBy: "operator", CreatedAt: time.Now().UTC()}
+	require.Error(t, db.Create(&duplicateRun).Error)
+	duplicateSource := model.Source{ID: testID(31), Name: "cmdb", AdapterKind: "fixture", ConfigRef: "source/other", Enabled: true}
+	require.Error(t, db.Create(&duplicateSource).Error)
 	require.NoError(t, db.Exec("UPDATE address_versions SET interface_id = ?", testID(6)).Error)
 	// 同一接口只有同代且同设备的地址才能引用。
-	require.NoError(t, db.Create(&model.Entity{ID: testID(10), ScopeID: testID(1), Kind: "device", CreatedAt: time.Now().UTC()}).Error)
+	require.NoError(t, db.Create(&model.Entity{ID: testID(10), Kind: "device", CreatedAt: time.Now().UTC()}).Error)
 	require.NoError(t, db.Exec("INSERT INTO device_versions (generation_id, entity_id, name, device_kind, role, lifecycle, resolution_status) VALUES (?, ?, 'other', 'switch', 'unknown', 'active', 'resolved')", testID(4), testID(10)).Error)
 	require.Error(t, db.Exec("UPDATE address_versions SET device_id = ?", testID(10)).Error)
 }
 
-func TestSchemaScopesActiveGenerationAndRunReferences(t *testing.T) {
+func TestSchemaInventoryStateAndGlobalReferences(t *testing.T) {
 	db := testDB(t)
 	seedInventory(t, db)
-	require.NoError(t, db.Create(&model.TopologyScope{ID: testID(20), Name: "other"}).Error)
-	require.Error(t, db.Exec("UPDATE topology_scopes SET active_generation_id = ? WHERE id = ?", testID(4), testID(20)).Error)
-	require.NoError(t, db.Exec("UPDATE topology_scopes SET active_generation_id = ? WHERE id = ?", testID(4), testID(1)).Error)
-	crossScope := model.Generation{ID: testID(40), ScopeID: testID(20), RunID: testID(3), State: "building", CreatedAt: time.Now().UTC()}
-	require.Error(t, db.Create(&crossScope).Error)
-	// 相同幂等键在不同 scope 下允许复用。
-	run := model.SyncRun{ID: testID(30), ScopeID: testID(20), Status: "queued", Mode: "full", RequestHash: "hash", IdempotencyKey: "request-1", RequestedBy: "operator", CreatedAt: time.Now().UTC()}
+	require.Error(t, db.Create(&model.InventoryState{ID: 2}).Error)
+	require.NoError(t, db.Model(&model.InventoryState{}).Where("id = ?", 1).Update("active_generation_id", testID(4)).Error)
+	require.Error(t, db.Model(&model.InventoryState{}).Where("id = ?", 1).Update("active_generation_id", testID(99)).Error)
+
+	run := model.SyncRun{ID: testID(30), Status: "queued", Mode: "full", BaseGenerationID: ptr(testID(4)), RequestHash: "hash", IdempotencyKey: "request-2", RequestedBy: "operator", CreatedAt: time.Now().UTC()}
 	require.NoError(t, db.Create(&run).Error)
-	require.Error(t, db.Exec("UPDATE sync_runs SET base_generation_id = ? WHERE id = ?", testID(4), testID(30)).Error)
+	generation := model.Generation{ID: testID(40), RunID: testID(30), State: "building", CreatedAt: time.Now().UTC()}
+	require.NoError(t, db.Create(&generation).Error)
+	require.NoError(t, db.Model(&run).Update("generation_id", generation.ID).Error)
+	require.Error(t, db.Create(&model.Generation{ID: testID(41), RunID: testID(99), State: "building", CreatedAt: time.Now().UTC()}).Error)
 }
+
+func ptr[T any](value T) *T { return &value }

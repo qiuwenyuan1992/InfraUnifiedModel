@@ -3,19 +3,17 @@ package model
 import "time"
 
 // 持久化结构不承担 HTTP 契约；字段类型由显式版本迁移定义。
-type TopologyScope struct {
-	ID                 string `gorm:"primaryKey"`
-	Name               string
+type InventoryState struct {
+	ID                 uint `gorm:"primaryKey"`
 	ActiveGenerationID *string
 	ProjectionState    string `gorm:"default:uninitialized"`
 	ProjectionEpoch    int64
 }
 
-func (TopologyScope) TableName() string { return "topology_scopes" }
+func (InventoryState) TableName() string { return "inventory_state" }
 
 type Source struct {
 	ID          string `gorm:"primaryKey"`
-	ScopeID     string
 	Name        string
 	AdapterKind string
 	ConfigRef   string
@@ -26,7 +24,6 @@ func (Source) TableName() string { return "sources" }
 
 type Generation struct {
 	ID             string `gorm:"primaryKey"`
-	ScopeID        string
 	RunID          string
 	State          string
 	InventoryReady bool
@@ -82,7 +79,6 @@ type Address struct {
 
 type SyncRun struct {
 	ID                string `gorm:"primaryKey"`
-	ScopeID           string
 	Status            string
 	Mode              string
 	BaseGenerationID  *string
@@ -109,7 +105,6 @@ func (SyncRunSource) TableName() string { return "sync_run_sources" }
 
 type Entity struct {
 	ID        string `gorm:"primaryKey"`
-	ScopeID   string
 	Kind      string
 	CreatedAt time.Time
 }

@@ -9,15 +9,8 @@ import (
 	"UnifiedInfraTopology/internal/model"
 )
 
-type InventoryScopeDTO struct {
-	ID                 string  `json:"id"`
-	Name               string  `json:"name"`
-	ActiveGenerationID *string `json:"active_generation_id"`
-}
-
 type InventorySourceDTO struct {
 	ID          string `json:"id"`
-	ScopeID     string `json:"scope_id"`
 	Name        string `json:"name"`
 	AdapterKind string `json:"adapter_kind"`
 	Enabled     bool   `json:"enabled"`
@@ -25,7 +18,6 @@ type InventorySourceDTO struct {
 
 type InventoryGenerationDTO struct {
 	ID             string     `json:"id"`
-	ScopeID        string     `json:"scope_id"`
 	RunID          string     `json:"run_id"`
 	State          string     `json:"state"`
 	InventoryReady bool       `json:"inventory_ready"`
@@ -78,7 +70,6 @@ type InventoryAddressDTO struct {
 
 type InventoryRunDTO struct {
 	ID                string     `json:"id"`
-	ScopeID           string     `json:"scope_id"`
 	Status            string     `json:"status"`
 	Mode              string     `json:"mode"`
 	BaseGenerationID  *string    `json:"base_generation_id"`
@@ -92,19 +83,11 @@ type InventoryRunDTO struct {
 
 func InventoryItems(items interface{}) (interface{}, error) {
 	switch items := items.(type) {
-	case []model.TopologyScope:
-		result := make([]InventoryScopeDTO, len(items))
-		for i, item := range items {
-			result[i] = InventoryScopeDTO{
-				ID: item.ID, Name: item.Name, ActiveGenerationID: item.ActiveGenerationID,
-			}
-		}
-		return result, nil
 	case []model.Source:
 		result := make([]InventorySourceDTO, len(items))
 		for i, item := range items {
 			result[i] = InventorySourceDTO{
-				ID: item.ID, ScopeID: item.ScopeID, Name: item.Name,
+				ID: item.ID, Name: item.Name,
 				AdapterKind: item.AdapterKind, Enabled: item.Enabled,
 			}
 		}
@@ -178,7 +161,7 @@ func InventoryDevice(item model.Device) InventoryDeviceDTO {
 
 func InventoryGeneration(item model.Generation) InventoryGenerationDTO {
 	return InventoryGenerationDTO{
-		ID: item.ID, ScopeID: item.ScopeID, RunID: item.RunID, State: item.State,
+		ID: item.ID, RunID: item.RunID, State: item.State,
 		InventoryReady: item.InventoryReady, GraphReady: item.GraphReady, RoutingReady: item.RoutingReady,
 		CreatedAt: item.CreatedAt.UTC(), PublishedAt: inventoryUTCTime(item.PublishedAt),
 	}
@@ -186,7 +169,7 @@ func InventoryGeneration(item model.Generation) InventoryGenerationDTO {
 
 func InventoryRun(item model.SyncRun) InventoryRunDTO {
 	return InventoryRunDTO{
-		ID: item.ID, ScopeID: item.ScopeID, Status: item.Status, Mode: item.Mode,
+		ID: item.ID, Status: item.Status, Mode: item.Mode,
 		BaseGenerationID: item.BaseGenerationID, GenerationID: item.GenerationID,
 		CancelRequestedAt: inventoryUTCTime(item.CancelRequestedAt), CreatedAt: item.CreatedAt.UTC(),
 		StartedAt: inventoryUTCTime(item.StartedAt), FinishedAt: inventoryUTCTime(item.FinishedAt),

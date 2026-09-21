@@ -36,7 +36,7 @@ func newGraphInventoryRepository(conf *viper.Viper, open func(graphclient.Config
 	return &graphInventoryRepository{client: client}, client.Close, nil
 }
 
-func (unavailableGraphInventoryRepository) Device(context.Context, string, string) (*model.Device, error) {
+func (unavailableGraphInventoryRepository) Device(context.Context, string) (*model.Device, error) {
 	return nil, ErrInventoryNotReady
 }
 func (unavailableGraphInventoryRepository) List(context.Context, string, InventoryListQuery) (*InventoryListResult, error) {
@@ -44,7 +44,6 @@ func (unavailableGraphInventoryRepository) List(context.Context, string, Invento
 }
 
 var graphEntityID = regexp.MustCompile(`^[0-9a-f]{32}$`)
-var graphScopeID = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 type graphResource struct {
 	tag, kind string
@@ -65,7 +64,7 @@ func graphResourceFor(resource string) (graphResource, bool) {
 }
 
 func (g graphResource) columns() []string {
-	return append([]string{"vid", "scope_id", "entity_id"}, g.fields...)
+	return append([]string{"vid", "entity_id"}, g.fields...)
 }
 func (g graphResource) yield(fetch bool) string {
 	fields := []string{"id(vertex) AS vid"}
@@ -78,7 +77,7 @@ func (g graphResource) yield(fetch bool) string {
 	}
 	return " YIELD " + strings.Join(fields, ", ")
 }
-func graphVID(scope, kind, id string) string { return scope + ":" + kind + ":" + id }
+func graphVID(kind, id string) string { return kind + ":" + id }
 
 func (r *graphInventoryRepository) execute(ctx context.Context, query string, params map[string]interface{}) (*nebulago.ResultSet, error) {
 	if err := ctx.Err(); err != nil {
@@ -97,15 +96,15 @@ func (r *graphInventoryRepository) execute(ctx context.Context, query string, pa
 	return result, nil
 }
 
-func (r *graphInventoryRepository) Device(ctx context.Context, scopeID, id string) (*model.Device, error) {
+func (r *graphInventoryRepository) Device(ctx context.Context, id string) (*model.Device, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if !graphScopeID.MatchString(scopeID) || !graphEntityID.MatchString(id) {
+	if !graphEntityID.MatchString(id) {
 		return nil, fmt.Errorf("invalid graph inventory identity")
 	}
 	g, _ := graphResourceFor("devices")
-	result, err := r.execute(ctx, "FETCH PROP ON `device` $vid"+g.yield(true)+";", map[string]interface{}{"vid": graphVID(scopeID, g.kind, id)})
+	result, err := r.execute(ctx, "FETCH PROP ON `device` $vid"+g.yield(true)+";", map[string]interface{}{"vid": graphVID(g.kind, id)})
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +118,7 @@ func (r *graphInventoryRepository) Device(ctx context.Context, scopeID, id strin
 	if len(rows) != 1 {
 		return nil, graphMalformed()
 	}
-	if err := rows[0].identity(scopeID, g.kind, id); err != nil {
+	if err := rows[0].identity(g.kind, id); err != nil {
 		return nil, err
 	}
 	device, err := rows[0].device()
@@ -134,11 +133,11 @@ func (r *graphInventoryRepository) List(ctx context.Context, resource string, q 
 		return nil, err
 	}
 	g, ok := graphResourceFor(resource)
-	if !ok || q.Limit < 1 || q.Limit > 200 || !graphScopeID.MatchString(q.ScopeID) || (q.LastID != "" && !graphEntityID.MatchString(q.LastID)) || (q.ParentID != "" && (!graphEntityID.MatchString(q.ParentID) || resource == "devices")) {
+	if !ok || q.Limit < 1 || q.Limit > 200 || (q.LastID != "" && !graphEntityID.MatchString(q.LastID)) || (q.ParentID != "" && (!graphEntityID.MatchString(q.ParentID) || resource == "devices")) {
 		return nil, fmt.Errorf("invalid graph inventory list query")
 	}
-	params := map[string]interface{}{"scope_id": q.ScopeID}
-	where := []string{"`" + g.tag + "`.scope_id == $scope_id"}
+	params := map[string]interface{}{}
+	where := []string{}
 	filters := map[string]interface{}{}
 	if q.ParentID != "" {
 		filters["device_id"] = q.ParentID
@@ -176,7 +175,11 @@ func (r *graphInventoryRepository) List(ctx context.Context, resource string, q 
 		params["last_id"] = q.LastID
 	}
 	// 原生 LIMIT 接受整数计数；这里只输出校验后的 2..201，不拼接外部字符串。
-	query := "LOOKUP ON `" + g.tag + "` WHERE " + strings.Join(where, " AND ") + g.yield(false) + " | ORDER BY $-.entity_id ASC | LIMIT " + strconv.Itoa(q.Limit+1) + ";"
+	query := "LOOKUP ON `" + g.tag + "`"
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += g.yield(false) + " | ORDER BY $-.entity_id ASC | LIMIT " + strconv.Itoa(q.Limit+1) + ";"
 	result, err := r.execute(ctx, query, params)
 	if err != nil {
 		return nil, err
@@ -197,7 +200,7 @@ func (r *graphInventoryRepository) List(ctx context.Context, resource string, q 
 		if err != nil || id <= lastID {
 			return nil, graphMalformed()
 		}
-		if err := row.identity(q.ScopeID, g.kind, id); err != nil {
+		if err := row.identity(g.kind, id); err != nil {
 			return nil, err
 		}
 		for key, value := range filters {

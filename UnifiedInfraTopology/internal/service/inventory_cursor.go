@@ -15,7 +15,6 @@ type inventoryCursor struct {
 	Version         int        `json:"v"`
 	UserID          string     `json:"u"`
 	Resource        string     `json:"r"`
-	ScopeID         string     `json:"s"`
 	ParentID        string     `json:"p"`
 	GenerationID    string     `json:"g"`
 	ProjectionEpoch int64      `json:"e"`
@@ -100,7 +99,7 @@ func validateInventoryQuery(resource, parentID string, q InventoryQuery) error {
 		return ErrInventoryInvalid
 	}
 	switch resource {
-	case "scopes", "devices", "interfaces", "addresses", "sources", "generations", "sync-runs":
+	case "devices", "interfaces", "addresses", "sources", "generations", "sync-runs":
 		return nil
 	default:
 		return ErrInventoryInvalid
@@ -143,7 +142,7 @@ func (s *inventoryService) decodeCursor(value string) (inventoryCursor, error) {
 	if err != nil {
 		return cursor, ErrInventoryInvalid
 	}
-	if err = json.Unmarshal(data, &cursor); err != nil || cursor.Version != 2 || !inventoryID(cursor.LastID) {
+	if err = json.Unmarshal(data, &cursor); err != nil || cursor.Version != 3 || !inventoryID(cursor.LastID) {
 		return cursor, ErrInventoryInvalid
 	}
 	return cursor, nil

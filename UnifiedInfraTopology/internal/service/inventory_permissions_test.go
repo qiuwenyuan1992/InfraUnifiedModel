@@ -22,13 +22,13 @@ func TestInventoryPermissionMatrix(t *testing.T) {
 		{"sync:write", "sync-runs", false},
 	}
 	for _, tc := range cases {
-		conf.Set("inventory.grants", []map[string]interface{}{{"user_id": "reader", "scope_id": inventoryScope, "permissions": []string{tc.permission}}})
+		conf.Set("inventory.grants", []map[string]interface{}{{"user_id": "reader", "permissions": []string{tc.permission}}})
 		s := NewInventoryService(repository.NewInventoryRepository(repository.NewRepository(nil, db)), newInventoryGraphFake(), conf)
-		_, err := s.List(context.Background(), "reader", inventoryScope, tc.resource, "", InventoryQuery{})
+		_, err := s.List(context.Background(), "reader", tc.resource, "", InventoryQuery{})
 		if tc.allowed && err != nil || !tc.allowed && !errors.Is(err, ErrInventoryForbidden) {
 			t.Fatalf("%+v: %v", tc, err)
 		}
-		if _, err = s.Enqueue(context.Background(), "reader", inventoryScope, "write", EnqueueInventoryRun{Mode: "full", SourceIDs: []string{inventorySource}}); !errors.Is(err, ErrInventoryForbidden) {
+		if _, err = s.Enqueue(context.Background(), "reader", "write", EnqueueInventoryRun{Mode: "full", SourceIDs: []string{inventorySource}}); !errors.Is(err, ErrInventoryForbidden) {
 			t.Fatalf("write requires both permissions: %v", err)
 		}
 	}
@@ -38,7 +38,7 @@ func TestInventoryConcurrentCancellationAcceptsOnce(t *testing.T) {
 	for _, status := range []string{"queued", "running", "validating", "publishing"} {
 		t.Run(status, func(t *testing.T) {
 			s, db, _ := inventoryFixture(t)
-			inventoryCreate(t, db, &model.SyncRun{ID: inventoryDeviceA, ScopeID: inventoryScope, Status: status, IdempotencyKey: "cancel"})
+			inventoryCreate(t, db, &model.SyncRun{ID: inventoryDeviceA, Status: status, IdempotencyKey: "cancel"})
 			const callers = 8
 			type outcome struct {
 				run      *model.SyncRun
@@ -51,7 +51,7 @@ func TestInventoryConcurrentCancellationAcceptsOnce(t *testing.T) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					run, accepted, err := s.CancelRun(context.Background(), "AliceCase", inventoryScope, inventoryDeviceA)
+					run, accepted, err := s.CancelRun(context.Background(), "AliceCase", inventoryDeviceA)
 					results <- outcome{run, accepted, err}
 				}()
 			}
@@ -97,7 +97,7 @@ func TestInventoryConcurrentIdempotency(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			run, err := s.Enqueue(context.Background(), "AliceCase", inventoryScope, "concurrent", EnqueueInventoryRun{Mode: "full", SourceIDs: []string{inventorySource}})
+			run, err := s.Enqueue(context.Background(), "AliceCase", "concurrent", EnqueueInventoryRun{Mode: "full", SourceIDs: []string{inventorySource}})
 			if err != nil {
 				errs <- err
 				return

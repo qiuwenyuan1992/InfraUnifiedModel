@@ -20,11 +20,11 @@ var (
 )
 
 type InventoryService interface {
-	List(ctx context.Context, userID, scopeID, resource, parentID string, query InventoryQuery) (*InventoryPage, error)
-	GetDevice(ctx context.Context, userID, scopeID, deviceID, generationID string) (*InventoryDevice, error)
-	Enqueue(ctx context.Context, userID, scopeID, key string, req EnqueueInventoryRun) (*model.SyncRun, error)
-	GetRun(ctx context.Context, userID, scopeID, runID string) (*model.SyncRun, error)
-	CancelRun(ctx context.Context, userID, scopeID, runID string) (*model.SyncRun, bool, error)
+	List(ctx context.Context, userID, resource, parentID string, query InventoryQuery) (*InventoryPage, error)
+	GetDevice(ctx context.Context, userID, deviceID, generationID string) (*InventoryDevice, error)
+	Enqueue(ctx context.Context, userID, key string, req EnqueueInventoryRun) (*model.SyncRun, error)
+	GetRun(ctx context.Context, userID, runID string) (*model.SyncRun, error)
+	CancelRun(ctx context.Context, userID, runID string) (*model.SyncRun, bool, error)
 }
 
 type InventoryQuery struct {
@@ -55,7 +55,6 @@ type EnqueueInventoryRun struct {
 
 type inventoryGrant struct {
 	UserID      string   `mapstructure:"user_id"`
-	ScopeID     string   `mapstructure:"scope_id"`
 	Permissions []string `mapstructure:"permissions"`
 }
 
@@ -95,9 +94,9 @@ func inventoryError(err error) error {
 	}
 }
 
-func (s *inventoryService) allowed(userID, scopeID, permission string) bool {
+func (s *inventoryService) allowed(userID, permission string) bool {
 	for _, g := range s.grants {
-		if g.UserID == userID && g.ScopeID == scopeID {
+		if g.UserID == userID {
 			for _, p := range g.Permissions {
 				if p == permission {
 					return true
@@ -108,20 +107,17 @@ func (s *inventoryService) allowed(userID, scopeID, permission string) bool {
 	return false
 }
 
-func (s *inventoryService) authorize(userID, scopeID, resource string) error {
-	if !inventoryID(scopeID) {
-		return ErrInventoryInvalid
-	}
+func (s *inventoryService) authorize(userID, resource string) error {
 	allowed := false
 	switch resource {
 	case "devices", "interfaces", "addresses":
-		allowed = s.allowed(userID, scopeID, "inventory:read")
+		allowed = s.allowed(userID, "inventory:read")
 	case "sources", "sync-runs":
-		allowed = s.allowed(userID, scopeID, "sync:read")
+		allowed = s.allowed(userID, "sync:read")
 	case "generations":
-		allowed = s.allowed(userID, scopeID, "inventory:read") || s.allowed(userID, scopeID, "topology:read")
+		allowed = s.allowed(userID, "inventory:read") || s.allowed(userID, "topology:read")
 	case "write":
-		allowed = s.allowed(userID, scopeID, "sync:read") && s.allowed(userID, scopeID, "sync:write")
+		allowed = s.allowed(userID, "sync:read") && s.allowed(userID, "sync:write")
 	}
 	if !allowed {
 		return ErrInventoryForbidden
@@ -129,18 +125,18 @@ func (s *inventoryService) authorize(userID, scopeID, resource string) error {
 	return nil
 }
 
-func (s *inventoryService) resolveGeneration(ctx context.Context, scopeID, id string) (*model.TopologyScope, *model.Generation, error) {
-	scope, err := s.repo.Scope(ctx, scopeID)
+func (s *inventoryService) resolveGeneration(ctx context.Context, id string) (*model.InventoryState, *model.Generation, error) {
+	state, err := s.repo.State(ctx)
 	if err != nil {
 		return nil, nil, inventoryError(err)
 	}
-	if scope.ProjectionState != "ready" || scope.ActiveGenerationID == nil || *scope.ActiveGenerationID == "" {
+	if state.ProjectionState != "ready" || state.ActiveGenerationID == nil || *state.ActiveGenerationID == "" {
 		return nil, nil, ErrInventoryNotReady
 	}
-	if id != "" && id != *scope.ActiveGenerationID {
+	if id != "" && id != *state.ActiveGenerationID {
 		return nil, nil, ErrInventoryConflict
 	}
-	generation, err := s.repo.Generation(ctx, scopeID, *scope.ActiveGenerationID)
+	generation, err := s.repo.Generation(ctx, *state.ActiveGenerationID)
 	if errors.Is(err, repository.ErrInventoryNotFound) {
 		return nil, nil, ErrInventoryNotReady
 	}
@@ -150,11 +146,11 @@ func (s *inventoryService) resolveGeneration(ctx context.Context, scopeID, id st
 	if generation.State != "published" || !generation.InventoryReady || !generation.GraphReady {
 		return nil, nil, ErrInventoryNotReady
 	}
-	return scope, generation, nil
+	return state, generation, nil
 }
 
-func (s *inventoryService) checkProjection(ctx context.Context, before *model.TopologyScope) error {
-	after, err := s.repo.Scope(ctx, before.ID)
+func (s *inventoryService) checkProjection(ctx context.Context, before *model.InventoryState) error {
+	after, err := s.repo.State(ctx)
 	if err != nil {
 		return inventoryError(err)
 	}
@@ -167,22 +163,22 @@ func (s *inventoryService) checkProjection(ctx context.Context, before *model.To
 	return nil
 }
 
-func (s *inventoryService) GetDevice(ctx context.Context, userID, scopeID, deviceID, generationID string) (*InventoryDevice, error) {
-	if err := s.authorize(userID, scopeID, "devices"); err != nil {
+func (s *inventoryService) GetDevice(ctx context.Context, userID, deviceID, generationID string) (*InventoryDevice, error) {
+	if err := s.authorize(userID, "devices"); err != nil {
 		return nil, err
 	}
 	if !inventoryID(deviceID) || (generationID != "" && !inventoryID(generationID)) {
 		return nil, ErrInventoryInvalid
 	}
-	scope, generation, err := s.resolveGeneration(ctx, scopeID, generationID)
+	state, generation, err := s.resolveGeneration(ctx, generationID)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.checkProjection(ctx, scope); err != nil {
+	if err := s.checkProjection(ctx, state); err != nil {
 		return nil, err
 	}
-	device, err := s.graph.Device(ctx, scopeID, deviceID)
-	if checkErr := s.checkProjection(ctx, scope); checkErr != nil {
+	device, err := s.graph.Device(ctx, deviceID)
+	if checkErr := s.checkProjection(ctx, state); checkErr != nil {
 		return nil, checkErr
 	}
 	if err != nil {

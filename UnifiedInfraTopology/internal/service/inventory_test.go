@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	inventoryScope   = "11111111111111111111111111111111"
 	inventoryOther   = "22222222222222222222222222222222"
 	inventoryGen     = "33333333333333333333333333333333"
 	inventoryNext    = "44444444444444444444444444444444"
@@ -37,18 +36,17 @@ func inventoryFixture(t *testing.T) (InventoryService, *gorm.DB, *viper.Viper) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	err = db.AutoMigrate(&model.TopologyScope{}, &model.Source{}, &model.Generation{}, &model.SyncRun{}, &model.SyncRunSource{})
+	err = db.AutoMigrate(&model.InventoryState{}, &model.Source{}, &model.Generation{}, &model.SyncRun{}, &model.SyncRunSource{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	inventoryCreate(t, db, &model.TopologyScope{ID: inventoryScope, Name: "main", ActiveGenerationID: ptrInventory(inventoryGen), ProjectionState: "ready", ProjectionEpoch: 1})
-	inventoryCreate(t, db, &model.TopologyScope{ID: inventoryOther, Name: "other"})
-	inventoryCreate(t, db, &model.Generation{ID: inventoryGen, ScopeID: inventoryScope, RunID: strings.Repeat("a", 32), State: "published", InventoryReady: true, GraphReady: true, CreatedAt: now, PublishedAt: &now})
-	inventoryCreate(t, db, &model.Source{ID: inventorySource, ScopeID: inventoryScope, Name: "source", Enabled: true})
+	inventoryCreate(t, db, &model.InventoryState{ID: 1, ActiveGenerationID: ptrInventory(inventoryGen), ProjectionState: "ready", ProjectionEpoch: 1})
+	inventoryCreate(t, db, &model.Generation{ID: inventoryGen, RunID: strings.Repeat("a", 32), State: "published", InventoryReady: true, GraphReady: true, CreatedAt: now, PublishedAt: &now})
+	inventoryCreate(t, db, &model.Source{ID: inventorySource, Name: "source", Enabled: true})
 	conf := viper.New()
 	conf.Set("inventory.cursor_key", strings.Repeat("secret", 8))
-	conf.Set("inventory.grants", []map[string]interface{}{{"user_id": "AliceCase", "scope_id": inventoryScope, "permissions": []string{"inventory:read", "sync:read", "sync:write"}}})
+	conf.Set("inventory.grants", []map[string]interface{}{{"user_id": "AliceCase", "permissions": []string{"inventory:read", "sync:read", "sync:write"}}})
 	return NewInventoryService(repository.NewInventoryRepository(repository.NewRepository(nil, db)), newInventoryGraphFake(), conf), db, conf
 }
 func inventoryCreate(t *testing.T, db *gorm.DB, value interface{}) {
@@ -63,13 +61,13 @@ func TestInventoryProjectionReadGating(t *testing.T) {
 	for _, state := range []string{"uninitialized", "updating", "failed"} {
 		t.Run(state, func(t *testing.T) {
 			s, db, _ := inventoryFixture(t)
-			if err := db.Model(&model.TopologyScope{}).Where("id = ?", inventoryScope).Update("projection_state", state).Error; err != nil {
+			if err := db.Model(&model.InventoryState{}).Where("id = ?", 1).Update("projection_state", state).Error; err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.GetDevice(context.Background(), "AliceCase", inventoryScope, inventoryDeviceA, ""); !errors.Is(err, ErrInventoryNotReady) {
+			if _, err := s.GetDevice(context.Background(), "AliceCase", inventoryDeviceA, ""); !errors.Is(err, ErrInventoryNotReady) {
 				t.Fatalf("non-ready projection: %v", err)
 			}
-			if _, err := s.List(context.Background(), "AliceCase", inventoryScope, "devices", "", InventoryQuery{}); !errors.Is(err, ErrInventoryNotReady) {
+			if _, err := s.List(context.Background(), "AliceCase", "devices", "", InventoryQuery{}); !errors.Is(err, ErrInventoryNotReady) {
 				t.Fatalf("non-ready projection list: %v", err)
 			}
 		})
@@ -78,63 +76,49 @@ func TestInventoryProjectionReadGating(t *testing.T) {
 
 func TestInventoryRejectsNonCurrentGeneration(t *testing.T) {
 	s, _, _ := inventoryFixture(t)
-	if _, err := s.GetDevice(context.Background(), "AliceCase", inventoryScope, inventoryDeviceA, inventoryNext); !errors.Is(err, ErrInventoryConflict) {
+	if _, err := s.GetDevice(context.Background(), "AliceCase", inventoryDeviceA, inventoryNext); !errors.Is(err, ErrInventoryConflict) {
 		t.Fatalf("non-current selector: %v", err)
 	}
 }
 
-func TestInventoryAuthorizationAndPrivateGenerations(t *testing.T) {
-	s, db, _ := inventoryFixture(t)
+func TestInventoryAuthorization(t *testing.T) {
+	s, _, conf := inventoryFixture(t)
 	ctx := context.Background()
-	if _, err := s.List(ctx, "alicecase", inventoryScope, "devices", "", InventoryQuery{}); !errors.Is(err, ErrInventoryForbidden) {
+	if _, err := s.List(ctx, "alicecase", "devices", "", InventoryQuery{}); !errors.Is(err, ErrInventoryForbidden) {
 		t.Fatalf("case-sensitive grant: %v", err)
 	}
-	if _, err := s.GetDevice(ctx, "AliceCase", inventoryOther, inventoryDeviceA, inventoryGen); !errors.Is(err, ErrInventoryForbidden) {
-		t.Fatalf("scope grant: %v", err)
+	grants := conf.Get("inventory.grants").([]map[string]interface{})
+	if len(grants) != 1 {
+		t.Fatalf("grants: %+v", grants)
 	}
-	inventoryCreate(t, db, &model.Generation{ID: inventoryNext, ScopeID: inventoryOther, RunID: strings.Repeat("b", 32), State: "published", InventoryReady: true})
-	if _, err := s.GetDevice(ctx, "AliceCase", inventoryScope, inventoryDeviceA, inventoryNext); !errors.Is(err, ErrInventoryConflict) {
-		t.Fatalf("private generation: %v", err)
-	}
-	if err := db.Model(&model.Generation{}).Where("id = ?", inventoryNext).Updates(map[string]interface{}{"scope_id": inventoryScope, "state": "building"}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.GetDevice(ctx, "AliceCase", inventoryScope, inventoryDeviceA, inventoryNext); !errors.Is(err, ErrInventoryConflict) {
-		t.Fatalf("candidate: %v", err)
-	}
-	page, err := s.List(ctx, "AliceCase", "", "scopes", "", InventoryQuery{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	scopes := page.Items.([]model.TopologyScope)
-	if len(scopes) != 1 || scopes[0].ID != inventoryScope {
-		t.Fatalf("scopes: %+v", scopes)
+	if len(grants[0]) != 2 {
+		t.Fatalf("grant contains unexpected fields: %+v", grants[0])
 	}
 }
 
 func TestInventoryCursorRejectsGenerationDriftAndTampering(t *testing.T) {
 	s, db, _ := inventoryFixture(t)
 	ctx := context.Background()
-	page, err := s.List(ctx, "AliceCase", inventoryScope, "devices", "", InventoryQuery{Limit: 1})
+	page, err := s.List(ctx, "AliceCase", "devices", "", InventoryQuery{Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if page.NextCursor == nil || page.Items.([]model.Device)[0].EntityID != inventoryDeviceA {
 		t.Fatalf("first page: %+v", page)
 	}
-	inventoryCreate(t, db, &model.Generation{ID: inventoryNext, ScopeID: inventoryScope, RunID: strings.Repeat("b", 32), State: "published", InventoryReady: true})
-	if err := db.Model(&model.TopologyScope{}).Where("id = ?", inventoryScope).Update("active_generation_id", inventoryNext).Error; err != nil {
+	inventoryCreate(t, db, &model.Generation{ID: inventoryNext, RunID: strings.Repeat("b", 32), State: "published", InventoryReady: true})
+	if err := db.Model(&model.InventoryState{}).Where("id = ?", 1).Update("active_generation_id", inventoryNext).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.List(ctx, "AliceCase", inventoryScope, "devices", "", InventoryQuery{Limit: 1, Cursor: *page.NextCursor}); !errors.Is(err, ErrInventoryConflict) {
+	if _, err := s.List(ctx, "AliceCase", "devices", "", InventoryQuery{Limit: 1, Cursor: *page.NextCursor}); !errors.Is(err, ErrInventoryConflict) {
 		t.Fatalf("generation drift: %v", err)
 	}
 	for _, q := range []InventoryQuery{{Cursor: *page.NextCursor + "x"}, {Cursor: *page.NextCursor, Name: "different"}} {
-		if _, err = s.List(ctx, "AliceCase", inventoryScope, "devices", "", q); !errors.Is(err, ErrInventoryInvalid) {
+		if _, err = s.List(ctx, "AliceCase", "devices", "", q); !errors.Is(err, ErrInventoryInvalid) {
 			t.Fatalf("invalid cursor: %v", err)
 		}
 	}
-	if _, err := s.List(ctx, "AliceCase", inventoryScope, "devices", "", InventoryQuery{Cursor: *page.NextCursor, GenerationID: inventoryNext}); !errors.Is(err, ErrInventoryConflict) {
+	if _, err := s.List(ctx, "AliceCase", "devices", "", InventoryQuery{Cursor: *page.NextCursor, GenerationID: inventoryNext}); !errors.Is(err, ErrInventoryConflict) {
 		t.Fatalf("cursor selector drift: %v", err)
 	}
 }
@@ -143,25 +127,25 @@ func TestInventoryEnqueueReplayUsesUnresolvedRequest(t *testing.T) {
 	s, db, _ := inventoryFixture(t)
 	ctx := context.Background()
 	req := EnqueueInventoryRun{SourceIDs: []string{inventorySource}, Mode: "full"}
-	run, err := s.Enqueue(ctx, "AliceCase", inventoryScope, "request-1", req)
+	run, err := s.Enqueue(ctx, "AliceCase", "request-1", req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if run.Status != "queued" || run.BaseGenerationID == nil || *run.BaseGenerationID != inventoryGen {
 		t.Fatalf("queued run: %+v", run)
 	}
-	if err = db.Model(&model.TopologyScope{}).Where("id = ?", inventoryScope).Update("active_generation_id", nil).Error; err != nil {
+	if err = db.Model(&model.InventoryState{}).Where("id = ?", 1).Update("active_generation_id", nil).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err = db.Model(&model.Source{}).Where("id = ?", inventorySource).Update("enabled", false).Error; err != nil {
 		t.Fatal(err)
 	}
-	replay, err := s.Enqueue(ctx, "AliceCase", inventoryScope, "request-1", req)
+	replay, err := s.Enqueue(ctx, "AliceCase", "request-1", req)
 	if err != nil || replay.ID != run.ID {
 		t.Fatalf("replay: %+v %v", replay, err)
 	}
 	req.BaseGenerationID = ptrInventory(inventoryGen)
-	if _, err = s.Enqueue(ctx, "AliceCase", inventoryScope, "request-1", req); !errors.Is(err, ErrInventoryIdempotency) {
+	if _, err = s.Enqueue(ctx, "AliceCase", "request-1", req); !errors.Is(err, ErrInventoryIdempotency) {
 		t.Fatalf("conflicting hash: %v", err)
 	}
 	var count int64
@@ -173,20 +157,20 @@ func TestInventoryEnqueueReplayUsesUnresolvedRequest(t *testing.T) {
 func TestInventoryEnqueueCanonicalizesDuplicateSources(t *testing.T) {
 	s, db, _ := inventoryFixture(t)
 	ctx := context.Background()
-	inventoryCreate(t, db, &model.Source{ID: inventoryOther, ScopeID: inventoryScope, Name: "second", Enabled: true})
+	inventoryCreate(t, db, &model.Source{ID: inventoryOther, Name: "second", Enabled: true})
 	sources := []string{inventorySource, inventoryOther, inventorySource}
-	run, err := s.Enqueue(ctx, "AliceCase", inventoryScope, "deduplicated", EnqueueInventoryRun{Mode: "full", SourceIDs: sources})
+	run, err := s.Enqueue(ctx, "AliceCase", "deduplicated", EnqueueInventoryRun{Mode: "full", SourceIDs: sources})
 	if err != nil {
 		t.Fatalf("duplicate sources must be accepted: %v", err)
 	}
 	if sources[0] != inventorySource || sources[1] != inventoryOther || len(sources) != 3 {
 		t.Fatalf("caller sources mutated: %v", sources)
 	}
-	replay, err := s.Enqueue(ctx, "AliceCase", inventoryScope, "deduplicated", EnqueueInventoryRun{Mode: "full", SourceIDs: []string{inventoryOther, inventorySource}})
+	replay, err := s.Enqueue(ctx, "AliceCase", "deduplicated", EnqueueInventoryRun{Mode: "full", SourceIDs: []string{inventoryOther, inventorySource}})
 	if err != nil || replay.ID != run.ID || replay.RequestHash != run.RequestHash {
 		t.Fatalf("canonical replay: %+v %v", replay, err)
 	}
-	canonical, err := s.Enqueue(ctx, "AliceCase", inventoryScope, "canonical", EnqueueInventoryRun{Mode: "full", SourceIDs: []string{inventoryOther, inventorySource}})
+	canonical, err := s.Enqueue(ctx, "AliceCase", "canonical", EnqueueInventoryRun{Mode: "full", SourceIDs: []string{inventoryOther, inventorySource}})
 	if err != nil || canonical.RequestHash != run.RequestHash {
 		t.Fatalf("canonical request hash: %+v %v", canonical, err)
 	}
@@ -199,27 +183,27 @@ func TestInventoryEnqueueCanonicalizesDuplicateSources(t *testing.T) {
 func TestInventoryCancelAndContext(t *testing.T) {
 	s, db, _ := inventoryFixture(t)
 	ctx := context.Background()
-	run, err := s.Enqueue(ctx, "AliceCase", inventoryScope, "cancel", EnqueueInventoryRun{Mode: "full", SourceIDs: []string{inventorySource}})
+	run, err := s.Enqueue(ctx, "AliceCase", "cancel", EnqueueInventoryRun{Mode: "full", SourceIDs: []string{inventorySource}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	canceled, accepted, err := s.CancelRun(ctx, "AliceCase", inventoryScope, run.ID)
+	canceled, accepted, err := s.CancelRun(ctx, "AliceCase", run.ID)
 	if err != nil || !accepted || canceled.Status != "canceled" || canceled.FinishedAt == nil {
 		t.Fatalf("cancel: %+v %v", canceled, err)
 	}
-	again, accepted, err := s.CancelRun(ctx, "AliceCase", inventoryScope, run.ID)
+	again, accepted, err := s.CancelRun(ctx, "AliceCase", run.ID)
 	if err != nil || accepted || !again.FinishedAt.Equal(*canceled.FinishedAt) {
 		t.Fatalf("terminal mutated: %+v %v", again, err)
 	}
 	if err = db.Model(&model.SyncRun{}).Where("id = ?", run.ID).Update("status", "succeeded").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, accepted, err = s.CancelRun(ctx, "AliceCase", inventoryScope, run.ID); accepted || !errors.Is(err, ErrInventoryConflict) {
+	if _, accepted, err = s.CancelRun(ctx, "AliceCase", run.ID); accepted || !errors.Is(err, ErrInventoryConflict) {
 		t.Fatalf("succeeded: %v", err)
 	}
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
-	if _, err = s.GetRun(canceledCtx, "AliceCase", inventoryScope, run.ID); !errors.Is(err, context.Canceled) {
+	if _, err = s.GetRun(canceledCtx, "AliceCase", run.ID); !errors.Is(err, context.Canceled) {
 		t.Fatalf("context: %v", err)
 	}
 }

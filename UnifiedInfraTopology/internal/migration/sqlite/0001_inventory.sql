@@ -1,23 +1,23 @@
-CREATE TABLE topology_scopes (
-    id TEXT PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL UNIQUE,
+CREATE TABLE inventory_state (
+    id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
     active_generation_id TEXT NULL,
-    FOREIGN KEY (id, active_generation_id) REFERENCES generations (scope_id, id)
+    projection_state TEXT NOT NULL DEFAULT 'uninitialized'
+      CHECK (projection_state IN ('uninitialized', 'updating', 'ready', 'failed')),
+    projection_epoch INTEGER NOT NULL DEFAULT 0 CHECK (projection_epoch >= 0),
+    FOREIGN KEY (active_generation_id) REFERENCES generations (id)
 );
 
 CREATE TABLE sources (
     id TEXT PRIMARY KEY NOT NULL,
-    scope_id TEXT NOT NULL REFERENCES topology_scopes (id),
     name TEXT NOT NULL,
     adapter_kind TEXT NOT NULL,
     config_ref TEXT NOT NULL,
     enabled BOOLEAN NOT NULL,
-    UNIQUE (scope_id, name)
+    UNIQUE (name)
 );
 
 CREATE TABLE sync_runs (
     id TEXT PRIMARY KEY NOT NULL,
-    scope_id TEXT NOT NULL REFERENCES topology_scopes (id),
     status TEXT NOT NULL,
     mode TEXT NOT NULL,
     base_generation_id TEXT NULL,
@@ -30,16 +30,14 @@ CREATE TABLE sync_runs (
     started_at DATETIME NULL,
     finished_at DATETIME NULL,
     error_code TEXT NOT NULL DEFAULT '',
-    UNIQUE (scope_id, id),
-    UNIQUE (scope_id, idempotency_key),
-    FOREIGN KEY (scope_id, base_generation_id) REFERENCES generations (scope_id, id),
-    FOREIGN KEY (scope_id, generation_id) REFERENCES generations (scope_id, id)
+    UNIQUE (idempotency_key),
+    FOREIGN KEY (base_generation_id) REFERENCES generations (id),
+    FOREIGN KEY (generation_id) REFERENCES generations (id)
 );
-CREATE INDEX ix_run_scope_status ON sync_runs (scope_id, status, created_at, id);
+CREATE INDEX ix_run_status ON sync_runs (status, created_at, id);
 
 CREATE TABLE generations (
     id TEXT PRIMARY KEY NOT NULL,
-    scope_id TEXT NOT NULL REFERENCES topology_scopes (id),
     run_id TEXT NOT NULL UNIQUE,
     state TEXT NOT NULL,
     inventory_ready BOOLEAN NOT NULL,
@@ -47,10 +45,10 @@ CREATE TABLE generations (
     routing_ready BOOLEAN NOT NULL,
     created_at DATETIME NOT NULL,
     published_at DATETIME NULL,
-    UNIQUE (scope_id, id),
-    FOREIGN KEY (scope_id, run_id) REFERENCES sync_runs (scope_id, id)
+    FOREIGN KEY (run_id) REFERENCES sync_runs (id)
 );
-CREATE INDEX ix_generation_scope_published ON generations (scope_id, published_at, id);
+CREATE INDEX ix_generation_published ON generations (published_at, id);
+INSERT INTO inventory_state (id) VALUES (1);
 
 CREATE TABLE sync_run_sources (
     run_id TEXT NOT NULL REFERENCES sync_runs (id),
@@ -61,11 +59,10 @@ CREATE TABLE sync_run_sources (
 
 CREATE TABLE entities (
     id TEXT PRIMARY KEY NOT NULL,
-    scope_id TEXT NOT NULL REFERENCES topology_scopes (id),
     kind TEXT NOT NULL,
     created_at DATETIME NOT NULL
 );
-CREATE INDEX ix_entity_scope_kind ON entities (scope_id, kind, id);
+CREATE INDEX ix_entity_kind ON entities (kind, id);
 
 CREATE TABLE source_keys (
     id TEXT PRIMARY KEY NOT NULL,

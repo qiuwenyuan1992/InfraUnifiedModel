@@ -24,7 +24,7 @@ inventory:
   # 独立随机生成至少 32 字节的密钥，不与 JWT 共用；默认不授予任何权限。
   cursor_key: ""
   grants: []
-  # grants 示例：user_id / scope_id / permissions 三个字段。
+  # grants 示例：user_id / permissions 两个字段。
   # permissions 可包含 inventory:read、sync:read、sync:write。
   graph:
     # 留空时不连接图库；配置后必须指向本项目独立空间。

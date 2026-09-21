@@ -1,23 +1,25 @@
-CREATE TABLE topology_scopes (
-    id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
-    name VARCHAR(191) NOT NULL UNIQUE,
-    active_generation_id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL
+CREATE TABLE inventory_state (
+    id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+    active_generation_id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    projection_state VARCHAR(16) NOT NULL DEFAULT 'uninitialized',
+    projection_epoch BIGINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_inventory_state_singleton CHECK (id = 1),
+    CONSTRAINT ck_inventory_projection_state CHECK (projection_state IN ('uninitialized', 'updating', 'ready', 'failed')),
+    CONSTRAINT ck_inventory_projection_epoch CHECK (projection_epoch >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+INSERT INTO inventory_state (id) VALUES (1);
 
 CREATE TABLE sources (
     id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
-    scope_id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     name VARCHAR(191) NOT NULL,
     adapter_kind VARCHAR(64) NOT NULL,
     config_ref VARCHAR(255) NOT NULL,
     enabled BOOLEAN NOT NULL,
-    UNIQUE KEY uq_source_scope_name (scope_id, name),
-    CONSTRAINT fk_source_scope FOREIGN KEY (scope_id) REFERENCES topology_scopes (id)
+    UNIQUE KEY uq_source_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE sync_runs (
     id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
-    scope_id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     status VARCHAR(32) NOT NULL,
     mode VARCHAR(32) NOT NULL,
     base_generation_id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL,
@@ -30,15 +32,12 @@ CREATE TABLE sync_runs (
     started_at DATETIME(6) NULL,
     finished_at DATETIME(6) NULL,
     error_code VARCHAR(64) NOT NULL DEFAULT '',
-    UNIQUE KEY uq_run_scope_id (scope_id, id),
-    UNIQUE KEY uq_run_idempotency (scope_id, idempotency_key),
-    KEY ix_run_scope_status (scope_id, status, created_at, id),
-    CONSTRAINT fk_run_scope FOREIGN KEY (scope_id) REFERENCES topology_scopes (id)
+    UNIQUE KEY uq_run_idempotency (idempotency_key),
+    KEY ix_run_status (status, created_at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE generations (
     id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
-    scope_id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     run_id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     state VARCHAR(32) NOT NULL,
     inventory_ready BOOLEAN NOT NULL,
@@ -47,18 +46,16 @@ CREATE TABLE generations (
     created_at DATETIME(6) NOT NULL,
     published_at DATETIME(6) NULL,
     UNIQUE KEY uq_generation_run (run_id),
-    UNIQUE KEY uq_generation_scope_id (scope_id, id),
-    KEY ix_generation_scope_published (scope_id, published_at, id),
-    CONSTRAINT fk_generation_scope FOREIGN KEY (scope_id) REFERENCES topology_scopes (id),
-    CONSTRAINT fk_generation_run FOREIGN KEY (scope_id, run_id) REFERENCES sync_runs (scope_id, id)
+    KEY ix_generation_published (published_at, id),
+    CONSTRAINT fk_generation_run FOREIGN KEY (run_id) REFERENCES sync_runs (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
-ALTER TABLE topology_scopes ADD CONSTRAINT fk_scope_active_generation
-    FOREIGN KEY (id, active_generation_id) REFERENCES generations (scope_id, id);
+ALTER TABLE inventory_state ADD CONSTRAINT fk_inventory_active_generation
+    FOREIGN KEY (active_generation_id) REFERENCES generations (id);
 ALTER TABLE sync_runs ADD CONSTRAINT fk_run_base_generation
-    FOREIGN KEY (scope_id, base_generation_id) REFERENCES generations (scope_id, id);
+    FOREIGN KEY (base_generation_id) REFERENCES generations (id);
 ALTER TABLE sync_runs ADD CONSTRAINT fk_run_generation
-    FOREIGN KEY (scope_id, generation_id) REFERENCES generations (scope_id, id);
+    FOREIGN KEY (generation_id) REFERENCES generations (id);
 
 CREATE TABLE sync_run_sources (
     run_id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -71,11 +68,9 @@ CREATE TABLE sync_run_sources (
 
 CREATE TABLE entities (
     id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
-    scope_id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     kind VARCHAR(32) NOT NULL,
     created_at DATETIME(6) NOT NULL,
-    KEY ix_entity_scope_kind (scope_id, kind, id),
-    CONSTRAINT fk_entity_scope FOREIGN KEY (scope_id) REFERENCES topology_scopes (id)
+    KEY ix_entity_kind (kind, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE source_keys (

@@ -40,7 +40,7 @@ Collection result contracts will be defined with real integrations; no fake asse
 
 ## Implemented API
 
-The implemented `/v1/scopes` API provides authenticated scope, device, interface,
+The implemented `/v1/inventory` API provides authenticated device, interface,
 address, source and published-generation reads, plus durable sync-run
 creation, listing, retrieval and cancellation. Existing user endpoints remain available.
 Sync runs are **queued only**: no collection worker, publication pipeline, topology
@@ -65,7 +65,7 @@ and secrets remain in Git history: rotate exposed credentials and never use defa
 in production.
 
 Inventory uses `data.db.main`; server startup does not migrate it. Configure real
-user/scope IDs and an independently generated cursor-signing secret of at least
+user IDs and an independently generated cursor-signing secret of at least
 32 bytes (not the JWT secret):
 
 ```yaml
@@ -73,14 +73,13 @@ inventory:
   cursor_key: "REPLACE_WITH_DEPLOYMENT_MANAGED_SECRET"
   grants:
     - user_id: "authenticated-user-id"
-      scope_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       permissions: ["inventory:read", "sync:read", "sync:write"]
 ```
 
-There are no default grants. Scope and source records are deployment-managed; no
-seed data or configuration CRUD endpoints are provided. Missing cursor configuration
-makes list operations unavailable. Cursors bind the caller, scope, resource, filters
-and current publication batch plus projection epoch (cursor format v2). Old cursors,
+There are no default grants. Source records are deployment-managed; no seed data or
+configuration CRUD endpoints are provided. Missing cursor configuration makes list
+operations unavailable. Cursors bind the caller, resource, filters and current
+publication batch plus projection epoch (cursor format v3). Old cursors,
 non-current batch selectors and cursors invalidated by a graph update cannot read
 historical assets; restart pagination against the current batch. Changing the signing
 secret also invalidates existing cursors.
