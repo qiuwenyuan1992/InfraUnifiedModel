@@ -1,0 +1,245 @@
+CREATE SPACE IF NOT EXISTS unified_infra_topology (
+  partition_num = 10,
+  replica_factor = 1,
+  vid_type = FIXED_STRING(64)
+);
+
+USE unified_infra_topology;
+
+CREATE TAG IF NOT EXISTS device (
+  source_id STRING NOT NULL,
+  device_sn STRING NOT NULL,
+  name STRING NULL,
+  parent_type_id INT NULL,
+  device_type_id INT NULL,
+  role STRING NULL,
+  all_ips STRING NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE TAG IF NOT EXISTS interface (
+  source_id STRING NOT NULL,
+  port_uuid STRING NOT NULL,
+  port_name STRING NULL,
+  port_type STRING NULL,
+  port_speed STRING NULL,
+  port_operation_status STRING NULL,
+  group_uuid STRING NULL,
+  port_group_uuid STRING NULL,
+  group_name STRING NULL,
+  group_type INT NULL,
+  port_group_type INT NULL,
+  group_subtype INT NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE TAG IF NOT EXISTS gpu (
+  source_id STRING NOT NULL,
+  uuid STRING NOT NULL,
+  parts_sn STRING NULL,
+  parts_number STRING NULL,
+  manufacturer STRING NULL,
+  model STRING NULL,
+  specification STRING NULL,
+  card_index STRING NULL,
+  slot STRING NULL,
+  bmc_slot STRING NULL,
+  bus_address STRING NULL,
+  connector STRING NULL,
+  conn_ports STRING NULL,
+  vram STRING NULL,
+  tdp STRING NULL,
+  computer_perf STRING NULL,
+  gpu_fp STRING NULL,
+  gpu_fp64 STRING NULL,
+  fp16_tensor_sparsity STRING NULL,
+  fp4 STRING NULL,
+  int4 STRING NULL,
+  int8 STRING NULL,
+  tf16 STRING NULL,
+  tf32 STRING NULL,
+  driver_ver STRING NULL,
+  firmware_ver STRING NULL,
+  npu_versions STRING NULL,
+  is_domestic STRING NULL,
+  maintenance_status STRING NULL,
+  maintenance_end DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE TAG IF NOT EXISTS pod (
+  source_id STRING NOT NULL,
+  uuid STRING NOT NULL,
+  inst_id INT NULL,
+  basic_code STRING NULL,
+  name STRING NULL,
+  full_name STRING NULL,
+  plane INT NULL,
+  mode STRING NULL,
+  rdma INT NULL,
+  phy_building_id INT NULL,
+  idc_logic_id INT NULL,
+  is_delete INT NULL,
+  is_sync INT NULL,
+  source_created_at DATETIME NULL,
+  source_updated_at DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE TAG IF NOT EXISTS cabinet (
+  source_id STRING NOT NULL,
+  uuid STRING NOT NULL,
+  inst_id INT NULL,
+  code STRING NULL,
+  dc_colo_rack STRING NULL,
+  isp_rack_code STRING NULL,
+  rack STRING NULL,
+  rack_column_code STRING NULL,
+  rack_row STRING NULL,
+  idc_id INT NULL,
+  phy_building_id INT NULL,
+  phy_room_id INT NULL,
+  idc_module_id INT NULL,
+  idc_building_structure_id INT NULL,
+  idc_rows_code INT NULL,
+  pod_ids STRING NULL,
+  row_switch_id_a INT NULL,
+  row_switch_id_b INT NULL,
+  source_created_at DATETIME NULL,
+  source_updated_at DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE TAG IF NOT EXISTS data_center (
+  source_id STRING NOT NULL,
+  uuid STRING NOT NULL,
+  inst_id INT NULL,
+  code STRING NULL,
+  cn_name STRING NULL,
+  address STRING NULL,
+  location STRING NULL,
+  source_created_at DATETIME NULL,
+  source_updated_at DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE TAG IF NOT EXISTS rpp (
+  source_id STRING NOT NULL,
+  uuid STRING NOT NULL,
+  inst_id INT NULL,
+  code STRING NULL,
+  idc_id INT NULL,
+  ups_group_id INT NULL,
+  transformer_group_a_id INT NULL,
+  source_created_at DATETIME NULL,
+  source_updated_at DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE TAG IF NOT EXISTS ups_group (
+  source_id STRING NOT NULL,
+  uuid STRING NOT NULL,
+  inst_id INT NULL,
+  code STRING NULL,
+  idc_id INT NULL,
+  transformer_id_up INT NULL,
+  source_created_at DATETIME NULL,
+  source_updated_at DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE TAG IF NOT EXISTS ups (
+  source_id STRING NOT NULL,
+  uuid STRING NOT NULL,
+  inst_id INT NULL,
+  code STRING NULL,
+  idc_id INT NULL,
+  ups_group_id INT NULL,
+  transformer_id_up INT NULL,
+  brand STRING NULL,
+  model STRING NULL,
+  rated_capacity INT NULL,
+  source_created_at DATETIME NULL,
+  source_updated_at DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE TAG IF NOT EXISTS transformer (
+  source_id STRING NOT NULL,
+  uuid STRING NOT NULL,
+  inst_id INT NULL,
+  code STRING NULL,
+  idc_id INT NULL,
+  standby_transformer_id INT NULL,
+  brand STRING NULL,
+  model STRING NULL,
+  rated_capacity INT NULL,
+  source_created_at DATETIME NULL,
+  source_updated_at DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE EDGE IF NOT EXISTS spatial_relation (
+  relation_id STRING NOT NULL,
+  relation_kind STRING NOT NULL,
+  source_id STRING NOT NULL,
+  plane INT NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE EDGE IF NOT EXISTS composition_relation (
+  relation_id STRING NOT NULL,
+  relation_kind STRING NOT NULL,
+  source_id STRING NOT NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE EDGE IF NOT EXISTS network_relation (
+  relation_id STRING NOT NULL,
+  relation_kind STRING NOT NULL,
+  source_id STRING NOT NULL,
+  gpu_port STRING NULL,
+  gpu_port_speed STRING NULL,
+  gpu_ip STRING NULL,
+  gpu_slot STRING NULL,
+  server_port_speed STRING NULL,
+  bond_name STRING NULL,
+  tor_port STRING NULL,
+  tor_port_speed STRING NULL,
+  tor_role STRING NULL,
+  source STRING NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE EDGE IF NOT EXISTS power_relation (
+  relation_id STRING NOT NULL,
+  relation_kind STRING NOT NULL,
+  source_id STRING NOT NULL,
+  power_path STRING NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE TAG INDEX IF NOT EXISTS idx_device_identity ON device (source_id(64), device_sn(192));
+CREATE TAG INDEX IF NOT EXISTS idx_interface_identity ON interface (source_id(64), port_uuid(192));
+CREATE TAG INDEX IF NOT EXISTS idx_gpu_identity ON gpu (source_id(64), uuid(192));
+CREATE TAG INDEX IF NOT EXISTS idx_pod_identity ON pod (source_id(64), uuid(192));
+CREATE TAG INDEX IF NOT EXISTS idx_cabinet_identity ON cabinet (source_id(64), uuid(192));
+CREATE TAG INDEX IF NOT EXISTS idx_data_center_identity ON data_center (source_id(64), uuid(192));
+CREATE TAG INDEX IF NOT EXISTS idx_rpp_identity ON rpp (source_id(64), uuid(192));
+CREATE TAG INDEX IF NOT EXISTS idx_ups_group_identity ON ups_group (source_id(64), uuid(192));
+CREATE TAG INDEX IF NOT EXISTS idx_ups_identity ON ups (source_id(64), uuid(192));
+CREATE TAG INDEX IF NOT EXISTS idx_transformer_identity ON transformer (source_id(64), uuid(192));
