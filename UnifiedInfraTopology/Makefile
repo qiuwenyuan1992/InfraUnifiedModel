@@ -6,7 +6,7 @@ CONF ?= config/local.yml
 help:
 	@printf '%s\n' \
 	  'run        启动 API（不迁移；CONF=config/local.yml）' \
-	  'worker     启动独立 worker（仅待机，不领取任务）' \
+	  'worker     启动独立 worker，领取并执行设备同步任务' \
 	  'migrate    显式执行目标数据库迁移；运行前核对 CONF / APP_CONF' \
 	  'test       运行全部测试；不启用真实图库检查' \
 	  'coverage   运行全部测试并生成覆盖率报告' \

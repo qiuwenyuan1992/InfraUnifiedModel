@@ -77,11 +77,11 @@ func TestMySQLRejectsNonAutocommitSession(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestMySQLSkipsBothAppliedMigrations(t *testing.T) {
+func TestMySQLSkipsAllAppliedMigrations(t *testing.T) {
 	db, mock := mockMySQL(t)
 	steps, err := loadSteps("mysql")
 	require.NoError(t, err)
-	require.Len(t, steps, 2)
+	require.Len(t, steps, 3)
 	prior := sqlmock.NewRows([]string{"version", "name", "checksum", "state"})
 	for _, step := range steps {
 		prior.AddRow(step.version, step.name, step.checksum, "applied")

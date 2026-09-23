@@ -26,6 +26,7 @@ var (
 	ErrInventoryConflict    = errors.New("inventory state conflict")
 	ErrInventoryIdempotency = errors.New("inventory idempotency conflict")
 	ErrInventorySource      = errors.New("inventory source unavailable")
+	ErrInventoryNoRun       = errors.New("no queued inventory run")
 )
 
 type Repository struct {

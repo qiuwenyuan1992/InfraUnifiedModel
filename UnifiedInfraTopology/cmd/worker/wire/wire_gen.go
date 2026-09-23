@@ -8,15 +8,37 @@ package wire
 
 import (
 	"UnifiedInfraTopology/internal/adapter"
+	"UnifiedInfraTopology/internal/repository"
 	"UnifiedInfraTopology/internal/service"
 	"UnifiedInfraTopology/pkg/log"
+	"github.com/spf13/viper"
 )
 
 // Injectors from wire.go:
 
-// NewWire 不装配 HTTP、数据库、迁移或图客户端；基础版没有外部写入能力。
-func NewWire(logger *log.Logger) (*service.SyncWorker, error) {
-	cmdb := adapter.NewCMDB()
-	syncWorker := service.NewSyncWorker(cmdb, logger)
-	return syncWorker, nil
+func NewWire(viperViper *viper.Viper, logger *log.Logger) (*service.SyncWorker, func(), error) {
+	db := repository.NewDB(viperViper, logger)
+	repositoryRepository := repository.NewRepository(logger, db)
+	inventoryRepository := repository.NewInventoryRepository(repositoryRepository)
+	syncRunRepository := provideSyncRunRepository(inventoryRepository)
+	topologyGraphRepository, cleanup, err := repository.NewTopologyGraphRepository(viperViper)
+	if err != nil {
+		return nil, nil, err
+	}
+	deviceGraphRepository := provideDeviceGraphRepository(topologyGraphRepository)
+	cmdb := adapter.NewCMDB(viperViper)
+	syncWorker := service.NewSyncWorker(viperViper, syncRunRepository, deviceGraphRepository, cmdb, logger)
+	return syncWorker, func() {
+		cleanup()
+	}, nil
+}
+
+// wire.go:
+
+func provideSyncRunRepository(repo repository.InventoryRepository) service.SyncRunRepository {
+	return repo
+}
+
+func provideDeviceGraphRepository(repo repository.TopologyGraphRepository) service.DeviceGraphRepository {
+	return repo
 }

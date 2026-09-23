@@ -4,18 +4,24 @@ import (
 	"context"
 	"testing"
 
-	"UnifiedInfraTopology/internal/adapter"
-	"UnifiedInfraTopology/internal/model"
 	"UnifiedInfraTopology/pkg/log"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
-func TestWorkerWiringNeedsNoExternalServices(t *testing.T) {
-	w, err := NewWire(&log.Logger{Logger: zap.NewNop()})
+func TestWorkerWiringBuildsWithoutExternalGraph(t *testing.T) {
+	conf := viper.New()
+	conf.Set("data.db.main.driver", "sqlite")
+	conf.Set("data.db.main.dsn", "file::memory:?cache=shared")
+	conf.Set("inventory.graph.hosts", []string{})
+	conf.Set("inventory.graph.space", "")
+
+	worker, cleanup, err := NewWire(conf, &log.Logger{Logger: zap.NewNop()})
 	require.NoError(t, err)
-	require.ErrorIs(t, w.Execute(context.Background(), model.Source{}), adapter.ErrNotImplemented)
+	defer cleanup()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	require.NoError(t, w.Run(ctx))
+	require.NoError(t, worker.Run(ctx))
 }

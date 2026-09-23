@@ -545,6 +545,46 @@ func TestTopologyGraphLiveWriteRefreshAndCleanup(t *testing.T) {
 	require.Zero(t, result.GetRowSize())
 }
 
+func TestTopologyGraphLiveRetainedDevice(t *testing.T) {
+	configPath := os.Getenv("TOPOLOGY_GRAPH_TEST_CONFIG")
+	sourceID := os.Getenv("TOPOLOGY_GRAPH_VERIFY_SOURCE_ID")
+	stableID := os.Getenv("TOPOLOGY_GRAPH_VERIFY_DEVICE_ID")
+	if configPath == "" || sourceID == "" || stableID == "" {
+		t.Skip("设置图配置、来源 ID 和设备 ID 后核验已保留设备")
+	}
+
+	conf := viper.New()
+	conf.SetConfigFile(configPath)
+	require.NoError(t, conf.ReadInConfig())
+	repositoryInterface, closeRepository, err := NewTopologyGraphRepository(conf)
+	require.NoError(t, err)
+	t.Cleanup(closeRepository)
+	repository, ok := repositoryInterface.(*topologyGraphRepository)
+	require.True(t, ok)
+
+	identity := model.EntityIdentity{SourceID: sourceID, EntityType: model.EntityDevice, StableID: stableID}
+	vid, err := identity.VID()
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	result, err := repository.client.ExecuteParameter(ctx,
+		"FETCH PROP ON device "+topologyVIDLiteral(vid)+" YIELD properties(vertex).source_id AS source_id, properties(vertex).device_sn AS device_sn, properties(vertex).host_name AS host_name, properties(vertex).synced_at AS synced_at;",
+		map[string]interface{}{})
+	require.NoError(t, err)
+	require.True(t, result.IsSucceed(), result.GetErrorMsg())
+	require.Equal(t, 1, result.GetRowSize())
+	require.Equal(t, sourceID, strings.Trim(result.AsStringTable()[1][0], `"`))
+	require.Equal(t, stableID, strings.Trim(result.AsStringTable()[1][1], `"`))
+
+	result, err = repository.client.ExecuteParameter(ctx,
+		"LOOKUP ON device WHERE device.source_id == $source_id YIELD id(vertex) AS vid | YIELD count(*) AS total;",
+		map[string]interface{}{"source_id": sourceID})
+	require.NoError(t, err)
+	require.True(t, result.IsSucceed(), result.GetErrorMsg())
+	require.Equal(t, 1, result.GetRowSize())
+	t.Logf("retained device vertices: %s", result.AsStringTable()[1][0])
+}
+
 func TestTopologyGraphErrorsDoNotLeakParameters(t *testing.T) {
 	secret := "secret-source"
 	now := time.Now().UTC()

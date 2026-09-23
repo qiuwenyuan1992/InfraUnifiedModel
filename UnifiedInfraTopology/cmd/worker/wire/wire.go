@@ -5,16 +5,31 @@ package wire
 
 import (
 	"UnifiedInfraTopology/internal/adapter"
+	"UnifiedInfraTopology/internal/repository"
 	"UnifiedInfraTopology/internal/service"
 	"UnifiedInfraTopology/pkg/log"
 	"github.com/google/wire"
+	"github.com/spf13/viper"
 )
 
-// NewWire 不装配 HTTP、数据库、迁移或图客户端；基础版没有外部写入能力。
-func NewWire(*log.Logger) (*service.SyncWorker, error) {
+func provideSyncRunRepository(repo repository.InventoryRepository) service.SyncRunRepository {
+	return repo
+}
+
+func provideDeviceGraphRepository(repo repository.TopologyGraphRepository) service.DeviceGraphRepository {
+	return repo
+}
+
+func NewWire(*viper.Viper, *log.Logger) (*service.SyncWorker, func(), error) {
 	panic(wire.Build(
+		repository.NewDB,
+		repository.NewRepository,
+		repository.NewInventoryRepository,
+		provideSyncRunRepository,
+		repository.NewTopologyGraphRepository,
+		provideDeviceGraphRepository,
 		adapter.NewCMDB,
-		wire.Bind(new(adapter.SourceAdapter), new(*adapter.CMDB)),
+		wire.Bind(new(service.DeviceSource), new(*adapter.CMDB)),
 		service.NewSyncWorker,
 	))
 }

@@ -39,7 +39,7 @@ func TestMigrateServerStartReturnsAndCreatesSchema(t *testing.T) {
 	require.NoError(t, srv.Start(context.Background()))
 	var count int64
 	require.NoError(t, db.Table("topology_schema_migrations").Where("state = ?", "applied").Count(&count).Error)
-	require.EqualValues(t, 2, count)
+	require.EqualValues(t, 3, count)
 	require.True(t, db.Migrator().HasColumn(&model.Publication{}, "schema_version"))
 }
 
