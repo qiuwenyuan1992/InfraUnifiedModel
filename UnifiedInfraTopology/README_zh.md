@@ -19,13 +19,13 @@
 | `pkg` | 配置、日志、JWT 和图客户端等基础设施 |
 | `*_test.go`、`test` | 同目录测试、已有服务测试与 `test/mocks` |
 
-旧 task/job 示例已移除，现有基础结构职责如下：
+旧 task/job 示例已移除，现有同步结构职责如下：
 
-- `cmd/worker`：独立进程入口及 Wire 装配，加载配置，响应 SIGINT/SIGTERM 优雅退出。
-- `internal/adapter`：外部来源接入边界；`SourceAdapter.Validate` 定义接入前检查，CMDB 占位实现返回 `ErrNotImplemented`。
-- `internal/service/sync_worker.go`：同步编排入口；`Run` 仅待机，`Execute` 明确返回未实现，不会报告同步成功。
+- `cmd/worker`：独立进程入口及 Wire 装配，连接控制库和图库，响应 SIGINT/SIGTERM 优雅退出。
+- `internal/adapter`：外部来源接入边界；CMDB Adapter 已实现 `device_view` 的配置校验、分页采集和设备归一化。
+- `internal/service/sync_worker.go`：领取最早的排队任务，按状态机执行设备写入，并仅在整轮成功后清理旧的无边设备节点。
 
-启动基础版（可直接使用脱敏模板，无需数据库凭据）：
+启动 worker（必须先配置控制库、目标图空间及 `inventory.cmdb.sources.<config_ref>`）：
 
 ```sh
 make worker CONF=config/local.example.yml
@@ -34,13 +34,13 @@ go run ./cmd/worker -conf config/local.example.yml
 ```
 
 `APP_CONF` 优先于 `CONF` / `-conf`。`make build` 包含 worker，`make wire` 包含其依赖装配。
-当前 worker 不启动 HTTP、不连接 MySQL/Nebula、不执行迁移、不领取或修改队列任务。
-真实采集、发布、来源配置解析和任务租约尚未实现；接入时再定义采集结果契约，不伪造资产或成功状态。
+worker 不启动 HTTP，也不自动执行 SQL migration 或 NebulaGraph DDL；它会连接 MySQL 和 NebulaGraph，轮询并执行已入队任务。
+当前只同步 `device_view` 设备节点，其他实体、关系、检查点和任务租约尚未实现。
 
 ## 已实现的 API
 
 `/v1/inventory` 当前提供经身份认证的来源列表，以及同步任务的创建、列表、详情和取消；已有用户接口仍保留。
-同步任务**只入队，不执行**。尚无资产读取、采集 worker、发布流水线、拓扑查询或上游写入。
+启动 worker 后，排队任务可执行第一阶段的设备采集、图写入和成功后清理。资产读取、其他实体与关系同步、拓扑查询及上游写入尚未实现。
 证据、来源进度、检查点和覆盖摘要尚未开放；生成的 Swagger 仅覆盖已有用户路由，不是完整的 inventory API 文档。
 
 创建同步任务需要认证、`Content-Type: application/json` 和唯一的 `Idempotency-Key` 请求头。

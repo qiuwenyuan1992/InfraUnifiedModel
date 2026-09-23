@@ -36,7 +36,7 @@ func TestApplyCreatesOnlyControlPlaneSchemaAndReruns(t *testing.T) {
 		AppliedAt *string
 	}
 	require.NoError(t, db.Table("topology_schema_migrations").Order("version").Find(&versions).Error)
-	require.Len(t, versions, 2)
+	require.Len(t, versions, 3)
 	for i, row := range versions {
 		require.Equal(t, i, row.Version)
 		require.Len(t, row.Checksum, 64)
@@ -52,7 +52,7 @@ func TestApplyCreatesOnlyControlPlaneSchemaAndReruns(t *testing.T) {
 }
 
 func TestApplyRejectsAlteredChecksumAndDirtyState(t *testing.T) {
-	for _, version := range []int{0, 1} {
+	for _, version := range []int{0, 1, 2} {
 		t.Run(fmt.Sprintf("checksum/%d", version), func(t *testing.T) {
 			db := testDB(t)
 			require.NoError(t, Apply(context.Background(), db))
@@ -103,7 +103,7 @@ func TestApplySerializesConcurrentCallers(t *testing.T) {
 	}
 	var count int64
 	require.NoError(t, db.Table("topology_schema_migrations").Count(&count).Error)
-	require.EqualValues(t, 2, count)
+	require.EqualValues(t, 3, count)
 }
 
 type otherDialect struct{ gorm.Dialector }

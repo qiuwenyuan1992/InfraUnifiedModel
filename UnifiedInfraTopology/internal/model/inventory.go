@@ -28,9 +28,37 @@ type SyncRun struct {
 	StartedAt         *time.Time
 	FinishedAt        *time.Time
 	ErrorCode         string
+	LeaseExpiresAt    *time.Time
 }
 
 func (SyncRun) TableName() string { return "sync_runs" }
+
+const (
+	SyncRunStatusQueued     = "queued"
+	SyncRunStatusRunning    = "running"
+	SyncRunStatusValidating = "validating"
+	SyncRunStatusPublishing = "publishing"
+	SyncRunStatusSucceeded  = "succeeded"
+	SyncRunStatusFailed     = "failed"
+	SyncRunStatusCanceled   = "canceled"
+)
+
+func SyncRunTransitionAllowed(from, to string) bool {
+	switch from {
+	case SyncRunStatusRunning:
+		return to == SyncRunStatusValidating || to == SyncRunStatusFailed || to == SyncRunStatusCanceled
+	case SyncRunStatusValidating:
+		return to == SyncRunStatusPublishing || to == SyncRunStatusFailed || to == SyncRunStatusCanceled
+	case SyncRunStatusPublishing:
+		return to == SyncRunStatusSucceeded || to == SyncRunStatusFailed
+	default:
+		return false
+	}
+}
+
+func SyncRunStatusTerminal(status string) bool {
+	return status == SyncRunStatusSucceeded || status == SyncRunStatusFailed || status == SyncRunStatusCanceled
+}
 
 type SyncCheckpoint struct {
 	SourceID    string `gorm:"primaryKey"`

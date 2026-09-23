@@ -15,6 +15,14 @@ type InventoryRepository interface {
 	Enqueue(context.Context, *model.SyncRun) (*model.SyncRun, error)
 	Run(context.Context, string) (*model.SyncRun, error)
 	Cancel(context.Context, string) (*model.SyncRun, bool, error)
+	ClaimNext(context.Context, time.Time) (*model.SyncRun, *model.Source, error)
+	TransitionRun(context.Context, string, string, string, time.Time, string) (*model.SyncRun, error)
+	RenewRunLease(context.Context, string, time.Time) error
+	RunCancellationRequested(context.Context, string) (bool, error)
+	LoadCheckpoint(context.Context, string, string) (*DeviceSyncCheckpoint, error)
+	BeginCheckpoint(context.Context, string, string, string, time.Time, time.Time) (*DeviceSyncCheckpoint, error)
+	AdvanceCheckpoint(context.Context, string, string, string, DeviceSyncCursor, time.Time) (*DeviceSyncCheckpoint, error)
+	CompleteCheckpointAndRun(context.Context, string, string, string, string, time.Time) (*model.SyncRun, error)
 }
 
 type InventoryListQuery struct {
@@ -34,7 +42,10 @@ type InventoryListResult struct {
 
 type inventoryRepository struct{ r *Repository }
 
-var inventorySourceLocks sync.Map
+var (
+	inventorySourceLocks sync.Map
+	inventoryClaimLock   sync.Mutex
+)
 
 func NewInventoryRepository(r *Repository) InventoryRepository { return &inventoryRepository{r: r} }
 

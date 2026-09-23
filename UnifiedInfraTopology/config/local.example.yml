@@ -26,6 +26,25 @@ inventory:
   grants: []
   # grants 示例：user_id / permissions 两个字段。
   # permissions 可包含 inventory:read、sync:read、sync:write。
+  worker:
+    poll_interval_seconds: 1
+    device_write_concurrency: 8
+  cmdb:
+    # sources 下的键与 MySQL sources.config_ref 对应；凭据只放配置，不写数据库。
+    sources:
+      example:
+        base_url: "https://cmdb.example.invalid"
+        allow_insecure_http: false
+        headers: {}
+        # 固定查询参数会安全编码到 URL；不要把值写入日志。
+        query: {}
+        # 仅用于测试范围；省略后执行完整 device_view 全量同步。
+        # device_condition:
+        #   inst_id: 481679
+        page_size: 20000
+        concurrency: 5
+        timeout_seconds: 30
+        max_response_bytes: 67108864
   graph:
     # 留空时不连接图库；配置后必须指向本项目独立空间。
     hosts: [] # 示例：["127.0.0.1:9669"]

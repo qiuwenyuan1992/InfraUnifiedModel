@@ -19,13 +19,13 @@ metadata and NebulaGraph for current assets. [简体中文（推荐）](README_z
 | `pkg` | Shared infrastructure: configuration, logging, JWT and graph clients |
 | `*_test.go`, `test` | Colocated tests, existing server tests and `test/mocks` |
 
-The old task/job samples are replaced with an explicit foundation:
+The old task/job samples are replaced with an explicit synchronization boundary:
 
-- `cmd/worker`: independent entry point and Wire wiring, configuration loading and graceful SIGINT/SIGTERM shutdown.
-- `internal/adapter`: external-source boundary. `SourceAdapter.Validate` defines preflight checks; the CMDB placeholder returns `ErrNotImplemented`.
-- `internal/service/sync_worker.go`: orchestration boundary. `Run` waits in standby; `Execute` returns an explicit unimplemented error, never a false success.
+- `cmd/worker`: independent entry point and Wire wiring, control-database and graph connections, and graceful SIGINT/SIGTERM shutdown.
+- `internal/adapter`: external-source boundary. The CMDB adapter implements configuration validation, paginated `device_view` collection, and device normalization.
+- `internal/service/sync_worker.go`: claims the earliest queued run, advances the run state machine, writes devices, and cleans stale orphan device vertices only after a complete successful pass.
 
-Run the foundation without database credentials:
+Run the worker after configuring the control database, target graph space, and `inventory.cmdb.sources.<config_ref>`:
 
 ```sh
 make worker CONF=config/local.example.yml
@@ -34,14 +34,13 @@ go run ./cmd/worker -conf config/local.example.yml
 ```
 
 `APP_CONF` overrides `CONF` / `-conf`. `make build` and `make wire` include the worker.
-The worker does not start HTTP, connect to MySQL/Nebula, migrate, claim jobs or mutate queued runs.
-Collection, publication, source configuration resolution and job leases remain unimplemented.
-Collection result contracts will be defined with real integrations; no fake assets or successful empty syncs are provided.
+The worker does not start HTTP or automatically execute SQL migrations or NebulaGraph DDL. It connects to MySQL and NebulaGraph, polls queued runs, and executes them.
+The current phase synchronizes only `device_view` vertices; other entities, relations, checkpoints, and job leases remain unimplemented.
 
 ## Implemented API
 
 The implemented `/v1/inventory` API provides authenticated source listing and durable sync-run creation, listing, retrieval and cancellation. Existing user endpoints remain available.
-Sync runs are **queued only**: asset reads, collection workers, publication pipelines, topology queries and upstream writes are not implemented. Evidence, source progress, checkpoints and coverage summaries are not yet exposed. Generated Swagger covers only existing user routes, not the full inventory API.
+When the worker is running, queued jobs can perform the first-phase device collection, graph writes, and success-only cleanup. Asset reads, other entity and relation synchronization, topology queries, and upstream writes are not implemented. Evidence, source progress, checkpoints and coverage summaries are not yet exposed. Generated Swagger covers only existing user routes, not the full inventory API.
 
 ## Configuration and startup
 

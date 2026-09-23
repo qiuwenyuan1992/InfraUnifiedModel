@@ -23,6 +23,21 @@ log:
 inventory:
   cursor_key: ""
   grants: []
+  worker:
+    poll_interval_seconds: 1
+    device_write_concurrency: 8
+  cmdb:
+    sources:
+      example:
+        base_url: "https://cmdb.example.invalid"
+        allow_insecure_http: false
+        headers: {}
+        query: {}
+        # 生产全量同步不要配置 device_condition。
+        page_size: 20000
+        concurrency: 5
+        timeout_seconds: 30
+        max_response_bytes: 67108864
   graph:
     hosts: []
     space: ""
