@@ -4,3 +4,6 @@ storage/logs
 deploy/docker-compose/conf
 deploy/docker-compose/data
 .worktrees/
+.code-review-graph/
+.DS_Store
+.joycode/memory/

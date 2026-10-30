@@ -39,3 +39,7 @@
 - [开发约定](specs/2026-09-20-development-conventions.md)
 - [模型运行时契约](specs/2026-09-20-model-runtime-contract.md)
 - [模型基础设施实施计划](plans/2026-09-20-model-foundation.md)
+- [CMDB 同步现状与验收](../cmdb-sync/README.md)
+
+当前实现与验证证据见上述同步说明；计划文档不描述现状。
+2026-10-27 的全来源采集计划已被保留 IDC 开发过滤的后续决策取代，不再作为执行依据。
