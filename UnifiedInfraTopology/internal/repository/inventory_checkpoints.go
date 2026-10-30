@@ -18,6 +18,7 @@ type DeviceSyncCursor struct {
 	RunID          string    `json:"run_id"`
 	NextOffset     int       `json:"next_offset"`
 	LastInstanceID int64     `json:"last_instance_id"`
+	LastPartition  int64     `json:"last_partition,omitempty"`
 	SnapshotAt     time.Time `json:"snapshot_at"`
 	Total          int       `json:"total"`
 }
@@ -132,8 +133,11 @@ func (r *inventoryRepository) AdvanceCheckpoint(ctx context.Context, sourceID, r
 	}
 	cursor.SnapshotAt = cursor.SnapshotAt.UTC().Truncate(time.Microsecond)
 	updatedAt = updatedAt.UTC().Truncate(time.Microsecond)
-	if err := validateDeviceSyncCursor(cursor); err != nil {
+	if err := validateInventoryResourceCursor(resource, cursor); err != nil {
 		return nil, err
+	}
+	if cursor.LastPartition != 0 && resource != "interfaces" {
+		return nil, ErrInventoryConflict
 	}
 
 	var result *DeviceSyncCheckpoint
@@ -158,7 +162,8 @@ func (r *inventoryRepository) AdvanceCheckpoint(ctx context.Context, sourceID, r
 		}
 		previous := checkpoint.Cursor
 		if stored.Complete || previous.RunID != runID || !previous.SnapshotAt.Equal(cursor.SnapshotAt) ||
-			cursor.NextOffset <= previous.NextOffset || cursor.LastInstanceID <= previous.LastInstanceID ||
+			cursor.NextOffset <= previous.NextOffset || cursor.LastPartition < previous.LastPartition ||
+			(resource != "server_uplinks" && cursor.LastPartition == previous.LastPartition && cursor.LastInstanceID <= previous.LastInstanceID) ||
 			(previous.Total != 0 && cursor.Total != previous.Total) {
 			return ErrInventoryConflict
 		}
@@ -277,8 +282,11 @@ func decodeDeviceSyncCheckpoint(stored model.SyncCheckpoint) (*DeviceSyncCheckpo
 		return nil, ErrInventoryConflict
 	}
 	cursor.SnapshotAt = cursor.SnapshotAt.UTC().Truncate(time.Microsecond)
-	if err := validateDeviceSyncCursor(cursor); err != nil {
+	if err := validateInventoryResourceCursor(stored.Resource, cursor); err != nil {
 		return nil, err
+	}
+	if cursor.LastPartition != 0 && stored.Resource != "interfaces" {
+		return nil, ErrInventoryConflict
 	}
 	return &DeviceSyncCheckpoint{
 		SourceID:    stored.SourceID,
@@ -290,10 +298,21 @@ func decodeDeviceSyncCheckpoint(stored model.SyncCheckpoint) (*DeviceSyncCheckpo
 	}, nil
 }
 
+// 上联关系检查点记录边偏移，没有对应的来源实体 inst_id；其他实体规则不变。
+func validateInventoryResourceCursor(resource string, cursor DeviceSyncCursor) error {
+	if resource != "server_uplinks" {
+		return validateDeviceSyncCursor(cursor)
+	}
+	if cursor.Version != DeviceSyncCursorVersion || cursor.RunID == "" || cursor.SnapshotAt.IsZero() || cursor.NextOffset < 0 || cursor.Total < 0 || cursor.NextOffset > cursor.Total || cursor.LastInstanceID != 0 || cursor.LastPartition != 0 {
+		return ErrInventoryConflict
+	}
+	return nil
+}
+
 func validateDeviceSyncCursor(cursor DeviceSyncCursor) error {
 	if cursor.Version != DeviceSyncCursorVersion || cursor.RunID == "" || cursor.NextOffset < 0 ||
-		cursor.LastInstanceID < 0 || cursor.SnapshotAt.IsZero() || cursor.Total < 0 ||
-		(cursor.NextOffset == 0 && cursor.LastInstanceID != 0) ||
+		cursor.LastInstanceID < 0 || cursor.LastPartition < 0 || cursor.SnapshotAt.IsZero() || cursor.Total < 0 ||
+		(cursor.NextOffset == 0 && (cursor.LastInstanceID != 0 || cursor.LastPartition != 0)) ||
 		(cursor.NextOffset > 0 && cursor.LastInstanceID == 0) ||
 		(cursor.Total > 0 && cursor.NextOffset > cursor.Total) {
 		return ErrInventoryConflict

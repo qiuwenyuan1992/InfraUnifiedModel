@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-30",
+  "runtime_verdict": "PASS_WITH_6_UPSTREAM_UNRESOLVED_REFERENCES",
+  "authorization": "User explicitly requested clearing local project test data without backup; destructive execution approved through tool approval.",
+  "backup_created": false,
+  "scope": {"mysql": "127.0.0.1:3306/unified", "nebula": "127.0.0.1:9669/unified_infra_topology", "resync_idc": 1030, "interface_port_type": "physics"},
+  "reset": {
+    "all_four_relation_types_cleared": true,
+    "all_ten_entity_tags_empty_verified": true,
+    "sync_tables_cleared": ["sync_diagnostics", "publications", "sync_checkpoints", "sync_runs"],
+    "sources_retained": 1,
+    "schema_users_config_hooks_preserved": true
+  },
+  "rebuild_runs": [
+    {"entity": "device", "run_id": "9eeea53d1b0f8b833bfab53d86a44367", "snapshot_at": "2026-10-30T03:33:42.730125Z", "count": 4698, "verified": "PASS"},
+    {"entity": "data_center", "run_id": "79bf85f2bbe7a318f1d0fa43d3c98e37", "count": 1, "verified": "PASS"},
+    {"entity": "cabinet", "run_id": "ece524be9401265fb73c0927c3ccfa2f", "count": 2671, "verified": "PASS"},
+    {"entity": "transformer", "run_id": "1891c39b1e526398a66af56a4b7f5282", "count": 71, "verified": "PASS"},
+    {"entity": "interface", "run_id": "b96d351f8834b4443cfc44327bd8b05b", "snapshot_at": "2026-10-30T03:34:22.429780Z", "count": 174482, "owns_interface": 174482, "verified": "PASS"},
+    {"relation": "server_uplink", "run_id": "ed899c8322dedd929fddd254bbd566c8", "snapshot_at": "2026-10-30T03:42:21.457864Z", "count": 2710, "valid_three_node_paths": 2710, "verified": "PASS"}
+  ],
+  "current_device_classification": {"servers": 2518, "network_devices": 2180, "total": 4698},
+  "before_after": {"device_count": [3783, 4698], "current_server_uplinks": [1950, 2710], "missing_endpoint_references": [760, 0], "all_skipped_references": [766, 6]},
+  "post_reset_diagnostics": {"references": 2716, "cmdb_resolved": 2710, "valid_graph_references": 2710, "graph_invalid": 0, "cmdb_unresolved": 6},
+  "upstream_issue_confirmation": {"confirmed_by": "user", "confirmed_at": "2026-10-30", "owner": "CMDB", "classification": "Known upstream port-name cleaning and port-inventory collection issues", "disposition": "Record only; do not add local aliases, fabricate ports, or change synchronization behavior to work around these six references"},
+  "remaining_issues": [
+    {"references": 2, "tor_sn": "3G2610019347", "reason": "GE0/0/5 and GE0/0/6 differ from GigabitEthernet0/0/5 and GigabitEthernet0/0/6; no alias auto-match enabled"},
+    {"references": 4, "tor_sn": "102618636126", "reason": "Referenced 25GE1/0/5 through 25GE1/0/8 have no upstream port_view records"}
+  ],
+  "independent_verification": {"device_snapshot": "PASS", "interface_and_ownership": "PASS", "server_uplink_all_edge_paths_id_rank": "PASS", "five_fresh_source_paths": "PASS; formerly missing server 1H3YBP2 now present", "active_tasks": 0, "all_six_runs_succeeded_checkpoints_complete_leases_released": true},
+  "code_changes": ["Permit device in existing targeted filtered-sync CLI", "Add opt-in local-only reset test, refuses active runs, preserves sources/schema/users"],
+  "tests": {"new_device_entry_regression_red_then_green": true, "affected_packages_race": "PASS", "go_vet": "PASS", "three_entrypoint_build": "PASS", "git_diff_check": "PASS", "full_suite": "Not rerun this turn; known existing TestProductContractHasNoRangeIdentity documentation failure remains unresolved"},
+  "not_rebuilt": ["Unimplemented entity pipelines: pod, gpu, rpp, ups_group, ups", "Unimplemented relationship pipelines including links_to", "Virtual interfaces", "Other IDCs"],
+  "historical_report_files_retained": false,
+  "historical_database_run_ids_no_longer_exist": true
+}

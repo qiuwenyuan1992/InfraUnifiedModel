@@ -24,11 +24,15 @@ type topologyGraphCall struct {
 
 type topologyGraphFake struct {
 	results []*nebulago.ResultSet
-	err     error
-	calls   []topologyGraphCall
+	err       error
+	calls     []topologyGraphCall
+	onExecute func(context.Context)
 }
 
-func (f *topologyGraphFake) ExecuteParameter(_ context.Context, statement string, params map[string]interface{}) (*nebulago.ResultSet, error) {
+func (f *topologyGraphFake) ExecuteParameter(ctx context.Context, statement string, params map[string]interface{}) (*nebulago.ResultSet, error) {
+	if f.onExecute != nil {
+		f.onExecute(ctx)
+	}
 	cloned := make(map[string]interface{}, len(params))
 	for key, value := range params {
 		cloned[key] = value
@@ -95,6 +99,138 @@ func topologyGraphStringResult(t *testing.T, columns []string, rows ...[]string)
 	result, err := nebulago.GenResultSet(&graph.ExecutionResponse{ErrorCode: nebula.ErrorCode_SUCCEEDED, Data: data})
 	require.NoError(t, err)
 	return result
+}
+
+func TestTopologyGraphVertexExistsMatchesTypedIdentity(t *testing.T) {
+	for _, entityType := range []model.EntityType{model.EntityDevice, model.EntityInterface, model.EntityGPU} {
+		t.Run(string(entityType), func(t *testing.T) {
+			identity := model.EntityIdentity{SourceID: `cmdb\"primary`, EntityType: entityType, StableID: `SN\"001`}
+			vid, err := identity.VID()
+			require.NoError(t, err)
+			fake := &topologyGraphFake{results: []*nebulago.ResultSet{
+				topologyGraphStringResult(t, []string{"source_id", "stable_id"}, []string{identity.SourceID, identity.StableID}),
+			}}
+			var repository TopologyGraphRepository = &topologyGraphRepository{client: fake}
+
+			exists, err := repository.VertexExists(context.Background(), identity)
+			require.NoError(t, err)
+			require.True(t, exists)
+			require.Len(t, fake.calls, 1)
+			require.Equal(t, "FETCH PROP ON "+string(entityType)+" "+topologyVIDLiteral(vid)+" YIELD properties(vertex).source_id AS source_id, properties(vertex)."+topologyEntitySchemas[entityType].stableField+" AS stable_id;", fake.calls[0].statement)
+			require.Empty(t, fake.calls[0].params)
+			require.NotContains(t, fake.calls[0].statement, identity.SourceID)
+			require.NotContains(t, fake.calls[0].statement, identity.StableID)
+		})
+	}
+}
+
+func TestTopologyGraphVertexExistsMissing(t *testing.T) {
+	fake := &topologyGraphFake{results: []*nebulago.ResultSet{topologyGraphStringResult(t, []string{"source_id", "stable_id"})}}
+	exists, err := (&topologyGraphRepository{client: fake}).VertexExists(context.Background(), model.EntityIdentity{
+		SourceID: "cmdb-primary", EntityType: model.EntityDevice, StableID: "SN-001",
+	})
+	require.NoError(t, err)
+	require.False(t, exists)
+	require.Len(t, fake.calls, 1)
+}
+
+func TestTopologyGraphVertexExistsFailsClosed(t *testing.T) {
+	identity := model.EntityIdentity{SourceID: "cmdb-primary", EntityType: model.EntityDevice, StableID: "SN-001"}
+	integer := int64(1)
+	null := nebula.NullType___NULL__
+	tests := []struct {
+		name    string
+		columns []string
+		rows    []*nebula.Row
+	}{
+		{name: "wrong source", columns: []string{"source_id", "stable_id"}, rows: []*nebula.Row{{Values: []*nebula.Value{{SVal: []byte("other-source")}, {SVal: []byte(identity.StableID)}}}}},
+		{name: "wrong serial", columns: []string{"source_id", "stable_id"}, rows: []*nebula.Row{{Values: []*nebula.Value{{SVal: []byte(identity.SourceID)}, {SVal: []byte("SN-999")}}}}},
+		{name: "duplicate rows", columns: []string{"source_id", "stable_id"}, rows: []*nebula.Row{
+			{Values: []*nebula.Value{{SVal: []byte(identity.SourceID)}, {SVal: []byte(identity.StableID)}}},
+			{Values: []*nebula.Value{{SVal: []byte(identity.SourceID)}, {SVal: []byte(identity.StableID)}}},
+		}},
+		{name: "null source", columns: []string{"source_id", "stable_id"}, rows: []*nebula.Row{{Values: []*nebula.Value{{NVal: &null}, {SVal: []byte(identity.StableID)}}}}},
+		{name: "null serial", columns: []string{"source_id", "stable_id"}, rows: []*nebula.Row{{Values: []*nebula.Value{{SVal: []byte(identity.SourceID)}, {NVal: &null}}}}},
+		{name: "numeric serial", columns: []string{"source_id", "stable_id"}, rows: []*nebula.Row{{Values: []*nebula.Value{{SVal: []byte(identity.SourceID)}, {IVal: &integer}}}}},
+		{name: "wrong column", columns: []string{"source_id", "device_sn"}},
+		{name: "short row", columns: []string{"source_id", "stable_id"}, rows: []*nebula.Row{{Values: []*nebula.Value{{SVal: []byte(identity.SourceID)}}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			data := &nebula.DataSet{Rows: test.rows}
+			for _, column := range test.columns {
+				data.ColumnNames = append(data.ColumnNames, []byte(column))
+			}
+			result, err := nebulago.GenResultSet(&graph.ExecutionResponse{ErrorCode: nebula.ErrorCode_SUCCEEDED, Data: data})
+			require.NoError(t, err)
+			fake := &topologyGraphFake{results: []*nebulago.ResultSet{result}}
+			exists, err := (&topologyGraphRepository{client: fake}).VertexExists(context.Background(), identity)
+			require.Error(t, err)
+			require.False(t, exists)
+			require.NotContains(t, err.Error(), identity.SourceID)
+			require.NotContains(t, err.Error(), identity.StableID)
+		})
+	}
+}
+
+func TestTopologyGraphVertexExistsRejectsInvalidIdentityBeforeQuery(t *testing.T) {
+	for _, identity := range []model.EntityIdentity{
+		{SourceID: "cmdb-primary", EntityType: model.EntityType(`device; DROP SPACE production`), StableID: "SN-001"},
+		{EntityType: model.EntityDevice, StableID: "SN-001"},
+		{SourceID: "cmdb-primary", EntityType: model.EntityDevice},
+	} {
+		fake := &topologyGraphFake{}
+		exists, err := (&topologyGraphRepository{client: fake}).VertexExists(context.Background(), identity)
+		require.Error(t, err)
+		require.False(t, exists)
+		require.Empty(t, fake.calls)
+	}
+}
+
+func TestTopologyGraphVertexExistsGraphFailuresAreSanitized(t *testing.T) {
+	rejected, err := nebulago.GenResultSet(&graph.ExecutionResponse{ErrorCode: nebula.ErrorCode_E_EXECUTION_ERROR, ErrorMsg: []byte("secret graph response")})
+	require.NoError(t, err)
+	for _, fake := range []*topologyGraphFake{
+		{err: errors.New("secret graph credentials")},
+		{},
+		{results: []*nebulago.ResultSet{rejected}},
+	} {
+		exists, err := (&topologyGraphRepository{client: fake}).VertexExists(context.Background(), model.EntityIdentity{
+			SourceID: "cmdb-primary", EntityType: model.EntityDevice, StableID: "SN-001",
+		})
+		require.ErrorIs(t, err, ErrInventoryNotReady)
+		require.False(t, exists)
+		require.NotContains(t, err.Error(), "secret")
+	}
+}
+
+func TestTopologyGraphVertexExistsPreservesContextError(t *testing.T) {
+	identity := model.EntityIdentity{SourceID: "cmdb-primary", EntityType: model.EntityDevice, StableID: "SN-001"}
+	t.Run("already canceled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		fake := &topologyGraphFake{}
+		exists, err := (&topologyGraphRepository{client: fake}).VertexExists(ctx, identity)
+		require.ErrorIs(t, err, context.Canceled)
+		require.False(t, exists)
+		require.Empty(t, fake.calls)
+	})
+	t.Run("canceled during query", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		fake := &topologyGraphFake{onExecute: func(context.Context) { cancel() }, err: errors.New("secret graph error")}
+		exists, err := (&topologyGraphRepository{client: fake}).VertexExists(ctx, identity)
+		require.ErrorIs(t, err, context.Canceled)
+		require.False(t, exists)
+		require.Len(t, fake.calls, 1)
+	})
+}
+
+func TestUnavailableTopologyGraphVertexExists(t *testing.T) {
+	var repository TopologyGraphRepository = unavailableTopologyGraphRepository{}
+	exists, err := repository.VertexExists(context.Background(), model.EntityIdentity{})
+	require.ErrorIs(t, err, ErrInventoryNotReady)
+	require.False(t, exists)
 }
 
 func TestTopologyGraphUpsertVertexUsesParameters(t *testing.T) {

@@ -51,6 +51,7 @@ type TopologyVertex struct {
 }
 
 type TopologyGraphRepository interface {
+	VertexExists(context.Context, model.EntityIdentity) (bool, error)
 	UpsertVertex(context.Context, TopologyVertex) error
 	UpsertRelation(context.Context, model.Relation) error
 	DeleteRelationsNotSeen(context.Context, string, model.EdgeType, time.Time) error
@@ -80,6 +81,57 @@ func newTopologyGraphRepository(conf *viper.Viper, open func(graphclient.Config)
 		return nil, func() {}, err
 	}
 	return &topologyGraphRepository{client: client}, client.Close, nil
+}
+
+func (unavailableTopologyGraphRepository) VertexExists(context.Context, model.EntityIdentity) (bool, error) {
+	return false, ErrInventoryNotReady
+}
+
+func (r *topologyGraphRepository) VertexExists(ctx context.Context, identity model.EntityIdentity) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	schema, ok := topologyEntitySchemas[identity.EntityType]
+	if !ok {
+		return false, errors.New("unsupported topology entity")
+	}
+	vid, err := identity.VID()
+	if err != nil {
+		return false, err
+	}
+	query := "FETCH PROP ON " + string(identity.EntityType) + " " + topologyVIDLiteral(vid) + " YIELD properties(vertex).source_id AS source_id, properties(vertex)." + schema.stableField + " AS stable_id;"
+	result, err := r.client.ExecuteParameter(ctx, query, nil)
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	if err != nil || result == nil || !result.IsSucceed() {
+		return false, ErrInventoryNotReady
+	}
+	columns := result.GetColNames()
+	if len(columns) != 2 || columns[0] != "source_id" || columns[1] != "stable_id" {
+		return false, errors.New("invalid topology endpoint columns")
+	}
+	if result.GetRowSize() == 0 {
+		return false, nil
+	}
+	if result.GetRowSize() != 1 || result.GetColSize() != 2 {
+		return false, errors.New("invalid topology endpoint response")
+	}
+	row, err := result.GetRowValuesByIndex(0)
+	if err != nil {
+		return false, errors.New("invalid topology endpoint row")
+	}
+	for index, expected := range []string{identity.SourceID, identity.StableID} {
+		value, err := row.GetValueByIndex(index)
+		if err != nil || !value.IsString() {
+			return false, errors.New("invalid topology endpoint identity")
+		}
+		text, err := value.AsString()
+		if err != nil || text != expected {
+			return false, errors.New("topology endpoint identity mismatch")
+		}
+	}
+	return true, nil
 }
 
 func (unavailableTopologyGraphRepository) UpsertVertex(context.Context, TopologyVertex) error {

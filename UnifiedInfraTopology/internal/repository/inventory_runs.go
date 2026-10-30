@@ -123,7 +123,28 @@ func (r *inventoryRepository) Cancel(ctx context.Context, runID string) (*model.
 	return result, accepted, nil
 }
 
+// 定向验收只领取指定任务，不处理其他来源的队列或过期任务。
+func NewInventoryRunRepository(r *Repository, runID string) InventoryRepository {
+	return &inventoryRunRepository{inventoryRepository: &inventoryRepository{r: r}, runID: runID}
+}
+
+type inventoryRunRepository struct {
+	*inventoryRepository
+	runID string
+}
+
+func (r *inventoryRunRepository) ClaimNext(ctx context.Context, startedAt time.Time) (*model.SyncRun, *model.Source, error) {
+	if r.runID == "" {
+		return nil, nil, ErrInventoryConflict
+	}
+	return r.claim(ctx, startedAt, r.runID)
+}
+
 func (r *inventoryRepository) ClaimNext(ctx context.Context, startedAt time.Time) (*model.SyncRun, *model.Source, error) {
+	return r.claim(ctx, startedAt, "")
+}
+
+func (r *inventoryRepository) claim(ctx context.Context, startedAt time.Time, runID string) (*model.SyncRun, *model.Source, error) {
 	if startedAt.IsZero() {
 		return nil, nil, ErrInventoryConflict
 	}
@@ -135,12 +156,17 @@ func (r *inventoryRepository) ClaimNext(ctx context.Context, startedAt time.Time
 	var source *model.Source
 	err := r.r.Transaction(ctx, func(txCtx context.Context) error {
 		db := r.r.DB(txCtx)
-		if err := expireStaleSyncRuns(db, startedAt, ""); err != nil {
-			return err
+		if runID == "" {
+			if err := expireStaleSyncRuns(db, startedAt, ""); err != nil {
+				return err
+			}
+		}
+		query := db.Where("status = ? AND cancel_requested_at IS NULL", model.SyncRunStatusQueued)
+		if runID != "" {
+			query = query.Where("id = ?", runID)
 		}
 		var run model.SyncRun
-		if err := db.Where("status = ? AND cancel_requested_at IS NULL", model.SyncRunStatusQueued).
-			Order("created_at ASC, id ASC").First(&run).Error; err != nil {
+		if err := query.Order("created_at ASC, id ASC").First(&run).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrInventoryNoRun
 			}

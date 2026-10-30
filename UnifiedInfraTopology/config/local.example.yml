@@ -38,9 +38,22 @@ inventory:
         headers: {}
         # 固定查询参数会安全编码到 URL；不要把值写入日志。
         query: {}
-        # 仅用于测试范围；省略后执行完整 device_view 全量同步。
-        # device_condition:
-        #   inst_id: 481679
+        # 每轮只同步一种实体；未配置时为 device，支持 data_center、cabinet、interface。
+        # 完成来源当前任务后修改此项并重启 Worker，不在排队或运行中切换。
+        entity_type: device
+        # 开发阶段限定 IDC；过滤同步只新增、更新，不执行整源清理。
+        device_condition:
+          idc_id: 1030
+        data_center_condition:
+          inst_id: 1030
+        cabinet_condition:
+          idc_id: 1030
+        # 端口按 IDC 内网络设备逐台追加 sn 查询；当前只同步物理口。
+        interface_condition:
+          idc_id: 1030
+          port_type: physics
+        transformer_condition:
+          idc: 1030
         page_size: 20000
         concurrency: 5
         timeout_seconds: 30

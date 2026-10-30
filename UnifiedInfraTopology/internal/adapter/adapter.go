@@ -23,6 +23,40 @@ type DevicePageCollector interface {
 	CollectDevicePage(context.Context, model.Source, int) (DevicePage, error)
 }
 
+// EntityPageCollector 按实体类型分页采集，完整性由调用方验证。
+type EntityPageCollector interface {
+	SelectedEntity(model.Source) (model.EntityType, error)
+	CollectEntityPage(context.Context, model.Source, model.EntityType, int) (EntityPage, error)
+	CoversFullSource(model.Source, model.EntityType) (bool, error)
+}
+
+// EntityPageStream 表示单次完整采集使用的独立分页视图。
+type EntityPageStream interface {
+	Page(context.Context, int) (EntityPage, error)
+}
+
+// EntityPassCollector 为每次验证采集建立独立分页视图。
+type EntityPassCollector interface {
+	OpenEntityPass(context.Context, model.Source, model.EntityType) (EntityPageStream, error)
+}
+
+// EntityPage 是一页实体采集结果。
+type EntityPage struct {
+	Records    []EntityRecord
+	NextOffset int
+	Total      int
+	Done       bool
+}
+
+// EntityRecord 将来源数字引用与稳定身份分开，不包含同步生成时间。
+type EntityRecord struct {
+	Partition        int64
+	SourceInstanceID int64
+	Identity         string
+	OwnerDeviceSN    string
+	Properties       map[string]any
+}
+
 // DevicePage 是一页设备采集结果。
 type DevicePage struct {
 	Records    []DeviceRecord

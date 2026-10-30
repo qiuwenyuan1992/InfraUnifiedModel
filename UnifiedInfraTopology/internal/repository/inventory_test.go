@@ -311,6 +311,43 @@ func TestInventorySyncRunTransitionWhitelist(t *testing.T) {
 	}
 }
 
+func TestInventoryRepositoryTargetedClaimLeavesOtherRunsUntouched(t *testing.T) {
+	_, baseRepo, db := inventoryRepositoryFixture(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	source := model.Source{ID: strings.Repeat("a", 32), Enabled: true}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatal(err)
+	}
+	runs := []model.SyncRun{
+		{ID: strings.Repeat("1", 32), SourceID: source.ID, Status: model.SyncRunStatusQueued, CreatedAt: now.Add(-time.Hour)},
+		{ID: strings.Repeat("2", 32), SourceID: source.ID, Status: model.SyncRunStatusQueued, CreatedAt: now},
+		{ID: strings.Repeat("3", 32), SourceID: source.ID, Status: model.SyncRunStatusRunning, StartedAt: func() *time.Time { old := now.Add(-time.Hour); return &old }()},
+	}
+	if err := db.Create(&runs).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewInventoryRunRepository(baseRepo, runs[1].ID)
+	claimed, _, err := repo.ClaimNext(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ID != runs[1].ID {
+		t.Fatalf("claimed unexpected task %s", claimed.ID)
+	}
+	for _, index := range []int{0, 2} {
+		stored, err := repo.Run(context.Background(), runs[index].ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stored.Status != runs[index].Status {
+			t.Fatalf("unrelated task mutated: %+v", stored)
+		}
+	}
+	if _, _, err := repo.ClaimNext(context.Background(), now); !errors.Is(err, ErrInventoryNoRun) {
+		t.Fatalf("reclaimed target: %v", err)
+	}
+}
+
 func TestInventoryRepositoryClaimNextClaimsEarliestQueuedRun(t *testing.T) {
 	repo, _, db := inventoryRepositoryFixture(t)
 	base := time.Date(2026, 9, 22, 1, 2, 3, 0, time.UTC)

@@ -173,8 +173,12 @@ func (c *CMDB) collectDeviceRecordsPage(ctx context.Context, cfg cmdbConfig, sta
 }
 
 func (c *CMDB) collectDevicePage(ctx context.Context, cfg cmdbConfig, start int) (*deviceViewData, error) {
+	return c.collectDevicePageWithFields(ctx, cfg, start, deviceViewFields)
+}
+
+func (c *CMDB) collectDevicePageWithFields(ctx context.Context, cfg cmdbConfig, start int, fields []string) (*deviceViewData, error) {
 	body, err := json.Marshal(deviceViewRequest{
-		Fields:    deviceViewFields,
+		Fields:    fields,
 		Page:      deviceViewPage{Start: start, Limit: cfg.PageSize, Sort: "inst_id"},
 		Condition: cfg.DeviceCondition,
 	})
@@ -197,6 +201,9 @@ func (c *CMDB) collectDevicePage(ctx context.Context, cfg cmdbConfig, start int)
 
 	resp, err := c.clientFor(cfg).Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("%w: request failed", ErrCMDBHTTP)
 	}
 	defer resp.Body.Close()

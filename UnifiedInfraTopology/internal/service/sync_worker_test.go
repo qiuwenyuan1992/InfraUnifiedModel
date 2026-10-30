@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -20,8 +21,91 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
 )
+
+func TestSyncWorkerCheckpointRejectsInvalidPartition(t *testing.T) {
+	logger := &log.Logger{Logger: zap.NewNop()}
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	defer sqlDB.Close()
+	require.NoError(t, db.AutoMigrate(&model.SyncCheckpoint{}))
+	control := repository.NewInventoryRepository(repository.NewRepository(logger, db))
+	for _, tc := range []struct {
+		name      string
+		resource  string
+		partition int64
+	}{
+		{name: "negative interface partition", resource: "interfaces", partition: -1},
+		{name: "partition on device", resource: "devices", partition: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cursor := fmt.Sprintf(`{"version":1,"run_id":"run-1","next_offset":1,"last_instance_id":1,"last_partition":%d,"snapshot_at":"2026-10-29T00:00:00Z","total":1}`, tc.partition)
+			stored := model.SyncCheckpoint{SourceID: tc.name, Resource: tc.resource, Cursor: cursor}
+			require.NoError(t, db.Create(&stored).Error)
+			_, err := control.LoadCheckpoint(context.Background(), stored.SourceID, stored.Resource)
+			require.ErrorIs(t, err, repository.ErrInventoryConflict)
+		})
+	}
+}
+
+func TestSyncWorkerInterfaceCheckpointAdvancesAcrossPartitions(t *testing.T) {
+	logger := &log.Logger{Logger: zap.NewNop()}
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	defer sqlDB.Close()
+	require.NoError(t, db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}))
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	lease := now.Add(time.Minute)
+	source := model.Source{ID: "source-1", Name: "test", AdapterKind: "cmdb", Enabled: true}
+	run := model.SyncRun{ID: "run-1", SourceID: source.ID, Status: model.SyncRunStatusRunning, CreatedAt: now, StartedAt: &now, LeaseExpiresAt: &lease}
+	require.NoError(t, db.Create(&source).Error)
+	require.NoError(t, db.Create(&run).Error)
+	control := repository.NewInventoryRepository(repository.NewRepository(logger, db))
+	checkpoint, err := control.BeginCheckpoint(context.Background(), source.ID, "interfaces", run.ID, now, now)
+	require.NoError(t, err)
+	legacyJSON, err := json.Marshal(checkpoint.Cursor)
+	require.NoError(t, err)
+	require.NotContains(t, string(legacyJSON), "last_partition")
+	cursor := checkpoint.Cursor
+	cursor.NextOffset, cursor.Total, cursor.LastInstanceID, cursor.LastPartition = 1, 4, 901, 10
+	_, err = control.AdvanceCheckpoint(context.Background(), source.ID, "interfaces", run.ID, cursor, now)
+	require.NoError(t, err)
+	cursor.NextOffset, cursor.LastInstanceID, cursor.LastPartition = 2, 1, 20
+	checkpoint, err = control.AdvanceCheckpoint(context.Background(), source.ID, "interfaces", run.ID, cursor, now)
+	require.NoError(t, err)
+	require.Equal(t, cursor, checkpoint.Cursor)
+	for _, tc := range []struct {
+		name      string
+		partition int64
+		id        int64
+		resource  string
+	}{
+		{name: "same partition decreasing", partition: 20, id: 1, resource: "interfaces"},
+		{name: "partition regression", partition: 10, id: 1000, resource: "interfaces"},
+		{name: "negative partition", partition: -1, id: 2, resource: "interfaces"},
+		{name: "non-interface partition", partition: 30, id: 2, resource: "devices"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			invalid := cursor
+			invalid.NextOffset, invalid.LastInstanceID, invalid.LastPartition = 3, tc.id, tc.partition
+			_, err := control.AdvanceCheckpoint(context.Background(), source.ID, tc.resource, run.ID, invalid, now)
+			require.ErrorIs(t, err, repository.ErrInventoryConflict)
+		})
+	}
+}
+
+func TestSyncWorkerProcessClaimedRejectsUnownedRun(t *testing.T) {
+	worker := newWorkerForTest(&fakeWorkerRuns{}, &fakeDeviceGraph{}, &fakeDeviceSource{}, time.Now())
+	for _, run := range []*model.SyncRun{nil, {ID: "run-1", SourceID: "source-1", Status: model.SyncRunStatusQueued}, {ID: "run-1", SourceID: "wrong-source", Status: model.SyncRunStatusRunning}} {
+		require.Error(t, worker.ProcessClaimed(context.Background(), run, model.Source{ID: "source-1"}))
+	}
+}
 
 type workerTransition struct {
 	from      string
@@ -165,6 +249,82 @@ type fakeDeviceSource struct {
 	completedPasses int
 	validateErr     error
 	offsets         []int
+	selected        model.EntityType
+	selectionErr    error
+	filtered        bool
+	coverageErr     error
+	coverageChecks  int
+	coverageChanged bool
+	entityPages     []adapter.EntityPage
+	entityReplay    []adapter.EntityPage
+	entityPass      int
+	passOpenCalls   int
+	passOpenErrAt   int
+	passPageHook    func(context.Context) error
+	passOpenHook    func(context.Context, int) error
+}
+
+func (f *fakeDeviceSource) SelectedEntity(model.Source) (model.EntityType, error) {
+	if f.selected == "" {
+		return model.EntityDevice, f.selectionErr
+	}
+	return f.selected, f.selectionErr
+}
+
+func (f *fakeDeviceSource) CoversFullSource(model.Source, model.EntityType) (bool, error) {
+	f.coverageChecks++
+	return !f.filtered && !(f.coverageChanged && f.coverageChecks > 1), f.coverageErr
+}
+
+func (f *fakeDeviceSource) CollectEntityPage(_ context.Context, _ model.Source, entity model.EntityType, offset int) (adapter.EntityPage, error) {
+	f.offsets = append(f.offsets, offset)
+	if entity != f.selected || len(f.entityPages) == 0 {
+		return adapter.EntityPage{}, errors.New("unexpected entity collection")
+	}
+	page := f.entityPages[0]
+	f.entityPages = f.entityPages[1:]
+	if page.Done && f.entityPass == 0 {
+		f.entityPages = append([]adapter.EntityPage(nil), f.entityReplay...)
+		f.entityPass++
+	}
+	return page, nil
+}
+
+type fakeEntityPass struct {
+	source *fakeDeviceSource
+	pages  []adapter.EntityPage
+}
+
+func (f *fakeDeviceSource) OpenEntityPass(ctx context.Context, _ model.Source, entity model.EntityType) (adapter.EntityPageStream, error) {
+	f.passOpenCalls++
+	if f.passOpenHook != nil {
+		if err := f.passOpenHook(ctx, f.passOpenCalls); err != nil {
+			return nil, err
+		}
+	}
+	if entity != model.EntityInterface || f.passOpenCalls == f.passOpenErrAt {
+		return nil, errors.New("manifest construction failed")
+	}
+	pages := f.entityPages
+	if f.passOpenCalls > 1 {
+		pages = f.entityReplay
+	}
+	return &fakeEntityPass{source: f, pages: append([]adapter.EntityPage(nil), pages...)}, nil
+}
+
+func (p *fakeEntityPass) Page(ctx context.Context, offset int) (adapter.EntityPage, error) {
+	p.source.offsets = append(p.source.offsets, offset)
+	if p.source.passPageHook != nil {
+		if err := p.source.passPageHook(ctx); err != nil {
+			return adapter.EntityPage{}, err
+		}
+	}
+	if len(p.pages) == 0 {
+		return adapter.EntityPage{}, errors.New("unexpected pass page")
+	}
+	page := p.pages[0]
+	p.pages = p.pages[1:]
+	return page, nil
 }
 
 func (f *fakeDeviceSource) Validate(context.Context, model.Source) error { return f.validateErr }
@@ -194,18 +354,50 @@ func (f *fakeDeviceSource) CollectDevicePage(_ context.Context, _ model.Source, 
 }
 
 type fakeDeviceGraph struct {
-	mu           sync.Mutex
-	vertices     []repository.TopologyVertex
-	upsertErrAt  int
-	upsertCalls  int
-	activeWrites int
-	maxActive    int
-	writeDelay   time.Duration
-	cleanupErr   error
-	cleanup      bool
-	cleanupID    string
-	cleanupType  model.EntityType
-	cleanupAt    time.Time
+	mu            sync.Mutex
+	vertices      []repository.TopologyVertex
+	upsertErrAt   int
+	upsertCalls   int
+	activeWrites  int
+	maxActive     int
+	writeDelay    time.Duration
+	cleanupErr    error
+	cleanup       bool
+	cleanupID     string
+	cleanupType   model.EntityType
+	cleanupAt     time.Time
+	ownerMissing  bool
+	ownerReadErr  error
+	ownerLookups  []model.EntityIdentity
+	relations     []model.Relation
+	relationCalls int
+	relationErrAt int
+}
+
+func (f *fakeDeviceGraph) VertexExists(_ context.Context, identity model.EntityIdentity) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ownerLookups = append(f.ownerLookups, identity)
+	return !f.ownerMissing, f.ownerReadErr
+}
+
+func (f *fakeDeviceGraph) UpsertRelation(_ context.Context, relation model.Relation) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.relationCalls++
+	if f.relationErrAt > 0 && f.relationCalls == f.relationErrAt {
+		return errors.New("relation write failed")
+	}
+	if err := model.ValidateRelation(relation); err != nil {
+		return err
+	}
+	for _, vertex := range f.vertices {
+		if vertex.Identity == relation.Identity.To {
+			f.relations = append(f.relations, relation)
+			return nil
+		}
+	}
+	return errors.New("interface vertex was not written before relation")
 }
 
 func (f *fakeDeviceGraph) UpsertVertex(ctx context.Context, vertex repository.TopologyVertex) error {
@@ -635,6 +827,549 @@ func TestSyncWorkerDeviceViewVerticalFlow(t *testing.T) {
 	require.Equal(t, "SN-101", graph.vertices[0].Identity.StableID)
 	require.Equal(t, []string{"10.0.0.1"}, graph.vertices[0].Properties["all_ips"])
 	require.True(t, graph.cleanup)
+}
+
+func TestSyncWorkerSelectedEntityVerticalFlow(t *testing.T) {
+	for _, entity := range []model.EntityType{model.EntityDataCenter, model.EntityCabinet, model.EntityInterface, model.EntityTransformer} {
+		for _, filtered := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/filtered=%t", entity, filtered), func(t *testing.T) {
+				object, resource := "idc", "data_centers"
+				if entity == model.EntityCabinet {
+					object, resource = "cabinet", "cabinets"
+				} else if entity == model.EntityInterface {
+					object, resource = "port_view", "interfaces"
+				} else if entity == model.EntityTransformer {
+					object, resource = "idc_transformer", "transformers"
+				}
+				requests := 0
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body struct {
+						Condition map[string]any `json:"condition"`
+					}
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+					requests++
+					if entity == model.EntityInterface && r.URL.Path == "/pub/api/v3/find/instance/object/device_view" {
+						condition := map[string]any{"idc_id": float64(17), "parent_type_id": float64(54)}
+						if filtered {
+							condition["device_sn"] = "SN-101"
+						}
+						require.Equal(t, condition, body.Condition)
+						fmt.Fprint(w, `{"result":true,"error_code":0,"data":{"count":1,"info":[{"inst_id":201,"device_sn":"SN-101","parent_type_id":54}]}}`)
+						return
+					}
+					require.Equal(t, "/pub/api/v3/find/instance/object/"+object, r.URL.Path)
+					if entity == model.EntityInterface {
+						require.Equal(t, map[string]any{"idc_id": float64(17), "sn": "SN-101", "port_type": "physics"}, body.Condition)
+					} else {
+						require.Equal(t, filtered, len(body.Condition) > 0)
+					}
+					if entity == model.EntityInterface {
+						fmt.Fprint(w, `{"result":true,"error_code":0,"data":{"count":1,"info":[{"inst_id":101,"uuid":"VIEW-101","port_uuid":"UUID-101","port_name":"Ethernet1","port_type":"physics","port_speed":10000,"port_operation_status":1,"port_group_name":"uplink","group_type":3,"port_group_type":6,"group_subtype":0}]}}`)
+					} else if entity == model.EntityTransformer {
+						fmt.Fprint(w, `{"result":true,"error_code":0,"data":{"count":1,"info":[{"inst_id":101,"uuid":"UUID-101","code":"code-101","idc":17,"standby_transformer":102,"transformer_brand":"brand","transformer_type":"model","transformer_capacity":2500}]}}`)
+					} else {
+						fmt.Fprint(w, `{"result":true,"error_code":0,"data":{"count":1,"info":[{"inst_id":101,"uuid":"UUID-101","code":"code-101","cn_name":"IDC-101","idc_id":17,"pod_ids":[3,2,3]}]}}`)
+					}
+				}))
+				defer server.Close()
+				conf := viper.New()
+				conf.Set("inventory.cmdb.sources.test.base_url", server.URL)
+				conf.Set("inventory.cmdb.sources.test.allow_insecure_http", true)
+				conf.Set("inventory.cmdb.sources.test.page_size", 2)
+				conf.Set("inventory.cmdb.sources.test.entity_type", string(entity))
+				if entity == model.EntityInterface {
+					condition := map[string]any{"idc_id": 17}
+					if filtered {
+						condition["sn"] = "SN-101"
+					}
+					conf.Set("inventory.cmdb.sources.test.interface_condition", condition)
+				}
+				if filtered && entity != model.EntityInterface {
+					key := "idc_id"
+					if entity == model.EntityDataCenter {
+						key = "inst_id"
+					} else if entity == model.EntityTransformer {
+						key = "idc"
+					}
+					conf.Set("inventory.cmdb.sources.test."+string(entity)+"_condition", map[string]any{key: 17})
+				}
+				core, observed := observer.New(zap.InfoLevel)
+				logger := &log.Logger{Logger: zap.New(core)}
+				db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+				require.NoError(t, err)
+				sqlDB, err := db.DB()
+				require.NoError(t, err)
+				defer sqlDB.Close()
+				require.NoError(t, db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}))
+				source := model.Source{ID: strings.Repeat("a", 32), Name: "test", AdapterKind: "cmdb", ConfigRef: "test", Enabled: true}
+				run := model.SyncRun{ID: strings.Repeat("1", 32), SourceID: source.ID, Status: model.SyncRunStatusQueued, CreatedAt: time.Now()}
+				require.NoError(t, db.Create(&source).Error)
+				require.NoError(t, db.Create(&run).Error)
+				control := repository.NewInventoryRepository(repository.NewRepository(logger, db))
+				graph := &fakeDeviceGraph{}
+				worker := NewSyncWorker(conf, control, graph, adapter.NewCMDBWithClient(conf, server.Client()), logger)
+				now := time.Now().UTC().Truncate(time.Microsecond)
+				worker.now = func() time.Time { return now }
+				processed, err := worker.ProcessNext(context.Background())
+				require.NoError(t, err)
+				require.True(t, processed)
+				if entity == model.EntityInterface {
+					require.Equal(t, 6, requests)
+				} else {
+					require.Equal(t, 2, requests)
+				}
+				stored, err := control.Run(context.Background(), run.ID)
+				require.NoError(t, err)
+				require.Equal(t, model.SyncRunStatusSucceeded, stored.Status)
+				require.Nil(t, stored.LeaseExpiresAt)
+				var checkpoint model.SyncCheckpoint
+				require.NoError(t, db.Where("source_id = ? AND resource = ?", source.ID, resource).First(&checkpoint).Error)
+				require.Len(t, graph.vertices, 1)
+				vertex := graph.vertices[0]
+				require.Equal(t, model.EntityIdentity{SourceID: source.ID, EntityType: entity, StableID: "UUID-101"}, vertex.Identity)
+				if entity == model.EntityInterface {
+					var cursor repository.DeviceSyncCursor
+					require.NoError(t, json.Unmarshal([]byte(checkpoint.Cursor), &cursor))
+					require.Equal(t, int64(201), cursor.LastPartition)
+					require.Equal(t, int64(101), cursor.LastInstanceID)
+					require.Equal(t, "Ethernet1", vertex.Properties["port_name"])
+					require.Equal(t, "uplink", vertex.Properties["group_name"])
+					require.Equal(t, "10000", vertex.Properties["port_speed"])
+					require.Equal(t, "1", vertex.Properties["port_operation_status"])
+					require.NotContains(t, vertex.Properties, "port_uuid")
+					require.NotContains(t, vertex.Properties, "owner_device_sn")
+					require.Equal(t, []model.EntityIdentity{{SourceID: source.ID, EntityType: model.EntityDevice, StableID: "SN-101"}}, graph.ownerLookups)
+					require.Len(t, graph.relations, 1)
+					require.Equal(t, model.RelationIdentity{SourceID: source.ID, EdgeType: model.EdgeComposition, Kind: model.RelationOwnsInterface, From: graph.ownerLookups[0], To: vertex.Identity}, graph.relations[0].Identity)
+					require.Equal(t, now, graph.relations[0].CreatedAt)
+					require.Equal(t, now, graph.relations[0].SyncedAt)
+				} else {
+					require.Empty(t, graph.ownerLookups)
+					require.Empty(t, graph.relations)
+					require.Equal(t, "code-101", vertex.Properties["code"])
+				}
+				require.NotContains(t, vertex.Properties, "uuid")
+				require.Equal(t, now, vertex.CreatedAt)
+				require.Equal(t, now, vertex.SyncedAt)
+				if entity == model.EntityCabinet {
+					require.Equal(t, int64(17), vertex.Properties["idc_id"])
+					require.Equal(t, []int64{2, 3}, vertex.Properties["pod_ids"])
+				} else if entity == model.EntityDataCenter {
+					require.Equal(t, "IDC-101", vertex.Properties["cn_name"])
+				}
+				wantCleanup := !filtered && entity != model.EntityInterface
+				require.Equal(t, wantCleanup, graph.cleanup)
+				if !wantCleanup {
+					require.NotEmpty(t, observed.FilterMessage("sync orphan cleanup skipped").All())
+				} else {
+					require.Equal(t, entity, graph.cleanupType)
+					require.Equal(t, now, graph.cleanupAt)
+				}
+			})
+		}
+	}
+}
+
+func TestSyncWorkerSequentialEntitiesPreserveSourceCheckpoints(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Contains(t, []string{"/pub/api/v3/find/instance/object/idc", "/pub/api/v3/find/instance/object/cabinet"}, r.URL.Path)
+		fmt.Fprint(w, `{"result":true,"error_code":0,"data":{"count":1,"info":[{"inst_id":101,"uuid":"UUID-101","code":"code-101"}]}}`)
+	}))
+	defer server.Close()
+	conf := viper.New()
+	prefix := "inventory.cmdb.sources.test."
+	conf.Set(prefix+"base_url", server.URL)
+	conf.Set(prefix+"allow_insecure_http", true)
+	conf.Set(prefix+"data_center_condition", map[string]any{"inst_id": 101})
+	conf.Set(prefix+"cabinet_condition", map[string]any{"idc_id": 101})
+	logger := &log.Logger{Logger: zap.NewNop()}
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	defer sqlDB.Close()
+	require.NoError(t, db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}))
+	source := model.Source{ID: strings.Repeat("a", 32), Name: "test", AdapterKind: "cmdb", ConfigRef: "test", Enabled: true}
+	require.NoError(t, db.Create(&source).Error)
+	control := repository.NewInventoryRepository(repository.NewRepository(logger, db))
+	graph := &fakeDeviceGraph{}
+	worker := NewSyncWorker(conf, control, graph, adapter.NewCMDBWithClient(conf, server.Client()), logger)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	worker.now = func() time.Time { return now }
+	var previousCursor string
+	for index, entity := range []model.EntityType{model.EntityDataCenter, model.EntityCabinet} {
+		conf.Set(prefix+"entity_type", string(entity))
+		run := model.SyncRun{ID: strings.Repeat(fmt.Sprint(index+1), 32), SourceID: source.ID, Status: model.SyncRunStatusQueued, CreatedAt: now}
+		require.NoError(t, db.Create(&run).Error)
+		processed, err := worker.ProcessNext(context.Background())
+		require.NoError(t, err)
+		require.True(t, processed)
+		stored, err := control.Run(context.Background(), run.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.SyncRunStatusSucceeded, stored.Status)
+		require.Nil(t, stored.LeaseExpiresAt)
+		var checkpoint model.SyncCheckpoint
+		require.NoError(t, db.Where("source_id = ? AND resource = ?", source.ID, "data_centers").First(&checkpoint).Error)
+		require.True(t, checkpoint.Complete)
+		if index == 0 {
+			previousCursor = checkpoint.Cursor
+		} else {
+			require.Equal(t, previousCursor, checkpoint.Cursor)
+		}
+		now = now.Add(time.Minute)
+	}
+	var checkpoints []model.SyncCheckpoint
+	require.NoError(t, db.Where("source_id = ?", source.ID).Find(&checkpoints).Error)
+	require.Len(t, checkpoints, 2)
+	for _, checkpoint := range checkpoints {
+		require.True(t, checkpoint.Complete)
+	}
+	require.Len(t, graph.vertices, 2)
+	require.ElementsMatch(t, []model.EntityType{model.EntityDataCenter, model.EntityCabinet}, []model.EntityType{graph.vertices[0].Identity.EntityType, graph.vertices[1].Identity.EntityType})
+	require.False(t, graph.cleanup)
+}
+
+func TestSyncWorkerInterfacePassCancellationAndLeaseLoss(t *testing.T) {
+	for _, phase := range []int{1, 2} {
+		for _, duringOpen := range []bool{false, true} {
+			for _, leaseLost := range []bool{false, true} {
+				t.Run(fmt.Sprintf("pass=%d/open=%t/lease=%t", phase, duringOpen, leaseLost), func(t *testing.T) {
+					ctx, cancel := context.WithCancelCause(context.Background())
+					defer cancel(nil)
+					runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-1"}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}
+					page := adapter.EntityPage{Records: []adapter.EntityRecord{{Partition: 10, SourceInstanceID: 1, Identity: "PORT-1", OwnerDeviceSN: "SN-10"}}, NextOffset: 1, Total: 1, Done: true}
+					source := &fakeDeviceSource{selected: model.EntityInterface, entityPages: []adapter.EntityPage{page}, entityReplay: []adapter.EntityPage{page}}
+					interrupt := func(ctx context.Context) error {
+						if source.passOpenCalls != phase {
+							return nil
+						}
+						if leaseLost {
+							cancel(errSyncLeaseLost)
+						} else {
+							cancel(context.Canceled)
+						}
+						return ctx.Err()
+					}
+					if duringOpen {
+						source.passOpenHook = func(ctx context.Context, _ int) error { return interrupt(ctx) }
+					} else {
+						source.passPageHook = interrupt
+					}
+					graph := &fakeDeviceGraph{}
+					_, err := newWorkerForTest(runs, graph, source, time.Now()).ProcessNext(ctx)
+					if leaseLost {
+						require.ErrorIs(t, err, errSyncLeaseLost)
+						require.NotEqual(t, model.SyncRunStatusFailed, runs.run.Status)
+						require.NotEqual(t, model.SyncRunStatusCanceled, runs.run.Status)
+					} else {
+						require.NoError(t, err)
+						require.Equal(t, model.SyncRunStatusCanceled, runs.run.Status)
+					}
+					require.False(t, graph.cleanup)
+					require.False(t, runs.completeCalled)
+					if phase == 1 {
+						require.Empty(t, graph.vertices)
+						require.Empty(t, runs.advances)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestSyncWorkerInterfaceOwnerRelations(t *testing.T) {
+	now := time.Date(2026, 10, 29, 1, 2, 3, 0, time.UTC)
+	record := func(partition, id int64, owner string) adapter.EntityRecord {
+		return adapter.EntityRecord{Partition: partition, SourceInstanceID: id, Identity: fmt.Sprintf("PORT-%d-%d", partition, id), OwnerDeviceSN: owner, Properties: map[string]any{"port_name": "Ethernet1"}}
+	}
+	page := func(next, total int, records ...adapter.EntityRecord) adapter.EntityPage {
+		return adapter.EntityPage{Records: records, NextOffset: next, Total: total, Done: next == total}
+	}
+	for _, tc := range []struct {
+		name          string
+		pages         []adapter.EntityPage
+		replay        []adapter.EntityPage
+		graph         *fakeDeviceGraph
+		wantError     string
+		wantVertices  int
+		wantRelations int
+		wantLookups   int
+		wantAdvances  int
+	}{
+		{name: "writes device interface edges and caches owners across pages", pages: []adapter.EntityPage{page(2, 4, record(10, 1, "SN-A"), record(10, 2, "SN-A")), page(3, 4, record(10, 3, "SN-A")), page(4, 4, record(20, 1, "SN-B"))}, wantVertices: 4, wantRelations: 4, wantLookups: 2, wantAdvances: 3},
+		{name: "missing owner device", pages: []adapter.EntityPage{page(2, 2, record(10, 1, "SN-A"), record(10, 2, "SN-A"))}, graph: &fakeDeviceGraph{ownerMissing: true}, wantError: syncErrorGraphWrite, wantLookups: 1},
+		{name: "owner lookup failure", pages: []adapter.EntityPage{page(1, 1, record(10, 1, "SN-A"))}, graph: &fakeDeviceGraph{ownerReadErr: errors.New("read failed")}, wantError: syncErrorGraphWrite, wantLookups: 1},
+		{name: "blank owner blocks whole page", pages: []adapter.EntityPage{page(2, 2, record(10, 1, "SN-A"), record(10, 2, ""))}, wantError: syncErrorGraphWrite},
+		{name: "whitespace owner blocks whole page", pages: []adapter.EntityPage{page(1, 1, record(10, 1, " \t"))}, wantError: syncErrorGraphWrite},
+		{name: "untrimmed owner blocks whole page", pages: []adapter.EntityPage{page(1, 1, record(10, 1, " SN-A "))}, wantError: syncErrorGraphWrite},
+		{name: "mixed owners block whole partition page", pages: []adapter.EntityPage{page(2, 2, record(10, 1, "SN-A"), record(10, 2, "SN-B"))}, wantError: syncErrorGraphWrite},
+		{name: "owner changes across pages of same partition", pages: []adapter.EntityPage{page(1, 2, record(10, 1, "SN-A")), page(2, 2, record(10, 2, "SN-B"))}, wantError: syncErrorGraphWrite, wantVertices: 1, wantRelations: 1, wantLookups: 1, wantAdvances: 1},
+		{name: "vertex failure never writes relation", pages: []adapter.EntityPage{page(1, 1, record(10, 1, "SN-A"))}, graph: &fakeDeviceGraph{upsertErrAt: 1}, wantError: syncErrorGraphWrite, wantLookups: 1},
+		{name: "relation failure leaves vertex but no checkpoint", pages: []adapter.EntityPage{page(1, 1, record(10, 1, "SN-A"))}, graph: &fakeDeviceGraph{relationErrAt: 1}, wantError: syncErrorGraphWrite, wantVertices: 1, wantLookups: 1},
+		{name: "validation owner change fails digest without new writes", pages: []adapter.EntityPage{page(1, 2, record(10, 1, "SN-A")), page(2, 2, record(20, 1, "SN-B"))}, replay: []adapter.EntityPage{page(1, 2, record(10, 1, "SN-A")), page(2, 2, record(20, 1, "SN-C"))}, wantError: "entity_collection_failed", wantVertices: 2, wantRelations: 2, wantLookups: 2, wantAdvances: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-1"}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}
+			replay := tc.replay
+			if replay == nil {
+				replay = tc.pages
+			}
+			source := &fakeDeviceSource{selected: model.EntityInterface, entityPages: tc.pages, entityReplay: replay, filtered: true}
+			graph := tc.graph
+			if graph == nil {
+				graph = &fakeDeviceGraph{}
+			}
+			worker := newWorkerForTest(runs, graph, source, now)
+			_, err := worker.ProcessNext(context.Background())
+			if tc.wantError == "" {
+				require.NoError(t, err)
+				require.Equal(t, model.SyncRunStatusSucceeded, runs.run.Status)
+				require.True(t, runs.completeCalled)
+			} else {
+				require.EqualError(t, err, tc.wantError)
+				require.Equal(t, model.SyncRunStatusFailed, runs.run.Status)
+				require.Equal(t, tc.wantError, runs.run.ErrorCode)
+				require.False(t, runs.completeCalled)
+			}
+			require.False(t, graph.cleanup)
+			require.Len(t, graph.vertices, tc.wantVertices)
+			require.Len(t, graph.relations, tc.wantRelations)
+			expectedRelations := make([]model.Relation, 0, tc.wantRelations)
+			for _, page := range tc.pages {
+				for _, record := range page.Records {
+					if len(expectedRelations) == tc.wantRelations {
+						break
+					}
+					expectedRelations = append(expectedRelations, model.Relation{
+						Identity: model.RelationIdentity{
+							SourceID: "source-1",
+							EdgeType: model.EdgeComposition,
+							Kind:     model.RelationOwnsInterface,
+							From:     model.EntityIdentity{SourceID: "source-1", EntityType: model.EntityDevice, StableID: record.OwnerDeviceSN},
+							To:       model.EntityIdentity{SourceID: "source-1", EntityType: model.EntityInterface, StableID: record.Identity},
+						},
+						CreatedAt: now,
+						SyncedAt:  now,
+					})
+				}
+			}
+			require.ElementsMatch(t, expectedRelations, graph.relations)
+			require.Len(t, graph.ownerLookups, tc.wantLookups)
+			require.Len(t, runs.advances, tc.wantAdvances)
+			for _, vertex := range graph.vertices {
+				require.Equal(t, model.EntityInterface, vertex.Identity.EntityType, "owner devices must never be fabricated")
+				require.NotContains(t, vertex.Properties, "owner_device_sn")
+				require.NotContains(t, vertex.Properties, "OwnerDeviceSN")
+			}
+			if tc.wantVertices == 0 && graph.upsertErrAt == 0 {
+				require.Zero(t, graph.upsertCalls, "owner validation must finish before any page vertex write")
+			}
+			for _, owner := range graph.ownerLookups {
+				require.Equal(t, runs.source.ID, owner.SourceID)
+				require.Equal(t, model.EntityDevice, owner.EntityType)
+				require.Contains(t, []string{"SN-A", "SN-B"}, owner.StableID)
+			}
+			for _, relation := range graph.relations {
+				require.NoError(t, model.ValidateRelation(relation))
+				require.Equal(t, model.EdgeComposition, relation.Identity.EdgeType)
+				require.Equal(t, model.RelationOwnsInterface, relation.Identity.Kind)
+				require.Equal(t, runs.source.ID, relation.Identity.SourceID)
+				require.Equal(t, runs.source.ID, relation.Identity.From.SourceID)
+				require.Equal(t, runs.source.ID, relation.Identity.To.SourceID)
+				require.Equal(t, model.EntityDevice, relation.Identity.From.EntityType)
+				require.Equal(t, model.EntityInterface, relation.Identity.To.EntityType)
+				owner := "SN-A"
+				if strings.HasPrefix(relation.Identity.To.StableID, "PORT-20-") {
+					owner = "SN-B"
+				}
+				require.Equal(t, owner, relation.Identity.From.StableID)
+				require.Equal(t, now, relation.CreatedAt)
+				require.Equal(t, now, relation.SyncedAt)
+				require.Empty(t, relation.Properties)
+				expectedIdentity := model.RelationIdentity{
+					SourceID: "source-1",
+					EdgeType: model.EdgeComposition,
+					Kind:     model.RelationOwnsInterface,
+					From:     model.EntityIdentity{SourceID: "source-1", EntityType: model.EntityDevice, StableID: owner},
+					To:       model.EntityIdentity{SourceID: "source-1", EntityType: model.EntityInterface, StableID: relation.Identity.To.StableID},
+				}
+				expectedRank, err := expectedIdentity.Rank()
+				require.NoError(t, err)
+				rank, err := relation.Identity.Rank()
+				require.NoError(t, err)
+				require.Equal(t, expectedRank, rank)
+			}
+			if graph.upsertErrAt > 0 {
+				require.Zero(t, graph.relationCalls)
+			}
+			if graph.relationErrAt > 0 {
+				require.Equal(t, 1, graph.relationCalls)
+			}
+		})
+	}
+}
+
+func TestSyncWorkerInterfacePartitionPasses(t *testing.T) {
+	record := func(partition, id int64, uuid string) adapter.EntityRecord {
+		return adapter.EntityRecord{Partition: partition, SourceInstanceID: id, Identity: uuid, OwnerDeviceSN: fmt.Sprintf("SN-%d", partition), Properties: map[string]any{"port_name": uuid}}
+	}
+	page := func(next, total int, done bool, records ...adapter.EntityRecord) adapter.EntityPage {
+		return adapter.EntityPage{Records: records, NextOffset: next, Total: total, Done: done}
+	}
+	valid := []adapter.EntityPage{
+		page(1, 3, false, record(10, 901, "PORT-901")),
+		page(2, 3, false, record(10, 902, "PORT-902")),
+		page(3, 3, true, record(20, 1, "PORT-1")),
+	}
+	for _, tc := range []struct {
+		name        string
+		pages       []adapter.EntityPage
+		replay      []adapter.EntityPage
+		openErrAt   int
+		wantSuccess bool
+	}{
+		{name: "actual IDs descend across devices", pages: valid, wantSuccess: true},
+		{name: "duplicate UUID across devices", pages: []adapter.EntityPage{page(1, 2, false, record(10, 901, "same")), page(2, 2, true, record(20, 1, "same"))}},
+		{name: "changed validation partition", pages: valid, replay: []adapter.EntityPage{valid[0], valid[1], page(3, 3, true, record(21, 1, "PORT-1"))}},
+		{name: "changed validation identity", pages: valid, replay: []adapter.EntityPage{valid[0], valid[1], page(3, 3, true, record(20, 1, "different"))}},
+		{name: "changed validation actual ID", pages: valid, replay: []adapter.EntityPage{valid[0], valid[1], page(3, 3, true, record(20, 2, "PORT-1"))}},
+		{name: "changed validation count", pages: valid, replay: []adapter.EntityPage{page(1, 4, false, record(10, 901, "PORT-901"))}},
+		{name: "missing partition", pages: []adapter.EntityPage{page(1, 1, true, record(0, 1, "PORT-1"))}},
+		{name: "negative partition", pages: []adapter.EntityPage{page(1, 1, true, record(-1, 1, "PORT-1"))}},
+		{name: "partition regresses", pages: []adapter.EntityPage{page(1, 2, false, record(20, 1, "PORT-1")), page(2, 2, true, record(10, 2, "PORT-2"))}},
+		{name: "mixed partition page", pages: []adapter.EntityPage{page(2, 2, true, record(10, 1, "PORT-1"), record(20, 2, "PORT-2"))}},
+		{name: "same partition IDs decrease", pages: []adapter.EntityPage{page(1, 2, false, record(10, 2, "PORT-2")), page(2, 2, true, record(10, 1, "PORT-1"))}},
+		{name: "same page IDs decrease", pages: []adapter.EntityPage{page(2, 2, true, record(10, 2, "PORT-2"), record(10, 1, "PORT-1"))}},
+		{name: "nonpositive actual ID", pages: []adapter.EntityPage{page(1, 1, true, record(10, 0, "PORT-1"))}},
+		{name: "manifest open fails", pages: valid, openErrAt: 1},
+		{name: "validation manifest open fails", pages: valid, openErrAt: 2},
+		{name: "empty manifest", pages: []adapter.EntityPage{page(0, 0, true)}, wantSuccess: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-1"}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}
+			replay := tc.replay
+			if replay == nil {
+				replay = tc.pages
+			}
+			source := &fakeDeviceSource{selected: model.EntityInterface, entityPages: tc.pages, entityReplay: replay, passOpenErrAt: tc.openErrAt}
+			graph := &fakeDeviceGraph{}
+			_, err := newWorkerForTest(runs, graph, source, time.Now()).ProcessNext(context.Background())
+			if !tc.wantSuccess {
+				require.EqualError(t, err, "entity_collection_failed")
+				require.Equal(t, model.SyncRunStatusFailed, runs.run.Status)
+				require.False(t, graph.cleanup)
+				require.False(t, runs.completeCalled)
+				if tc.openErrAt == 1 {
+					require.Empty(t, graph.vertices)
+					require.Empty(t, source.offsets)
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, model.SyncRunStatusSucceeded, runs.run.Status)
+			require.True(t, graph.cleanup)
+			require.True(t, runs.completeCalled)
+			require.Equal(t, 2, source.passOpenCalls)
+			if len(tc.pages[0].Records) == 0 {
+				require.Empty(t, graph.vertices)
+				return
+			}
+			require.Len(t, runs.advances, 3)
+			require.Equal(t, int64(20), runs.advances[2].cursor.LastPartition)
+			require.Equal(t, int64(1), runs.advances[2].cursor.LastInstanceID)
+			identities := make([]string, 0, len(graph.vertices))
+			for _, vertex := range graph.vertices {
+				require.Equal(t, model.EntityInterface, vertex.Identity.EntityType)
+				identities = append(identities, vertex.Identity.StableID)
+			}
+			require.ElementsMatch(t, []string{"PORT-901", "PORT-902", "PORT-1"}, identities)
+			require.Equal(t, []int{0, 1, 2, 0, 1, 2}, source.offsets)
+		})
+	}
+}
+
+func TestSyncWorkerEntityFailuresNeverCleanup(t *testing.T) {
+	record := func(id int64, uuid string) adapter.EntityRecord {
+		return adapter.EntityRecord{SourceInstanceID: id, Identity: uuid, Properties: map[string]any{"code": uuid}}
+	}
+	page := func(next, total int, done bool, records ...adapter.EntityRecord) adapter.EntityPage {
+		return adapter.EntityPage{Records: records, NextOffset: next, Total: total, Done: done}
+	}
+	valid := page(1, 1, true, record(1, "UUID-1"))
+	for _, entity := range []model.EntityType{model.EntityDataCenter, model.EntityCabinet} {
+		for _, tc := range []struct {
+			name          string
+			pages         []adapter.EntityPage
+			replay        []adapter.EntityPage
+			writeErr      bool
+			checkpointErr bool
+			cancel        bool
+			want          string
+		}{
+			{name: "duplicate identity", pages: []adapter.EntityPage{page(2, 2, true, record(1, "same"), record(2, "same"))}, want: "entity_collection_failed"},
+			{name: "cross page order", pages: []adapter.EntityPage{page(1, 2, false, record(2, "UUID-2")), page(2, 2, true, record(1, "UUID-1"))}, want: "entity_collection_failed"},
+			{name: "changed identity", pages: []adapter.EntityPage{valid}, replay: []adapter.EntityPage{page(1, 1, true, record(2, "UUID-2"))}, want: "entity_collection_failed"},
+			{name: "changed count", pages: []adapter.EntityPage{valid}, replay: []adapter.EntityPage{page(1, 2, false, record(1, "UUID-1"))}, want: "entity_collection_failed"},
+			{name: "bad offset", pages: []adapter.EntityPage{page(0, 1, true, record(1, "UUID-1"))}, want: "entity_collection_failed"},
+			{name: "graph error", pages: []adapter.EntityPage{valid}, writeErr: true, want: syncErrorGraphWrite},
+			{name: "checkpoint error", pages: []adapter.EntityPage{valid}, checkpointErr: true, want: syncErrorCheckpoint},
+			{name: "canceled", pages: []adapter.EntityPage{valid}, cancel: true},
+		} {
+			t.Run(string(entity)+"/"+tc.name, func(t *testing.T) {
+				runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-1"}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}
+				if tc.checkpointErr {
+					runs.advanceErr = errors.New("checkpoint error")
+				}
+				if tc.cancel {
+					runs.cancelChecks = []bool{false, true}
+				}
+				source := &fakeDeviceSource{selected: entity, entityPages: append([]adapter.EntityPage(nil), tc.pages...), entityReplay: tc.replay}
+				graph := &fakeDeviceGraph{}
+				if tc.writeErr {
+					graph.upsertErrAt = 1
+				}
+				_, err := newWorkerForTest(runs, graph, source, time.Now()).ProcessNext(context.Background())
+				if tc.cancel {
+					require.NoError(t, err)
+					require.Equal(t, model.SyncRunStatusCanceled, runs.run.Status)
+				} else {
+					require.EqualError(t, err, tc.want)
+					require.Equal(t, model.SyncRunStatusFailed, runs.run.Status)
+				}
+				require.False(t, graph.cleanup)
+				require.False(t, runs.completeCalled)
+			})
+		}
+	}
+}
+
+func TestSyncWorkerRejectsInvalidSelectionBeforeWriting(t *testing.T) {
+	for _, source := range []*fakeDeviceSource{
+		{selected: model.EntityPod}, {selectionErr: errors.New("invalid config")}, {coverageErr: errors.New("invalid condition")},
+	} {
+		runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-1"}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}
+		graph := &fakeDeviceGraph{}
+		_, err := newWorkerForTest(runs, graph, source, time.Now()).ProcessNext(context.Background())
+		require.EqualError(t, err, syncErrorSourceValidation)
+		require.Empty(t, graph.vertices)
+		require.Empty(t, source.offsets)
+		require.False(t, graph.cleanup)
+		require.Nil(t, runs.checkpoint)
+	}
+}
+
+func TestSyncWorkerFilteredDeviceSkipsCleanup(t *testing.T) {
+	for _, changed := range []bool{false, true} {
+		runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-1"}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}
+		source := &fakeDeviceSource{filtered: !changed, coverageChanged: changed, pages: []fakeDevicePage{
+			devicePage(0, 1, 1, true, adapter.DeviceRecord{SourceInstanceID: 1, DeviceSN: "SN-1"}),
+		}}
+		graph := &fakeDeviceGraph{}
+		_, err := newWorkerForTest(runs, graph, source, time.Now()).ProcessNext(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, model.SyncRunStatusSucceeded, runs.run.Status)
+		require.False(t, graph.cleanup)
+	}
 }
 
 func TestSyncWorkerLiveCMDBToNebula(t *testing.T) {
