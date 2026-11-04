@@ -282,9 +282,6 @@ func uplinkDiagnosticCauses(source string, ref adapter.UplinkDiagnosticReference
 		if graph.Port.text("port_uuid") != ref.PortUUID {
 			causes = append(causes, "port_identity_mismatch")
 		}
-		if graph.Port.text("port_type") != "physics" {
-			causes = append(causes, "port_wrong_type")
-		}
 	}
 	owners := []uplinkDiagnosticFields{}
 	for _, owner := range graph.Owners {
@@ -401,7 +398,8 @@ func TestUplinkDiagnosticCauses(t *testing.T) {
 		{"null_category", func(g *uplinkDiagnosticObservation) { g.Server["category"] = uplinkDiagnosticValue{} }, []string{"server_wrong_category"}},
 		{"wrong_tor_category", func(g *uplinkDiagnosticObservation) { g.Tor["category"] = integer(52) }, []string{"tor_wrong_category"}},
 		{"missing_port_and_owner", func(g *uplinkDiagnosticObservation) { g.Port = nil; g.Owners = nil }, []string{"port_missing", "ownership_missing"}},
-		{"wrong_port_type", func(g *uplinkDiagnosticObservation) { g.Port["port_type"] = text("virtual") }, []string{"port_wrong_type"}},
+		{"aggregate_port", func(g *uplinkDiagnosticObservation) { g.Port["port_type"] = text("aggregation") }, []string{}},
+		{"virtual_port", func(g *uplinkDiagnosticObservation) { g.Port["port_type"] = text("virtual") }, []string{}},
 		{"multiple_owners", func(g *uplinkDiagnosticObservation) { g.Owners = append(g.Owners, g.Owners[0]) }, []string{"ownership_multiple"}},
 		{"wrong_owner", func(g *uplinkDiagnosticObservation) {
 			g.Owners[0]["sn"] = text("other")

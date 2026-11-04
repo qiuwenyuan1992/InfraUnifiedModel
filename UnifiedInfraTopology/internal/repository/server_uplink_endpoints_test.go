@@ -15,18 +15,23 @@ func TestServerUplinkEndpointsRequireUniqueCorrectTypedOwner(t *testing.T) {
 	server := model.EntityIdentity{SourceID: "source", EntityType: model.EntityDevice, StableID: "SERVER"}
 	tor := model.EntityIdentity{SourceID: "source", EntityType: model.EntityDevice, StableID: "TOR"}
 	port := model.EntityIdentity{SourceID: "source", EntityType: model.EntityInterface, StableID: "PORT"}
-	for _, failure := range []string{"", "absent", "multiple", "wrong tor", "wrong server type", "wrong tor type", "wrong port type", "wrong source"} {
+	for _, failure := range []string{"", "aggregation", "virtual", "absent", "multiple", "wrong server", "wrong tor", "wrong port UUID", "wrong server type", "wrong tor type", "wrong source"} {
 		t.Run(failure, func(t *testing.T) {
 			values := []any{"SERVER", int64(52), "source", "TOR", int64(54), "PORT", "physics"}
 			switch failure {
+			case "aggregation", "virtual":
+				values[6] = failure
+			case "wrong server":
+				values[0] = "other"
+			case "wrong port UUID":
+				values[5] = "other"
 			case "wrong tor":
 				values[3] = "other"
 			case "wrong server type":
 				values[1] = int64(54)
 			case "wrong tor type":
 				values[4] = int64(52)
-			case "wrong port type":
-				values[6] = "virtual"
+
 			case "wrong source":
 				values[2] = "other"
 			}
@@ -55,7 +60,7 @@ func TestServerUplinkEndpointsRequireUniqueCorrectTypedOwner(t *testing.T) {
 			repo := &topologyGraphRepository{client: &topologyGraphFake{results: []*nebulago.ResultSet{result}}}
 			ok, err := repo.ServerUplinkEndpointsValid(context.Background(), server, tor, port)
 			require.NoError(t, err)
-			require.Equal(t, failure == "", ok)
+			require.Equal(t, failure == "" || failure == "aggregation" || failure == "virtual", ok)
 		})
 	}
 }

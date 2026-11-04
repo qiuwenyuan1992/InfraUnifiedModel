@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"UnifiedInfraTopology/internal/model"
+	"UnifiedInfraTopology/internal/service"
 	graphclient "UnifiedInfraTopology/pkg/nebula"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/viper"
@@ -73,7 +74,9 @@ func persistenceGraphQuery(entity model.EntityType, current, count bool) (string
 		identity = "device_sn"
 	case model.EntityInterface:
 		identity = "port_uuid"
-	case model.EntityDataCenter, model.EntityCabinet, model.EntityTransformer:
+	case model.EntityDataCenter, model.EntityCabinet, model.EntityPod:
+	case model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP:
+		identity = "inst_id"
 	default:
 		return "", errors.New("unsupported verification entity")
 	}
@@ -89,6 +92,8 @@ func persistenceGraphQuery(entity model.EntityType, current, count bool) (string
 	query += ", " + tag + "." + identity + " AS identity, toString(" + tag + ".created_at) AS created_at, toString(" + tag + ".synced_at) AS synced_at"
 	if entity == model.EntityInterface {
 		query += ", interface.port_name AS code, interface.port_speed AS port_speed, interface.port_operation_status AS port_operation_status, interface.port_type AS port_type"
+	} else if entity == model.EntityPod {
+		query += ", pod.basic_code AS code"
 	} else if entity != model.EntityDevice {
 		query += ", " + tag + ".code AS code"
 	}
@@ -102,14 +107,28 @@ func persistenceCheckGraphResult(result *nebulago.ResultSet, err error) error {
 	return nil
 }
 
+func persistenceSnapshotMatches(started *time.Time, snapshot, expected time.Time) bool {
+	if started == nil || snapshot.IsZero() {
+		return false
+	}
+	if expected.IsZero() {
+		expected = service.SyncSnapshot(context.Background(), *started)
+	}
+	return !expected.After(*started) && snapshot.Equal(expected)
+}
+
 func validatePersistenceReport(r *persistenceReport, rows []persistenceSample) error {
+	return validatePersistenceReportAt(r, rows, time.Time{})
+}
+
+func validatePersistenceReportAt(r *persistenceReport, rows []persistenceSample, expected time.Time) error {
 	fail := func() error { return errors.New("persisted run, checkpoint, or graph snapshot does not match") }
 	if r.Run == nil || r.Checkpoint == nil {
 		return fail()
 	}
 	run, checkpoint := r.Run, r.Checkpoint
 	cursor := checkpoint.Cursor
-	if run.SourceID != r.SourceID || run.Status != model.SyncRunStatusSucceeded || run.StartedAt == nil || run.FinishedAt == nil || run.LeaseExpiresAt != nil || run.FinishedAt.Before(*run.StartedAt) || !checkpoint.Complete || checkpoint.CompletedAt == nil || cursor.Version != 1 || cursor.RunID != run.ID || !cursor.SnapshotAt.Equal(*run.StartedAt) || cursor.Total < 0 || cursor.NextOffset != cursor.Total || r.GraphCurrent != cursor.Total || r.GraphTotal < r.GraphCurrent || int64(len(rows)) != r.GraphCurrent {
+	if run.SourceID != r.SourceID || run.Status != model.SyncRunStatusSucceeded || run.StartedAt == nil || run.FinishedAt == nil || run.LeaseExpiresAt != nil || run.FinishedAt.Before(*run.StartedAt) || !checkpoint.Complete || checkpoint.CompletedAt == nil || cursor.Version != 1 || cursor.RunID != run.ID || !persistenceSnapshotMatches(run.StartedAt, cursor.SnapshotAt, expected) || cursor.Total < 0 || cursor.NextOffset != cursor.Total || r.GraphCurrent != cursor.Total || r.GraphTotal < r.GraphCurrent || int64(len(rows)) != r.GraphCurrent {
 		return fail()
 	}
 	seen := make(map[string]bool, len(rows))
@@ -168,6 +187,14 @@ func verifyPersistence(ctx context.Context, conf *viper.Viper, sourceID string, 
 		r.Resource = "interfaces"
 	case model.EntityTransformer:
 		r.Resource = "transformers"
+	case model.EntityUPSGroup:
+		r.Resource = "ups_groups"
+	case model.EntityUPS:
+		r.Resource = "ups"
+	case model.EntityRPP:
+		r.Resource = "rpps"
+	case model.EntityPod:
+		r.Resource = "pods"
 	}
 	var enabled bool
 	if err := db.QueryRowContext(ctx, "SELECT config_ref, enabled FROM sources WHERE id = ?", sourceID).Scan(&r.ConfigRef, &enabled); err != nil {
@@ -272,7 +299,7 @@ func verifyPersistence(ctx context.Context, conf *viper.Viper, sourceID string, 
 		}
 		samples = append(samples, sample)
 	}
-	if err := validatePersistenceReport(&r, samples); err != nil {
+	if err := validatePersistenceReportAt(&r, samples, service.SyncSnapshot(ctx, time.Time{})); err != nil {
 		r.Status = "FAIL"
 		_ = json.NewEncoder(output).Encode(r)
 		return err

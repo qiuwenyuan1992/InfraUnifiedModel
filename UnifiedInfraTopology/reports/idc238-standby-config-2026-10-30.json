@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-30",
+  "user_confirmed_rule": "Two or more transformers may form arbitrary standby configuration cycles. Do not interpret has_standby as primary power flow or reject it because of a cycle.",
+  "retained_checks": ["no self-reference", "unique resolvable target", "existing same-source endpoints", "model identity and rank", "valid timestamps"],
+  "primary_power_flow_rule_changed": false,
+  "run_id": "1ee217eedb26166bdab7cd3fb0b45691",
+  "source_id": "00000000000000000000000000000238",
+  "snapshot_at": "2026-10-30T13:48:30.921626Z",
+  "status": "succeeded",
+  "checkpoint_complete": true,
+  "lease_released": true,
+  "graph": {"total": 5438, "current": 5438, "valid_endpoint_paths": 5438, "power_upstream": 5349, "member_of": 67, "has_standby": 22},
+  "live_source_scope": "Current source has eleven reciprocal pairs. Three- and four-node cycles were verified in regression tests, not observed in the live source.",
+  "diagnostics": {"skipped_invalid_references": 12, "empty_optional_references": 6, "rpp_consistency_conflicts": 110, "cycles_rejected": 0},
+  "verification": {"independent_database_check": "PASS", "three_and_four_node_cycle_tests": "PASS", "self_reference_rejection": "PASS", "all_packages": "PASS", "service_worker_race": "PASS", "vet": "PASS", "build": "PASS", "diff_check": "PASS"},
+  "data_deleted": false,
+  "schema_changed": false,
+  "git_committed": false
+}

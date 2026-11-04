@@ -59,7 +59,7 @@ func TestSyncWorkerInterfaceCheckpointAdvancesAcrossPartitions(t *testing.T) {
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	defer sqlDB.Close()
-	require.NoError(t, db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}))
+	require.NoError(t, db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}, &model.SyncRound{}, &model.SyncRoundPhase{}))
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	lease := now.Add(time.Minute)
 	source := model.Source{ID: "source-1", Name: "test", AdapterKind: "cmdb", Enabled: true}
@@ -98,6 +98,109 @@ func TestSyncWorkerInterfaceCheckpointAdvancesAcrossPartitions(t *testing.T) {
 			require.ErrorIs(t, err, repository.ErrInventoryConflict)
 		})
 	}
+}
+
+func TestSyncWorkerInjectedSnapshotKeepsRealClaimAndLease(t *testing.T) {
+	for _, claimed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("claimed=%v", claimed), func(t *testing.T) {
+			started := time.Now().UTC().Truncate(time.Microsecond)
+			snapshot := started.Add(-time.Hour)
+			lease := started.Add(time.Minute)
+			runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-1", SourceID: "source-1", Status: model.SyncRunStatusRunning, StartedAt: &started, LeaseExpiresAt: &lease}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}
+			graph := &fakeDeviceGraph{}
+			source := &fakeDeviceSource{pages: []fakeDevicePage{devicePage(0, 1, 1, true, adapter.DeviceRecord{SourceInstanceID: 1, DeviceSN: "sn-1"})}}
+			worker := NewSyncWorker(nil, runs, graph, source, &log.Logger{Logger: zap.NewNop()})
+			ctx := WithSyncSnapshot(context.Background(), snapshot)
+			if claimed {
+				require.NoError(t, worker.ProcessClaimed(ctx, runs.run, *runs.source))
+			} else {
+				processed, err := worker.ProcessNext(ctx)
+				require.NoError(t, err)
+				require.True(t, processed)
+				require.False(t, runs.claimAt.Before(started))
+			}
+			require.NoError(t, ctx.Err())
+			require.False(t, runs.run.StartedAt.Before(started))
+			require.Equal(t, lease, *runs.run.LeaseExpiresAt)
+			require.Equal(t, snapshot, runs.beginAt)
+			require.Equal(t, snapshot, runs.checkpoint.Cursor.SnapshotAt)
+			require.Len(t, graph.vertices, 1)
+			require.Equal(t, snapshot, graph.vertices[0].SyncedAt)
+			require.Equal(t, snapshot, graph.cleanupAt)
+			require.False(t, runs.completeAt.Before(started))
+			for _, transition := range runs.transitions {
+				require.False(t, transition.at.Before(started))
+			}
+			for _, advance := range runs.advances {
+				require.False(t, advance.at.Before(started))
+			}
+		})
+	}
+}
+
+func TestSyncWorkerInjectedSnapshotRejectsDifferentResumedCheckpoint(t *testing.T) {
+	started := time.Now().UTC().Truncate(time.Microsecond)
+	snapshot := started.Add(-time.Hour)
+	runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-1", SourceID: "source-1"}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}, checkpoint: &repository.DeviceSyncCheckpoint{Cursor: repository.DeviceSyncCursor{Version: 1, RunID: "run-1", SnapshotAt: snapshot.Add(-time.Second)}}}
+	graph := &fakeDeviceGraph{}
+	source := &fakeDeviceSource{pages: []fakeDevicePage{devicePage(0, 0, 0, true)}}
+	worker := NewSyncWorker(nil, runs, graph, source, &log.Logger{Logger: zap.NewNop()})
+	processed, err := worker.ProcessNext(WithSyncSnapshot(context.Background(), snapshot))
+	require.True(t, processed)
+	require.Error(t, err)
+	require.Equal(t, syncErrorCheckpoint, runs.run.ErrorCode)
+	require.False(t, runs.completeCalled)
+	require.Empty(t, graph.vertices)
+}
+
+type snapshotWorkerRuns struct {
+	fakeWorkerRuns
+	renewed chan time.Time
+}
+
+func (f *snapshotWorkerRuns) RenewRunLease(_ context.Context, _ string, at time.Time) error {
+	select {
+	case f.renewed <- at:
+	default:
+	}
+	return nil
+}
+
+func TestSyncWorkerInjectedSnapshotUsesRealHeartbeat(t *testing.T) {
+	started := time.Now().UTC().Truncate(time.Microsecond)
+	snapshot := started.Add(-time.Hour)
+	lease := started.Add(time.Minute)
+	runs := &snapshotWorkerRuns{fakeWorkerRuns: fakeWorkerRuns{run: &model.SyncRun{ID: "run-1", SourceID: "source-1", Status: model.SyncRunStatusRunning, StartedAt: &started, LeaseExpiresAt: &lease}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}, renewed: make(chan time.Time, 16)}
+	page := adapter.EntityPage{Records: []adapter.EntityRecord{{SourceInstanceID: 1, Identity: "pod-1"}}, NextOffset: 1, Total: 1, Done: true}
+	source := &fakeDeviceSource{selected: model.EntityPod, filtered: true, entityPages: []adapter.EntityPage{page}, entityReplay: []adapter.EntityPage{page}}
+	source.passPageHook = func(ctx context.Context) error {
+		select {
+		case at := <-runs.renewed:
+			require.False(t, at.Before(started))
+			require.True(t, at.After(snapshot))
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	graph := &fakeDeviceGraph{}
+	worker := NewSyncWorker(nil, runs, graph, source, &log.Logger{Logger: zap.NewNop()})
+	worker.leaseRenewInterval = time.Millisecond
+	ctx, cancel := context.WithTimeout(WithSyncSnapshot(context.Background(), snapshot), time.Second)
+	defer cancel()
+	require.NoError(t, worker.ProcessClaimed(ctx, runs.run, *runs.source))
+	require.Equal(t, started, *runs.run.StartedAt)
+	require.Equal(t, lease, *runs.run.LeaseExpiresAt)
+	require.Equal(t, snapshot, runs.beginAt)
+	require.Equal(t, snapshot, graph.vertices[0].SyncedAt)
+}
+
+func TestSyncWorkerInjectedSnapshotCannotReviveExpiredLease(t *testing.T) {
+	started := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour)
+	expired := started.Add(time.Minute)
+	worker := NewSyncWorker(nil, &fakeWorkerRuns{}, &fakeDeviceGraph{}, &fakeDeviceSource{}, &log.Logger{Logger: zap.NewNop()})
+	run := &model.SyncRun{ID: "run-1", SourceID: "source-1", Status: model.SyncRunStatusRunning, StartedAt: &started, LeaseExpiresAt: &expired}
+	require.ErrorIs(t, worker.ProcessClaimed(WithSyncSnapshot(context.Background(), started.Add(-time.Hour)), run, model.Source{ID: "source-1"}), repository.ErrInventoryConflict)
 }
 
 func TestSyncWorkerProcessClaimedRejectsUnownedRun(t *testing.T) {
@@ -262,6 +365,7 @@ type fakeDeviceSource struct {
 	passOpenErrAt   int
 	passPageHook    func(context.Context) error
 	passOpenHook    func(context.Context, int) error
+	scopeDigests    []string
 }
 
 func (f *fakeDeviceSource) SelectedEntity(model.Source) (model.EntityType, error) {
@@ -291,8 +395,14 @@ func (f *fakeDeviceSource) CollectEntityPage(_ context.Context, _ model.Source, 
 }
 
 type fakeEntityPass struct {
-	source *fakeDeviceSource
-	pages  []adapter.EntityPage
+	source      *fakeDeviceSource
+	pages       []adapter.EntityPage
+	scopeDigest string
+}
+
+func (p *fakeEntityPass) ScopeDigest() string { return p.scopeDigest }
+func (p *fakeEntityPass) ScopeSummary() map[string]int {
+	return map[string]int{"num_references": 2, "resolved": 2, "unresolved": 0}
 }
 
 func (f *fakeDeviceSource) OpenEntityPass(ctx context.Context, _ model.Source, entity model.EntityType) (adapter.EntityPageStream, error) {
@@ -302,14 +412,18 @@ func (f *fakeDeviceSource) OpenEntityPass(ctx context.Context, _ model.Source, e
 			return nil, err
 		}
 	}
-	if entity != model.EntityInterface || f.passOpenCalls == f.passOpenErrAt {
+	if (entity != model.EntityInterface && entity != model.EntityPod) || f.passOpenCalls == f.passOpenErrAt {
 		return nil, errors.New("manifest construction failed")
 	}
 	pages := f.entityPages
 	if f.passOpenCalls > 1 {
 		pages = f.entityReplay
 	}
-	return &fakeEntityPass{source: f, pages: append([]adapter.EntityPage(nil), pages...)}, nil
+	scopeDigest := ""
+	if len(f.scopeDigests) >= f.passOpenCalls {
+		scopeDigest = f.scopeDigests[f.passOpenCalls-1]
+	}
+	return &fakeEntityPass{source: f, pages: append([]adapter.EntityPage(nil), pages...), scopeDigest: scopeDigest}, nil
 }
 
 func (p *fakeEntityPass) Page(ctx context.Context, offset int) (adapter.EntityPage, error) {
@@ -455,6 +569,65 @@ func newWorkerWithConfigForTest(conf *viper.Viper, runs *fakeWorkerRuns, graph *
 
 func devicePage(offset, nextOffset, total int, done bool, records ...adapter.DeviceRecord) fakeDevicePage {
 	return fakeDevicePage{offset: offset, page: adapter.DevicePage{Records: records, NextOffset: nextOffset, Total: total, Done: done}}
+}
+
+func TestSyncWorkerPodPasses(t *testing.T) {
+	first := adapter.EntityPage{Records: []adapter.EntityRecord{{SourceInstanceID: 101, Identity: "POD-101", Properties: map[string]any{"basic_code": "POD-A"}}}, NextOffset: 1, Total: 2}
+	last := adapter.EntityPage{Records: []adapter.EntityRecord{{SourceInstanceID: 102, Identity: "POD-102", Properties: map[string]any{"basic_code": "POD-B"}}}, NextOffset: 2, Total: 2, Done: true}
+	for _, scenario := range []string{"success", "identity changed", "references changed", "partition invalid", "first open error", "replay open error", "empty"} {
+		t.Run(scenario, func(t *testing.T) {
+			runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-1", SourceID: "source-1", Status: model.SyncRunStatusQueued}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}
+			graph := &fakeDeviceGraph{}
+			source := &fakeDeviceSource{selected: model.EntityPod, filtered: true, entityPages: []adapter.EntityPage{first, last}, entityReplay: []adapter.EntityPage{first, last}, scopeDigests: []string{"references-a", "references-a"}}
+			switch scenario {
+			case "identity changed":
+				source.entityReplay[1].Records = []adapter.EntityRecord{{SourceInstanceID: 102, Identity: "POD-CHANGED"}}
+			case "references changed":
+				source.scopeDigests[1] = "references-b"
+			case "partition invalid":
+				source.entityPages[0].Records = []adapter.EntityRecord{{SourceInstanceID: 101, Identity: "POD-101", Partition: 1}}
+			case "first open error":
+				source.passOpenErrAt = 1
+			case "replay open error":
+				source.passOpenErrAt = 2
+			case "empty":
+				source.entityPages = []adapter.EntityPage{{Done: true}}
+				source.entityReplay = []adapter.EntityPage{{Done: true}}
+			}
+			worker := newWorkerForTest(runs, graph, source, time.Now())
+			processed, err := worker.ProcessNext(context.Background())
+			require.True(t, processed)
+			require.False(t, graph.cleanup)
+			require.Empty(t, graph.ownerLookups)
+			require.Empty(t, graph.relations)
+			if scenario != "success" && scenario != "empty" {
+				require.Error(t, err)
+				require.Equal(t, model.SyncRunStatusFailed, runs.run.Status)
+				require.Equal(t, "entity_collection_failed", runs.run.ErrorCode)
+				require.False(t, runs.completeCalled)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, model.SyncRunStatusSucceeded, runs.run.Status)
+			require.Equal(t, 2, source.passOpenCalls)
+			if scenario == "empty" {
+				require.Empty(t, graph.vertices)
+				require.Equal(t, []int{0, 0}, source.offsets)
+				return
+			}
+			require.Equal(t, []int{0, 1, 0, 1}, source.offsets)
+			require.Len(t, graph.vertices, 2)
+			for _, vertex := range graph.vertices {
+				require.Equal(t, model.EntityPod, vertex.Identity.EntityType)
+				require.Contains(t, []string{"POD-101", "POD-102"}, vertex.Identity.StableID)
+				require.NotContains(t, vertex.Properties, "uuid")
+				require.Contains(t, vertex.Properties, "basic_code")
+			}
+			for _, advance := range runs.advances {
+				require.Zero(t, advance.cursor.LastPartition)
+			}
+		})
+	}
 }
 
 func TestSyncWorkerProcessNextPublishesPagedDeviceSnapshot(t *testing.T) {
@@ -801,7 +974,7 @@ func TestSyncWorkerDeviceViewVerticalFlow(t *testing.T) {
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	defer sqlDB.Close()
-	require.NoError(t, db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}))
+	require.NoError(t, db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}, &model.SyncRound{}, &model.SyncRoundPhase{}))
 
 	source := model.Source{ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Name: "test", AdapterKind: "cmdb", ConfigRef: "test", Enabled: true}
 	run := model.SyncRun{
@@ -830,7 +1003,7 @@ func TestSyncWorkerDeviceViewVerticalFlow(t *testing.T) {
 }
 
 func TestSyncWorkerSelectedEntityVerticalFlow(t *testing.T) {
-	for _, entity := range []model.EntityType{model.EntityDataCenter, model.EntityCabinet, model.EntityInterface, model.EntityTransformer} {
+	for _, entity := range []model.EntityType{model.EntityDataCenter, model.EntityCabinet, model.EntityInterface, model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP} {
 		for _, filtered := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/filtered=%t", entity, filtered), func(t *testing.T) {
 				object, resource := "idc", "data_centers"
@@ -840,11 +1013,18 @@ func TestSyncWorkerSelectedEntityVerticalFlow(t *testing.T) {
 					object, resource = "port_view", "interfaces"
 				} else if entity == model.EntityTransformer {
 					object, resource = "idc_transformer", "transformers"
+				} else if entity == model.EntityUPSGroup {
+					object, resource = "idc_ups_group", "ups_groups"
+				} else if entity == model.EntityUPS {
+					object, resource = "idc_ups", "ups"
+				} else if entity == model.EntityRPP {
+					object, resource = "idc_RPP", "rpps"
 				}
 				requests := 0
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					var body struct {
 						Condition map[string]any `json:"condition"`
+						Fields    []string       `json:"fields"`
 					}
 					require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 					requests++
@@ -859,12 +1039,28 @@ func TestSyncWorkerSelectedEntityVerticalFlow(t *testing.T) {
 					}
 					require.Equal(t, "/pub/api/v3/find/instance/object/"+object, r.URL.Path)
 					if entity == model.EntityInterface {
-						require.Equal(t, map[string]any{"idc_id": float64(17), "sn": "SN-101", "port_type": "physics"}, body.Condition)
+						require.Equal(t, map[string]any{"idc_id": float64(17), "sn": "SN-101"}, body.Condition)
 					} else {
 						require.Equal(t, filtered, len(body.Condition) > 0)
 					}
 					if entity == model.EntityInterface {
 						fmt.Fprint(w, `{"result":true,"error_code":0,"data":{"count":1,"info":[{"inst_id":101,"uuid":"VIEW-101","port_uuid":"UUID-101","port_name":"Ethernet1","port_type":"physics","port_speed":10000,"port_operation_status":1,"port_group_name":"uplink","group_type":3,"port_group_type":6,"group_subtype":0}]}}`)
+					} else if entity == model.EntityUPS || entity == model.EntityRPP {
+						if filtered {
+							require.Equal(t, map[string]any{"idc": float64(1030)}, body.Condition)
+						}
+						if entity == model.EntityUPS {
+							require.ElementsMatch(t, []string{"inst_id", "code", "idc", "ups_group", "transformer_id_up", "ups_brand", "ups_type", "ups_capacity", "create_time", "last_time"}, body.Fields)
+						} else {
+							require.ElementsMatch(t, []string{"inst_id", "code", "idc", "ups_group", "transformer_group_a", "create_time", "last_time"}, body.Fields)
+						}
+						fmt.Fprint(w, `{"result":true,"error_code":0,"data":{"count":1,"info":[{"inst_id":101,"uuid":"UUID-101","code":"code-101","idc":1030,"ups_group":1156,"transformer_id_up":1588,"transformer_group_a":1588,"ups_brand":"brand","ups_type":"model","ups_capacity":500,"create_time":"2024-08-13T14:53:29.417+08:00","last_time":"2024-09-03T13:26:35.408+08:00","building":404}]}}`)
+					} else if entity == model.EntityUPSGroup {
+						require.ElementsMatch(t, []string{"inst_id", "code", "idc", "transformer_id_up", "create_time", "last_time"}, body.Fields)
+						if filtered {
+							require.Equal(t, map[string]any{"idc": float64(17)}, body.Condition)
+						}
+						fmt.Fprint(w, `{"result":true,"error_code":0,"data":{"count":1,"info":[{"inst_id":101,"uuid":"UUID-101","code":"code-101","idc":17,"transformer_id_up":102,"create_time":"2024-08-13T14:53:29.417+08:00","last_time":"2024-09-03T13:26:35.408+08:00","ups_group_num":3,"ups_external_bypass":1}]}}`)
 					} else if entity == model.EntityTransformer {
 						fmt.Fprint(w, `{"result":true,"error_code":0,"data":{"count":1,"info":[{"inst_id":101,"uuid":"UUID-101","code":"code-101","idc":17,"standby_transformer":102,"transformer_brand":"brand","transformer_type":"model","transformer_capacity":2500}]}}`)
 					} else {
@@ -888,10 +1084,14 @@ func TestSyncWorkerSelectedEntityVerticalFlow(t *testing.T) {
 					key := "idc_id"
 					if entity == model.EntityDataCenter {
 						key = "inst_id"
-					} else if entity == model.EntityTransformer {
+					} else if entity == model.EntityTransformer || entity == model.EntityUPSGroup {
 						key = "idc"
 					}
-					conf.Set("inventory.cmdb.sources.test."+string(entity)+"_condition", map[string]any{key: 17})
+					idc := 17
+					if entity == model.EntityUPS || entity == model.EntityRPP {
+						key, idc = "idc", 1030
+					}
+					conf.Set("inventory.cmdb.sources.test."+string(entity)+"_condition", map[string]any{key: idc})
 				}
 				core, observed := observer.New(zap.InfoLevel)
 				logger := &log.Logger{Logger: zap.New(core)}
@@ -900,7 +1100,7 @@ func TestSyncWorkerSelectedEntityVerticalFlow(t *testing.T) {
 				sqlDB, err := db.DB()
 				require.NoError(t, err)
 				defer sqlDB.Close()
-				require.NoError(t, db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}))
+				require.NoError(t, db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}, &model.SyncRound{}, &model.SyncRoundPhase{}))
 				source := model.Source{ID: strings.Repeat("a", 32), Name: "test", AdapterKind: "cmdb", ConfigRef: "test", Enabled: true}
 				run := model.SyncRun{ID: strings.Repeat("1", 32), SourceID: source.ID, Status: model.SyncRunStatusQueued, CreatedAt: time.Now()}
 				require.NoError(t, db.Create(&source).Error)
@@ -926,7 +1126,11 @@ func TestSyncWorkerSelectedEntityVerticalFlow(t *testing.T) {
 				require.NoError(t, db.Where("source_id = ? AND resource = ?", source.ID, resource).First(&checkpoint).Error)
 				require.Len(t, graph.vertices, 1)
 				vertex := graph.vertices[0]
-				require.Equal(t, model.EntityIdentity{SourceID: source.ID, EntityType: entity, StableID: "UUID-101"}, vertex.Identity)
+				stableID := "UUID-101"
+				if entity == model.EntityTransformer || entity == model.EntityUPSGroup || entity == model.EntityUPS || entity == model.EntityRPP {
+					stableID = "101"
+				}
+				require.Equal(t, model.EntityIdentity{SourceID: source.ID, EntityType: entity, StableID: stableID}, vertex.Identity)
 				if entity == model.EntityInterface {
 					var cursor repository.DeviceSyncCursor
 					require.NoError(t, json.Unmarshal([]byte(checkpoint.Cursor), &cursor))
@@ -956,6 +1160,25 @@ func TestSyncWorkerSelectedEntityVerticalFlow(t *testing.T) {
 					require.Equal(t, []int64{2, 3}, vertex.Properties["pod_ids"])
 				} else if entity == model.EntityDataCenter {
 					require.Equal(t, "IDC-101", vertex.Properties["cn_name"])
+				} else if entity == model.EntityUPS || entity == model.EntityRPP {
+					want := map[string]any{
+						"inst_id": int64(101), "code": "code-101", "idc_id": int64(1030), "ups_group_id": int64(1156),
+						"source_created_at": time.Date(2024, 8, 13, 6, 53, 29, 417000000, time.UTC),
+						"source_updated_at": time.Date(2024, 9, 3, 5, 26, 35, 408000000, time.UTC),
+					}
+					if entity == model.EntityUPS {
+						want["transformer_id_up"], want["brand"], want["model"], want["rated_capacity"] = int64(1588), "brand", "model", int64(500)
+					} else {
+						want["transformer_group_a_id"] = int64(1588)
+					}
+					require.Equal(t, want, vertex.Properties)
+				} else if entity == model.EntityUPSGroup {
+					require.Equal(t, map[string]any{
+						"inst_id": int64(101), "code": "code-101", "idc_id": int64(17), "transformer_id_up": int64(102),
+						"source_created_at": time.Date(2024, 8, 13, 6, 53, 29, 417000000, time.UTC),
+						"source_updated_at": time.Date(2024, 9, 3, 5, 26, 35, 408000000, time.UTC),
+					}, vertex.Properties)
+					require.True(t, vertex.Identity.EntityType.Valid())
 				}
 				wantCleanup := !filtered && entity != model.EntityInterface
 				require.Equal(t, wantCleanup, graph.cleanup)
@@ -988,7 +1211,7 @@ func TestSyncWorkerSequentialEntitiesPreserveSourceCheckpoints(t *testing.T) {
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	defer sqlDB.Close()
-	require.NoError(t, db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}))
+	require.NoError(t, db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}, &model.SyncRound{}, &model.SyncRoundPhase{}))
 	source := model.Source{ID: strings.Repeat("a", 32), Name: "test", AdapterKind: "cmdb", ConfigRef: "test", Enabled: true}
 	require.NoError(t, db.Create(&source).Error)
 	control := repository.NewInventoryRepository(repository.NewRepository(logger, db))
@@ -1345,7 +1568,7 @@ func TestSyncWorkerEntityFailuresNeverCleanup(t *testing.T) {
 
 func TestSyncWorkerRejectsInvalidSelectionBeforeWriting(t *testing.T) {
 	for _, source := range []*fakeDeviceSource{
-		{selected: model.EntityPod}, {selectionErr: errors.New("invalid config")}, {coverageErr: errors.New("invalid condition")},
+		{selected: model.EntityGPU}, {selectionErr: errors.New("invalid config")}, {coverageErr: errors.New("invalid condition")},
 	} {
 		runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-1"}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}
 		graph := &fakeDeviceGraph{}

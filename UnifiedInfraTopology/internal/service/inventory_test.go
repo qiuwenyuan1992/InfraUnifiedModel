@@ -34,7 +34,7 @@ func inventoryFixture(t *testing.T) (InventoryService, *gorm.DB, *viper.Viper) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err = db.AutoMigrate(&model.Source{}, &model.SyncRun{}); err != nil {
+	if err = db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncRound{}, &model.SyncRoundPhase{}); err != nil {
 		t.Fatal(err)
 	}
 	inventoryCreate(t, db, &model.Source{ID: inventorySource, Name: "primary", Enabled: true})

@@ -1,0 +1,1367 @@
+{
+  "status": "PASS",
+  "source_id": "00000000000000000000000000000238",
+  "snapshot_at": "2026-11-03T05:51:16.722422Z",
+  "clean_rebuild_verification": {
+    "reset_report": "idc238-graph-reset-2026-11-03.json",
+    "started_with_all_source_tag_and_edge_counts_zero": true,
+    "schema_indexes_and_mysql_history_preserved": true,
+    "independent_process_all_15_phases": "PASS",
+    "post_rebuild_counts_equal_pre_reset_counts": true,
+    "total_vertices": 41827,
+    "edge_counts": {"spatial_relation": 7081, "composition_relation": 36523, "network_relation": 5142, "power_relation": 5438},
+    "worker_tests_and_vet": "PASS",
+    "scope": "IDC238 source only; other sources not cleared",
+    "note": "Existing diagnosed source-reference exclusions remain; this does not assert complete CMDB coverage. Previous MySQL run history remains but its overwritten graph snapshots are historical."
+  },
+  "phases": [
+    {
+      "name": "data_center",
+      "status": "succeeded",
+      "run_id": "bb6915876488f69b446fbf7258e65dba",
+      "details": [
+        {
+          "entity_type": "data_center",
+          "run_id": "bb6915876488f69b446fbf7258e65dba",
+          "source_id": "00000000000000000000000000000238",
+          "status": "running"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "entity_type": "data_center",
+          "config_ref": "idc238",
+          "resource": "data_centers",
+          "active_runs_global": 0,
+          "run": {
+            "id": "bb6915876488f69b446fbf7258e65dba",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:51:16.735336+08:00",
+            "finished_at": "2026-11-03T13:51:16.846232+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:51:16.846232+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "bb6915876488f69b446fbf7258e65dba",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 1,
+              "total": 1
+            }
+          },
+          "graph_total": 1,
+          "graph_current_snapshot": 1,
+          "objects_present": true,
+          "samples": [
+            {
+              "vid": "45329c9b14e4e4b0b92e1ab47e27607cb669a9290f5c95e981ecbe325f723c65",
+              "stable_id": "e27c0b15-a981-42fc-a081-965d11d97fe8",
+              "code": "CHJL",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cabinet",
+      "status": "succeeded",
+      "run_id": "0915b15966ffc388036a369554554cbb",
+      "details": [
+        {
+          "entity_type": "cabinet",
+          "run_id": "0915b15966ffc388036a369554554cbb",
+          "source_id": "00000000000000000000000000000238",
+          "status": "running"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "entity_type": "cabinet",
+          "config_ref": "idc238",
+          "resource": "cabinets",
+          "active_runs_global": 0,
+          "run": {
+            "id": "0915b15966ffc388036a369554554cbb",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:51:16.871275+08:00",
+            "finished_at": "2026-11-03T13:51:20.598693+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:51:20.598693+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "0915b15966ffc388036a369554554cbb",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 2573,
+              "total": 2573
+            }
+          },
+          "graph_total": 2573,
+          "graph_current_snapshot": 2573,
+          "objects_present": true,
+          "samples": [
+            {
+              "vid": "7aad569d3ae42c9eaf0ff959e5e80444685f569ecc663eb6ca5594796d511e2c",
+              "stable_id": "018bac39-2036-a747-88cb-917f2db16db1",
+              "code": "2A-207-C-13",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "e5e37fe1c5972a91468277e20f9516a78b991602447f9ad5f7c802281b032845",
+              "stable_id": "02fe2ab6-eacf-403c-b47f-ef412d6f8114",
+              "code": "2B-206-E-17",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "f6784bb4fefc2f52e6d1c105d6fc88ecf71c39cbfe1ddcd8093cae24e438a6a3",
+              "stable_id": "03cb3d50-27d7-4a23-83a2-848b724c86ea",
+              "code": "2B-212-F-03",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "f7066f35e73709f61d3effa94be080d3e1b3146a3060001c668036c12bb159c1",
+              "stable_id": "0420dd0b-5097-428b-9375-e91e8ac6a64e",
+              "code": "2B-206-O-17",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "173e7fd3f7cc415c6f1b8d2b13d4de6e3730470e0fd30ab085889dcc10300904",
+              "stable_id": "05404335-2f79-4b15-8064-e733cb121bc4",
+              "code": "2A-209-C-07",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "device",
+      "status": "succeeded",
+      "run_id": "b369cdb15d910bdcb4888c8016d7e99b",
+      "details": [
+        {
+          "entity_type": "device",
+          "run_id": "b369cdb15d910bdcb4888c8016d7e99b",
+          "source_id": "00000000000000000000000000000238",
+          "status": "running"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "entity_type": "device",
+          "config_ref": "idc238",
+          "resource": "devices",
+          "active_runs_global": 0,
+          "run": {
+            "id": "b369cdb15d910bdcb4888c8016d7e99b",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:51:20.676907+08:00",
+            "finished_at": "2026-11-03T13:51:23.60904+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:51:23.60904+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "b369cdb15d910bdcb4888c8016d7e99b",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 2408,
+              "total": 2408
+            }
+          },
+          "graph_total": 2408,
+          "graph_current_snapshot": 2408,
+          "objects_present": true,
+          "samples": [
+            {
+              "vid": "2fa6ac8c82aacbaa5a94b641259eae67fa9547361c557e2b66a5ef30e26f6f12",
+              "stable_id": "10253A786959",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "6bf215edfba33774b3778f734f744c588b7883dbc5a7e7754585501066488d64",
+              "stable_id": "210200A00JN175002855",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "0a191952019eaec36deaef593ca93888902ecf00c1cc0958cb0446bfe0acddf8",
+              "stable_id": "210200A00JN175004424",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "1c367208636e75c41207effb8416f3865763c357727779203fd8ee19fe971a4d",
+              "stable_id": "210200A00JN175004426",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "de24a4128ba1073e080cf2e8fdbb5967c3b8ee78df638daf3808b25e29de5c3a",
+              "stable_id": "210200A00JN175004430",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "transformer",
+      "status": "succeeded",
+      "run_id": "61e6c289281b6ffd35c626657948f65c",
+      "details": [
+        {
+          "entity_type": "transformer",
+          "run_id": "61e6c289281b6ffd35c626657948f65c",
+          "source_id": "00000000000000000000000000000238",
+          "status": "running"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "entity_type": "transformer",
+          "config_ref": "idc238",
+          "resource": "transformers",
+          "active_runs_global": 0,
+          "run": {
+            "id": "61e6c289281b6ffd35c626657948f65c",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:51:23.690381+08:00",
+            "finished_at": "2026-11-03T13:51:23.78834+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:51:23.78834+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "61e6c289281b6ffd35c626657948f65c",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 24,
+              "total": 24
+            }
+          },
+          "graph_total": 24,
+          "graph_current_snapshot": 24,
+          "objects_present": true,
+          "samples": [
+            {
+              "vid": "59e6ddfe43e7034139dec1696024f5b5fe80652206019ffb618a8dea74fd611d",
+              "stable_id": "1444",
+              "code": "AB2-T2",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "4a5eb775942658219f7c48aae3869684575b6d2feac872acd313b485b0f48aee",
+              "stable_id": "1047",
+              "code": "D1-DT4",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "9749b45cc31b9b1f870e08f9ad7e47b722bafd348bbd5a911f39633deae68907",
+              "stable_id": "1098",
+              "code": "C1-CT6",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "a9a67c207b3d837fdc12e36e655aef5b588b2f7642eb6c0a08d11df48329a045",
+              "stable_id": "1101",
+              "code": "B1-BT8",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "d6a68eb37fed9de940141965d85322710e4a2eb6572ae150d214bba37b5787f4",
+              "stable_id": "1107",
+              "code": "A1-AT1",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ups_group",
+      "status": "succeeded",
+      "run_id": "b6d74c5052661ff712363744807b59c4",
+      "details": [
+        {
+          "entity_type": "ups_group",
+          "run_id": "b6d74c5052661ff712363744807b59c4",
+          "source_id": "00000000000000000000000000000238",
+          "status": "running"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "entity_type": "ups_group",
+          "config_ref": "idc238",
+          "resource": "ups_groups",
+          "active_runs_global": 0,
+          "run": {
+            "id": "b6d74c5052661ff712363744807b59c4",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:51:23.810498+08:00",
+            "finished_at": "2026-11-03T13:51:23.904847+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:51:23.904847+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "b6d74c5052661ff712363744807b59c4",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 37,
+              "total": 37
+            }
+          },
+          "graph_total": 37,
+          "graph_current_snapshot": 37,
+          "objects_present": true,
+          "samples": [
+            {
+              "vid": "1f0adbb9876c6a3c346a9ebb5f15ce1bc0b9c9f07bc5723bb4e316ecff39e42f",
+              "stable_id": "174",
+              "code": "D1U",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "6d2323a42dd6b235dcee0357ea3f5210ef7d766930a3a1cad5975dde1548ff43",
+              "stable_id": "276",
+              "code": "2U8B",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "52706134e7538842d7e392d2e39d40cbf69fb3136ebe80bfc31ebac1ce9ed7d9",
+              "stable_id": "883",
+              "code": "2U5B",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "1585e163d80562c2c0d14edbc3ac0bc53846dd1b932bd5cef077b32eac7bca25",
+              "stable_id": "149",
+              "code": "1U6B",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "60daf22d1a979691bbbbbd3615ba0d941495142da7e70818242040aaaf450423",
+              "stable_id": "392",
+              "code": "1U8B",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ups",
+      "status": "succeeded",
+      "run_id": "b7ea0e5bb835acec6c8db65e676e3005",
+      "details": [
+        {
+          "entity_type": "ups",
+          "run_id": "b7ea0e5bb835acec6c8db65e676e3005",
+          "source_id": "00000000000000000000000000000238",
+          "status": "running"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "entity_type": "ups",
+          "config_ref": "idc238",
+          "resource": "ups",
+          "active_runs_global": 0,
+          "run": {
+            "id": "b7ea0e5bb835acec6c8db65e676e3005",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:51:23.925318+08:00",
+            "finished_at": "2026-11-03T13:51:24.052568+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:51:24.052568+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "b7ea0e5bb835acec6c8db65e676e3005",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 67,
+              "total": 67
+            }
+          },
+          "graph_total": 67,
+          "graph_current_snapshot": 67,
+          "objects_present": true,
+          "samples": [
+            {
+              "vid": "274522e605653b5ec5c1a84c908b10eec300de4d38ceedd698d138a37c36a0d8",
+              "stable_id": "1029",
+              "code": "1U7A1",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "8f735d717465950350c316988f0cfef2992c6f8ec22300b5c25e0fbaa19eb7c7",
+              "stable_id": "1033",
+              "code": "2U5A1",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "b04f5f40a4c553b0f1b5925d3b8e5125385a8c921781f8c6cfb05c8b718bc457",
+              "stable_id": "1034",
+              "code": "D1U",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "ee1b03598494399110979c8698a27b8fdcb216ec253dec3af982119cdbe83dee",
+              "stable_id": "1036",
+              "code": "2U2A1",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "99379d215ec517d955faa43b693fd7a402c1c3500cc4a578ae1e8b79a0ef8472",
+              "stable_id": "1045",
+              "code": "2U1A1",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rpp",
+      "status": "succeeded",
+      "run_id": "fdd202ab2ee710a22d196b0908f81989",
+      "details": [
+        {
+          "entity_type": "rpp",
+          "run_id": "fdd202ab2ee710a22d196b0908f81989",
+          "source_id": "00000000000000000000000000000238",
+          "status": "running"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "entity_type": "rpp",
+          "config_ref": "idc238",
+          "resource": "rpps",
+          "active_runs_global": 0,
+          "run": {
+            "id": "fdd202ab2ee710a22d196b0908f81989",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:51:24.073991+08:00",
+            "finished_at": "2026-11-03T13:51:24.300047+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:51:24.300047+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "fdd202ab2ee710a22d196b0908f81989",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 182,
+              "total": 182
+            }
+          },
+          "graph_total": 182,
+          "graph_current_snapshot": 182,
+          "objects_present": true,
+          "samples": [
+            {
+              "vid": "c8778bae05fb9aeed5e3a0a53bd655431f45929b2517bed2a9a4664a1f9482e0",
+              "stable_id": "519",
+              "code": "B206PDU-2A",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "405891e67a39d2677bbde124140541fbffb5cf22b64425a1f21e06eca0740490",
+              "stable_id": "533",
+              "code": "MMRA1 PDUB",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "b56619f1aafd389d463e9237cdedc66e31ad34c8b92a5bf03e613529da46cf73",
+              "stable_id": "547",
+              "code": "A209PDU-5B",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "49319213a46b13a359753c4b9b5f4d257b8aba74f84cea8e8ae191c2f86359ac",
+              "stable_id": "732",
+              "code": "B208PDU-6B",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "bed450755a79161e32d9a1210f6f86987e20b08830018d9890c3f24830fefc7b",
+              "stable_id": "956",
+              "code": "B212PDU-2A",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pod",
+      "status": "succeeded",
+      "run_id": "2728cd2f76900ef967cb643a67012c0d",
+      "details": [
+        {
+          "entity_type": "pod",
+          "run_id": "2728cd2f76900ef967cb643a67012c0d",
+          "source_id": "00000000000000000000000000000238",
+          "status": "running"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "entity_type": "pod",
+          "config_ref": "idc238",
+          "resource": "pods",
+          "active_runs_global": 0,
+          "run": {
+            "id": "2728cd2f76900ef967cb643a67012c0d",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:51:24.323909+08:00",
+            "finished_at": "2026-11-03T13:51:27.608271+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:51:27.608271+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "2728cd2f76900ef967cb643a67012c0d",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 12,
+              "total": 12
+            }
+          },
+          "graph_total": 12,
+          "graph_current_snapshot": 12,
+          "objects_present": true,
+          "samples": [
+            {
+              "vid": "cec5edbfed7bfe9e9d0a2ab3a38a7ad97920a1d7e1d37ed933cacd396bb31696",
+              "stable_id": "82cb79a1-9adf-45d4-a07b-5979f5651e98",
+              "code": "BJS27-POD000",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "69d02631ebf8c9b2f95bc5448148625135fe273ff871b7bd82650f5aa32a26b7",
+              "stable_id": "8db75ebb-b5c6-cc7c-2522-69188ebac5c3",
+              "code": "BJS13-POD004",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "edbf8660feec3f3afab799bed0c5cd49952ffb0fe94963ceb7e767d5484e47b9",
+              "stable_id": "fc4135c9-0e57-e28b-bd40-4cd464e9c16a",
+              "code": "BJS27-POD092",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "0469a7483ac1719374ac91391ce7d2451e3176d7d77b0d87bd63358137bb1b8b",
+              "stable_id": "42788883-5e79-4c00-9b5f-ac3769f2ed34",
+              "code": "BJS27-POD999",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "2b5d92e694a866fd77781e900b2b824bdbe6217dd63aa9a32a1eced26f53a24d",
+              "stable_id": "714ba65c-4f95-4b65-940b-bdd182874304",
+              "code": "BJS27-POD102",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "interface",
+      "status": "succeeded",
+      "run_id": "b67b6b42742c4453a42292a2a98659dd",
+      "details": [
+        {
+          "entity_type": "interface",
+          "run_id": "b67b6b42742c4453a42292a2a98659dd",
+          "source_id": "00000000000000000000000000000238",
+          "status": "running"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "entity_type": "interface",
+          "config_ref": "idc238",
+          "resource": "interfaces",
+          "active_runs_global": 0,
+          "run": {
+            "id": "b67b6b42742c4453a42292a2a98659dd",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:51:27.633083+08:00",
+            "finished_at": "2026-11-03T13:53:17.834697+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:53:17.834697+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "b67b6b42742c4453a42292a2a98659dd",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 35234,
+              "total": 35234
+            }
+          },
+          "graph_total": 35234,
+          "graph_current_snapshot": 35234,
+          "objects_present": true,
+          "samples": [
+            {
+              "vid": "dd46a65df8106e1af80c65ff7cbdcfd12125744a361e7c7e2d10efd7f7dae48f",
+              "stable_id": "0001149f-e096-4981-8ba8-af1e58f5c74b",
+              "code": "HundredGigE1/0/26",
+              "port_speed": "100000",
+              "port_operation_status": "1",
+              "port_type": "physics",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "d36c694b04e61cce95fd045e12fc54538b79e3c39bda45ac9ef6318ad530e172",
+              "stable_id": "0003db3d-66f0-4f9b-b855-6733f7301ba4",
+              "code": "Bridge-Aggregation38",
+              "port_speed": "0",
+              "port_operation_status": "2",
+              "port_type": "virtual",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "2ae59ac2d40415abf3610818bd5eaf0525bea292075a05cc5e735fa3e2361fa3",
+              "stable_id": "0009a186-1ef9-4291-985a-9e83fc27fcbd",
+              "code": "FourHundredGigE1/0/63",
+              "port_speed": "400000",
+              "port_operation_status": "2",
+              "port_type": "physics",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "9c587409e45a41eb7353b7cf587603c8e24e517e659fc389805fca0946324bb2",
+              "stable_id": "00239e38-e038-cd99-48b5-644ae902046b",
+              "code": "FHGigabitEthernet0/57",
+              "port_speed": "400000",
+              "port_operation_status": "1",
+              "port_type": "physics",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            },
+            {
+              "vid": "e9cf6443976d8a92dcf24319dacda7e5d8755351c395f70a67f11413073a76b4",
+              "stable_id": "00315f89-3b23-8694-657f-4ea695f2220e",
+              "code": "FHGigabitEthernet0/47",
+              "port_speed": "400000",
+              "port_operation_status": "1",
+              "port_type": "physics",
+              "created_at": "2026-11-03T05:51:16.722422Z",
+              "synced_at": "2026-11-03T05:51:16.722422Z"
+            }
+          ],
+          "ownership": {
+            "total": 35234,
+            "current_snapshot": 35234,
+            "valid_endpoint_count": 35234,
+            "samples": [
+              {
+                "device_sn": "G1B4AS500078B",
+                "port_uuid": "525fbc7d-7716-12ef-f2d8-eb923d99eab7",
+                "relation_id": "0009308af251ba0bd9bf5d8ec0d90697cf58d6c307b362c195dc1efd21a685cf",
+                "rank": 2586648119458315,
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "device_sn": "G1B4AS500078B",
+                "port_uuid": "7b57e719-7942-9363-43fb-907a405d98d7",
+                "relation_id": "00be2c45dbee5e055888c9964a5e901dce3039e315b30adb960d7e2df0a2ec2c",
+                "rank": 53528924129222149,
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "device_sn": "G1B4AS500078B",
+                "port_uuid": "9df8a561-7356-0c9b-93c3-07432804cbe8",
+                "relation_id": "00dce0974eb6c9a0c0961ffab94b48371b0d65694e27927b0e0d1feb3e9a9224",
+                "rank": 62171435341629856,
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "device_sn": "G1B4AS500078B",
+                "port_uuid": "3331ecaa-cd92-3430-f93c-5d1869d68f7c",
+                "relation_id": "815b69dc7e28f04f6863e415a794aba867bce50cdd82f88bfea6eaf4d3ec1532",
+                "rank": 97788212648931407,
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "device_sn": "G1B4AS500078B",
+                "port_uuid": "34b1d552-533f-6081-2e03-8a47a7aa7db1",
+                "relation_id": "848ae4d3b8e2cdb55a966efbd5a50793c78d1cb46d867672f117bf9f7f2b59d1",
+                "rank": 327325520928886197,
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "power_relations",
+      "status": "succeeded",
+      "run_id": "9a1a1182d866c31f767cc14279d02e71",
+      "details": [
+        {
+          "resource": "power_relations",
+          "run_id": "9a1a1182d866c31f767cc14279d02e71",
+          "status": "running"
+        },
+        {
+          "by_kind": {
+            "has_standby": 22,
+            "member_of": 67,
+            "power_upstream": 5349
+          },
+          "edges": 5438,
+          "missing_endpoints": 0,
+          "objects": 2883,
+          "reasons": {
+            "conflict": 110,
+            "empty_reference": 6,
+            "invalid_reference": 12
+          },
+          "run_id": "9a1a1182d866c31f767cc14279d02e71",
+          "skipped": 12,
+          "status": "succeeded"
+        },
+        {
+          "checkpoint": {
+            "SourceID": "00000000000000000000000000000238",
+            "Resource": "power_relations",
+            "Cursor": {
+              "version": 1,
+              "run_id": "9a1a1182d866c31f767cc14279d02e71",
+              "next_offset": 5438,
+              "last_instance_id": 0,
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "total": 5438
+            },
+            "Complete": true,
+            "CompletedAt": "2026-11-03T13:53:42.986265+08:00",
+            "UpdatedAt": "2026-11-03T13:53:42.986265+08:00"
+          },
+          "graph": {
+            "Total": 5438,
+            "Current": 5438,
+            "ValidEndpointCount": 5438,
+            "ByKind": {
+              "has_standby": 22,
+              "member_of": 67,
+              "power_upstream": 5349
+            },
+            "Samples": [
+              {
+                "from_type": "cabinet",
+                "from_code": "2B-205-C-14",
+                "to_type": "rpp",
+                "to_code": "B205PDU-2B",
+                "relation_kind": "power_upstream",
+                "power_path": "B"
+              },
+              {
+                "from_type": "cabinet",
+                "from_code": "2B-205-C-14",
+                "to_type": "rpp",
+                "to_code": "B205PDU-2A",
+                "relation_kind": "power_upstream",
+                "power_path": "A"
+              },
+              {
+                "from_type": "cabinet",
+                "from_code": "2B-205-K-06",
+                "to_type": "rpp",
+                "to_code": "B205PDU-6A",
+                "relation_kind": "power_upstream",
+                "power_path": "A"
+              },
+              {
+                "from_type": "cabinet",
+                "from_code": "2B-205-K-06",
+                "to_type": "rpp",
+                "to_code": "B205PDU-6B",
+                "relation_kind": "power_upstream",
+                "power_path": "B"
+              },
+              {
+                "from_type": "cabinet",
+                "from_code": "2B-211-C-07",
+                "to_type": "rpp",
+                "to_code": "B211PDU-3A",
+                "relation_kind": "power_upstream",
+                "power_path": "A"
+              }
+            ]
+          },
+          "run": {
+            "ID": "9a1a1182d866c31f767cc14279d02e71",
+            "SourceID": "00000000000000000000000000000238",
+            "Status": "succeeded",
+            "Mode": "",
+            "RequestHash": "8851303bc9a1d6d8f2130bfd93a978ea6b88ed1c8e131d27e9dbb258791920c9",
+            "IdempotencyKey": "cli-power-9a1a1182d866c31f767cc14279d02e71",
+            "RequestedBy": "",
+            "CancelRequestedAt": null,
+            "CreatedAt": "2026-11-03T13:53:21.175821+08:00",
+            "StartedAt": "2026-11-03T13:53:21.181763+08:00",
+            "FinishedAt": "2026-11-03T13:53:42.986265+08:00",
+            "ErrorCode": "",
+            "LeaseExpiresAt": null
+          },
+          "source_id": "00000000000000000000000000000238",
+          "status": "PASS",
+          "topology_present": true
+        }
+      ]
+    },
+    {
+      "name": "pod_membership",
+      "status": "succeeded",
+      "run_id": "bbadf67920ecf792ba02852bbe07e17f",
+      "details": [
+        {
+          "resource": "pod_membership",
+          "result": {
+            "edges": 1445,
+            "missing_endpoints": 0,
+            "objects": 2408,
+            "reasons": {
+              "compute_plane_conflict": 18,
+              "no_pod_references": 945
+            },
+            "skipped": 18
+          },
+          "run_id": "bbadf67920ecf792ba02852bbe07e17f",
+          "source_id": "00000000000000000000000000000238",
+          "status": "succeeded"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "config_ref": "idc238",
+          "resource": "pod_membership",
+          "active_runs_global": 0,
+          "run": {
+            "id": "bbadf67920ecf792ba02852bbe07e17f",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:53:43.234607+08:00",
+            "finished_at": "2026-11-03T13:53:51.337019+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:53:51.337019+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "bbadf67920ecf792ba02852bbe07e17f",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 1445,
+              "total": 1445
+            }
+          },
+          "graph": {
+            "total_edges": 1445,
+            "current_snapshot": 1445,
+            "valid_endpoint_count": 1445,
+            "samples": [
+              {
+                "device_sn": "YS2B50408132",
+                "pod_uuid": "7ce4f145-4612-f44c-7b70-902052b42749",
+                "plane": 1,
+                "relation_id": "706027effb4fb71920a18c8e878b4314d3dbcfdf1c00b25ae2641c6956f8cb19",
+                "rank": 8097516041679124249
+              },
+              {
+                "device_sn": "JT5493711263500245",
+                "pod_uuid": "bdaa1c64-91e1-4eec-a1cf-79a3543d5fe5",
+                "plane": 1,
+                "relation_id": "b9133a200b784040e8cdc8d1feaf3e9e4a49b072281c94b8b290b6f77c2d5f40",
+                "rank": 4112694794025189440
+              },
+              {
+                "device_sn": "21D433582",
+                "pod_uuid": "7ce4f145-4612-f44c-7b70-902052b42749",
+                "plane": 1,
+                "relation_id": "5d9f0d40b4916a8450d26de1182fbc1a602960f86f3a2c60e548c408fb5b9d7e",
+                "rank": 6746125338382789252
+              },
+              {
+                "device_sn": "YS2B50408133",
+                "pod_uuid": "7ce4f145-4612-f44c-7b70-902052b42749",
+                "plane": 1,
+                "relation_id": "97760b8ec0c8ee84b9100705f488f4628ade3497642c398641f5620750430c0c",
+                "rank": 1690551417871855236
+              },
+              {
+                "device_sn": "D260780006858700337",
+                "pod_uuid": "714ba65c-4f95-4b65-940b-bdd182874304",
+                "plane": 1,
+                "relation_id": "7a4f2e6d9bd16c67bf22357fba0491669739bde29ed5bd7efe57d78b95f97dbc",
+                "rank": 8813314044087856231
+              }
+            ]
+          },
+          "topology_present": true
+        }
+      ]
+    },
+    {
+      "name": "spatial_relations",
+      "status": "succeeded",
+      "run_id": "71bc5f2df2c7cf6d7590b026ca39f49b",
+      "details": [
+        {
+          "resource": "spatial_relations",
+          "result": {
+            "edges": 5636,
+            "missing_endpoints": 0,
+            "objects": 4981,
+            "reasons": {
+              "empty_cabinet_reference": 1,
+              "empty_pod_references": 1993
+            },
+            "skipped": 1994
+          },
+          "run_id": "71bc5f2df2c7cf6d7590b026ca39f49b",
+          "source_id": "00000000000000000000000000000238",
+          "status": "succeeded"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "config_ref": "idc238",
+          "resource": "spatial_relations",
+          "active_runs_global": 0,
+          "run": {
+            "id": "71bc5f2df2c7cf6d7590b026ca39f49b",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:53:51.413445+08:00",
+            "finished_at": "2026-11-03T13:54:24.967162+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:54:24.967162+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "71bc5f2df2c7cf6d7590b026ca39f49b",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 5636,
+              "total": 5636
+            }
+          },
+          "graph": {
+            "total_edges": 5636,
+            "current_snapshot": 5636,
+            "valid_endpoint_count": 5636,
+            "kind_counts": {
+              "located_in": 4980,
+              "tagged_with": 656
+            },
+            "path_counts": {
+              "cabinet_data_center": 2573,
+              "cabinet_pod": 656,
+              "device_cabinet": 2407
+            },
+            "samples": [
+              {
+                "path": "device_cabinet",
+                "from_stable_id": "2106191FSLXHN3000002",
+                "to_stable_id": "a16a57fa-0932-40ba-b809-075918f000c6",
+                "relation_id": "000035e83827e8779f7db01591a6ce7bebbc8419133ab4ee023a30ab0ec62337",
+                "rank": 59271490824311
+              },
+              {
+                "path": "device_cabinet",
+                "from_stable_id": "219744388138",
+                "to_stable_id": "df753e51-ce39-4ce1-a1ab-53fa410ca47e",
+                "relation_id": "001d60429eacdfdcb646131f0d1eaf3bd76f4a8d4de8c47d07cd36939006a9e1",
+                "rank": 8268613570846684
+              },
+              {
+                "path": "device_cabinet",
+                "from_stable_id": "D260780006858700721",
+                "to_stable_id": "d6dac50b-eb81-41b6-827c-bf1b014db736",
+                "relation_id": "003e00764dfdf610963a57f2bee8064a52a09fecbb61346834d63f406f8b3897",
+                "rank": 17451956670690832
+              },
+              {
+                "path": "device_cabinet",
+                "from_stable_id": "GNJCNR212A0038",
+                "to_stable_id": "c26d7723-2c4e-4327-a824-d6fbadfae242",
+                "relation_id": "004e20e346214a7114d47bd774b97a9383610290eb81e3ff90f6f9955492d5a4",
+                "rank": 21991208689683057
+              },
+              {
+                "path": "device_cabinet",
+                "from_stable_id": "219646384503",
+                "to_stable_id": "8a09d9e1-cc85-4819-b2c3-aecdca37cb62",
+                "relation_id": "007cac56596718ec861af5bcc8236fbadff257bffa0d646a58d1cf1363749938",
+                "rank": 35092383979215084
+              }
+            ]
+          },
+          "topology_present": true
+        }
+      ]
+    },
+    {
+      "name": "gpu_sync",
+      "status": "succeeded",
+      "run_id": "088cd851f05da419b0b80f99d9442ddd",
+      "details": [
+        {
+          "resource": "gpu_sync",
+          "result": {
+            "by_kind": {
+              "contains_gpu": 1289,
+              "gpu_uplink": 455
+            },
+            "edges": 1744,
+            "missing_endpoints": 0,
+            "nodes": 1289,
+            "objects": 3742,
+            "reasons": {
+              "gpu_conflicting_parts_sn": 6,
+              "gpu_conflicting_parts_sn_groups": 3,
+              "gpu_missing_parts_sn": 1992,
+              "gpu_move_old_contains_may_remain": 1,
+              "gpu_vram_difference": 455,
+              "scoped_cleanup_disabled": 1
+            },
+            "skipped": 1998
+          },
+          "run_id": "088cd851f05da419b0b80f99d9442ddd",
+          "source_id": "00000000000000000000000000000238",
+          "status": "succeeded"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "config_ref": "idc238",
+          "resource": "gpu_sync",
+          "active_runs_global": 0,
+          "run": {
+            "id": "088cd851f05da419b0b80f99d9442ddd",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:54:25.275663+08:00",
+            "finished_at": "2026-11-03T13:56:51.909491+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:56:51.909491+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "088cd851f05da419b0b80f99d9442ddd",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 1289,
+              "total": 1289
+            }
+          },
+          "graph": {
+            "total_nodes": 1289,
+            "current_nodes": 1289,
+            "valid_endpoint_count": 1289,
+            "contains_gpu_edges": 1289,
+            "gpu_uplink_edges": 455,
+            "samples": [
+              {
+                "parts_sn": "1325024027742",
+                "vid": "bce975162a2e9221b9c8728ea01ecfe96d615d6317acdd1dd0fdf2458109a430",
+                "server_sn": "219647672124",
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "parts_sn": "1324924073319",
+                "vid": "fb0a752f1a9c11e1d76caee06cd6c154f0ff87da584e490643bb28e39991c0bf",
+                "server_sn": "219647672124",
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "parts_sn": "1325024002461",
+                "vid": "c1986f70c09a1ae0d09832cb91188c164f708f50a92648c9a9e529dea589877b",
+                "server_sn": "219647672124",
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "parts_sn": "1324924070229",
+                "vid": "bc948461fc13de114574dd179def65b7a9aee821cecd69980b632792259f708a",
+                "server_sn": "219647672124",
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "parts_sn": "1324924069949",
+                "vid": "9e2d54d00ab7dfb5ae88b19c47e8a7c8185b2d4785b0f3484eee064d6d6b5336",
+                "server_sn": "219647672124",
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              }
+            ],
+            "uplink_source_identity_verified": false,
+            "note": "GPU uplink SourceRelationID is not persisted by the existing graph schema; full source UUID binding and normalized uplink ID cannot be verified from graph alone. Edge counts are reported but the checkpoint persists GPU node count only."
+          },
+          "topology_present": true
+        }
+      ]
+    },
+    {
+      "name": "server_uplinks",
+      "status": "succeeded",
+      "run_id": "f0a7b0e2cfabf2f5a296ee6b1e1688a6",
+      "details": [
+        {
+          "edges": 1661,
+          "missing_endpoints": 0,
+          "resource": "server_uplinks",
+          "run_id": "f0a7b0e2cfabf2f5a296ee6b1e1688a6",
+          "servers": 1956,
+          "skipped": 0,
+          "source_id": "00000000000000000000000000000238",
+          "status": "succeeded"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "config_ref": "idc238",
+          "resource": "server_uplinks",
+          "active_runs_global": 0,
+          "run": {
+            "id": "f0a7b0e2cfabf2f5a296ee6b1e1688a6",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:56:52.082551+08:00",
+            "finished_at": "2026-11-03T13:57:34.727167+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:57:34.727167+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "f0a7b0e2cfabf2f5a296ee6b1e1688a6",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 1661,
+              "total": 1661
+            }
+          },
+          "graph": {
+            "total": 1661,
+            "current_snapshot": 1661,
+            "valid_endpoint_count": 1661,
+            "samples": [
+              {
+                "server_sn": "219617580640",
+                "port_uuid": "b46e8975-37c5-1bbd-6496-e30ac53b79ed",
+                "owner_sn": "210235A53N5254L1000D",
+                "owner_parent_type_id": 54,
+                "relation_id": "8bd181953474b75176eb52f7c83c5e1158a361b260383b52d1346192959a2bcf",
+                "rank": 851604282379908945,
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "server_sn": "219617580697",
+                "port_uuid": "5a9b9fbe-cb04-2127-46a8-8c7dac8dd2c7",
+                "owner_sn": "219801A3066244V00050",
+                "owner_parent_type_id": 54,
+                "relation_id": "da021d1a130b1d48b75432d649f6e3fdc1095da811d847f5c6d660e2f66d8ac6",
+                "rank": 6485778411192786248,
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "server_sn": "219744388109",
+                "port_uuid": "a2dc11ac-8c11-4851-8fdd-87ba14306a81",
+                "owner_sn": "210235A53N5264L1002Y",
+                "owner_parent_type_id": 54,
+                "relation_id": "f2b86b3b7d47ea9e521a494e832e4850ffcc266f5cfba2abc98dd2bc6da153f7",
+                "rank": 8266475019287653022,
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "server_sn": "9800207804648701",
+                "port_uuid": "4feb3d8c-f52f-4930-9584-c34505854464",
+                "owner_sn": "210235A53N5264L10028",
+                "owner_parent_type_id": 54,
+                "relation_id": "6efb53ed0f32e94f79c9049bc6b20f2d48a454c9a674c452939a66f44c3ccc3c",
+                "rank": 7997077840953796943,
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              },
+              {
+                "server_sn": "JT5493711263500246",
+                "port_uuid": "df75fea5-7f23-4960-84c6-0bdddbbc915f",
+                "owner_sn": "210235A4L75263P0009H",
+                "owner_parent_type_id": 54,
+                "relation_id": "ba30d31fd02ec74d83023dbe901397523f7dc04914df3c34fb8465b66f540a52",
+                "rank": 4193083386672105293,
+                "synced_at": "2026-11-03T05:51:16.722422Z"
+              }
+            ]
+          },
+          "topology_present": true
+        }
+      ]
+    },
+    {
+      "name": "links_to",
+      "status": "succeeded",
+      "run_id": "6d8d16258878a75cf0dc05e0ec9c22f7",
+      "details": [
+        {
+          "relation_kind": "links_to",
+          "run_id": "6d8d16258878a75cf0dc05e0ec9c22f7",
+          "source_id": "00000000000000000000000000000238",
+          "status": "running"
+        },
+        {
+          "devices": 450,
+          "edges": 3026,
+          "missing_endpoints": 60,
+          "reasons": {
+            "graph_endpoint_mismatch": 60,
+            "no_remote": 17657,
+            "nonphysical_remote": 212
+          },
+          "run_id": "6d8d16258878a75cf0dc05e0ec9c22f7",
+          "skipped": 17929,
+          "status": "succeeded"
+        },
+        {
+          "status": "PASS",
+          "source_id": "00000000000000000000000000000238",
+          "run": {
+            "id": "6d8d16258878a75cf0dc05e0ec9c22f7",
+            "source_id": "00000000000000000000000000000238",
+            "status": "succeeded",
+            "started_at": "2026-11-03T13:57:34.824394+08:00",
+            "finished_at": "2026-11-03T13:59:30.855167+08:00",
+            "lease_expires_at": null
+          },
+          "checkpoint": {
+            "complete": true,
+            "completed_at": "2026-11-03T13:59:30.855167+08:00",
+            "cursor": {
+              "version": 1,
+              "run_id": "6d8d16258878a75cf0dc05e0ec9c22f7",
+              "snapshot_at": "2026-11-03T05:51:16.722422Z",
+              "next_offset": 3026,
+              "total": 3026
+            }
+          },
+          "graph": {
+            "total": 3026,
+            "current_snapshot": 3026,
+            "valid_endpoint_count": 3026,
+            "samples": [
+              {
+                "from_device_sn": "210235A53N5254L1001J",
+                "from_port_uuid": "4cfc97a9-8b94-66a2-07ae-bc745925b5ce",
+                "to_device_sn": "210235A53M5253L1005V",
+                "to_port_uuid": "ec4389dc-96fc-5e87-4705-8aec8c172ee0",
+                "relation_id": "b4ecb93c5d5bfce8259519939eed933d9495905a63b2b4af7d8396eafb988e7c",
+                "rank": 3813626653391453416
+              },
+              {
+                "from_device_sn": "210235A3HE5264L0005K",
+                "from_port_uuid": "2888d8cd-4e1e-484a-88a2-04350fc1402a",
+                "to_device_sn": "210235A4L75263P00088",
+                "to_port_uuid": "416cd6c3-a24c-489b-9dfe-ad43d5bfba5a",
+                "relation_id": "055564a7226b252238be5b7ebee2727cac6be1949ae0268cd2a1461d174cb508",
+                "rank": 384324012209808674
+              },
+              {
+                "from_device_sn": "160622420003",
+                "from_port_uuid": "824af872-4c0b-4bc3-9983-bc96cf3b0ce3",
+                "to_device_sn": "RT252001420",
+                "to_port_uuid": "a68080f7-1df8-4696-9abe-c8f31c053a27",
+                "relation_id": "b5205c897b809c411d1efbed051c2d41e7f2e262ce007f60bd3a7a4e225e9022",
+                "rank": 3828161428817222721
+              },
+              {
+                "from_device_sn": "210235A53N5254L1000D",
+                "from_port_uuid": "0815c3ce-4b4b-5902-1dc6-d048eb738910",
+                "to_device_sn": "210235A53M5253L1007K",
+                "to_port_uuid": "6695a284-81a7-dbb7-46c9-928b946f6147",
+                "relation_id": "905c7529069f0b2683748f71e424383fa466e57aa04306fc2ff409e01beaaf7c",
+                "rank": 1178946021529422630
+              },
+              {
+                "from_device_sn": "G1T61FC000508",
+                "from_port_uuid": "747d39a1-e76f-3323-de9a-4867a7985885",
+                "to_device_sn": "G1B3BNP00007A",
+                "to_port_uuid": "99ac0e46-d4e5-9465-071c-e87dacb294a9",
+                "relation_id": "21e1cc0846bd45f1ae8ec3b9644df75f5058666558288e903740d3d9e1345f29",
+                "rank": 2441456808930133489
+              }
+            ]
+          },
+          "topology_present": true
+        }
+      ]
+    }
+  ],
+  "note": "shared round timestamp is not an atomic source snapshot; no automatic cleanup or rollback"
+}

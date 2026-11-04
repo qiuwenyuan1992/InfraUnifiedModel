@@ -1,0 +1,27 @@
+-- 仅供父代理确认后手工执行，禁止自动连接或执行真实 DDL。
+-- 前置条件：四类电力 Tag 没有存量节点，且只有基线中的四个身份索引引用待修改字段。
+-- NebulaGraph 3.8 的 CHANGE (inst_id INT NOT NULL) 必须提供 DEFAULT。
+-- 不为身份字段伪造 DEFAULT；本增量保守保留 INT NULL，运行时模型强制有效十进制 inst_id。
+-- 新空间基线使用 INT NOT NULL；现有空间是否收紧 NOT NULL 由父代理另行决定。
+-- 每个阶段完成后由操作者等待两个 heartbeat 周期并确认元数据生效，再执行下一阶段。
+-- ALTER TAG DROP 不支持 IF EXISTS，本迁移不是可重复执行脚本。
+
+USE unified_infra_topology;
+
+-- 第一阶段：移除旧 UUID 身份索引。
+DROP TAG INDEX IF EXISTS idx_transformer_identity;
+DROP TAG INDEX IF EXISTS idx_ups_group_identity;
+DROP TAG INDEX IF EXISTS idx_ups_identity;
+DROP TAG INDEX IF EXISTS idx_rpp_identity;
+
+-- 第二阶段：移除 UUID 列，显式保留可空整数列。
+ALTER TAG transformer DROP (uuid), CHANGE (inst_id INT NULL);
+ALTER TAG ups_group DROP (uuid), CHANGE (inst_id INT NULL);
+ALTER TAG ups DROP (uuid), CHANGE (inst_id INT NULL);
+ALTER TAG rpp DROP (uuid), CHANGE (inst_id INT NULL);
+
+-- 第三阶段：重建整数身份索引，不为整数指定索引长度。
+CREATE TAG INDEX IF NOT EXISTS idx_transformer_identity ON transformer (source_id(64), inst_id);
+CREATE TAG INDEX IF NOT EXISTS idx_ups_group_identity ON ups_group (source_id(64), inst_id);
+CREATE TAG INDEX IF NOT EXISTS idx_ups_identity ON ups (source_id(64), inst_id);
+CREATE TAG INDEX IF NOT EXISTS idx_rpp_identity ON rpp (source_id(64), inst_id);

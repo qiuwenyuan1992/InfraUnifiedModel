@@ -23,10 +23,11 @@ func TestHTTPServerDoesNotLogQueryOrPanicSecrets(t *testing.T) {
 	conf := viper.New()
 	l := &log.Logger{Logger: zap.NewNop()}
 	h := handler.NewHandler(l)
-	s := NewHTTPServer(router.RouterDeps{Config: conf, Logger: l, JWT: jwt.NewJwt(conf), UserHandler: handler.NewUserHandler(h, nil), InventoryHandler: handler.NewInventoryHandler(h, nil)})
+	s := NewHTTPServer(router.RouterDeps{Config: conf, Logger: l, JWT: jwt.NewJwt(conf), UserHandler: handler.NewUserHandler(h, nil), InventoryHandler: handler.NewInventoryHandler(h, nil), InventoryRoundHandler: handler.NewInventoryRoundHandler(h, nil)})
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, httptest.NewRequest("GET", "/?accessToken=query-secret", nil))
 	require.Equal(t, 200, w.Code)
+	require.Equal(t, "Location, X-Request-ID", w.Header().Get("Access-Control-Expose-Headers"))
 	require.NotContains(t, output.String(), "query-secret")
 	s.GET("/panic-test", func(c *gin.Context) { panic("panic-secret") })
 	w = httptest.NewRecorder()

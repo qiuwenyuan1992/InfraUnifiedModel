@@ -163,7 +163,7 @@ func (c *CMDB) collectUplinkToRPorts(ctx context.Context, cfg cmdbConfig, tor st
 	if sn != tor || category != 54 || inst <= 0 {
 		return ports, nil
 	}
-	condition := map[string]any{"sn": tor, "port_type": "physics"}
+	condition := map[string]any{"sn": tor}
 	total := -1
 	var last int64
 	seenNames := map[string]bool{}
@@ -197,16 +197,12 @@ func (c *CMDB) collectUplinkToRPorts(ctx context.Context, cfg cmdbConfig, tor st
 			if err != nil {
 				return nil, err
 			}
-			kind, err := uplinkText(item, "port_type")
-			if err != nil {
-				return nil, err
-			}
 			owner, err := uplinkText(item, "local_device_sn")
 			if err != nil {
 				return nil, err
 			}
-			if kind != "physics" || owner != "" && owner != tor {
-				return nil, fmt.Errorf("%w: port violates physical ToR condition", ErrCMDBRecord)
+			if owner != "" && owner != tor {
+				return nil, fmt.Errorf("%w: port violates ToR ownership condition", ErrCMDBRecord)
 			}
 			if seenNames[name] {
 				ports[name] = ""

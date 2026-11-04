@@ -115,8 +115,8 @@ func (c *CMDB) configFor(source model.Source) (cmdbConfig, error) {
 		}
 		cfg.EntityType = model.EntityType(strings.TrimSpace(value))
 	}
-	if !supportedCMDBEntity(cfg.EntityType) {
-		return cmdbConfig{}, fmt.Errorf("%w: unsupported entity_type; supported: device, data_center, cabinet, interface, transformer", ErrCMDBConfig)
+	if !supportedCMDBEntity(cfg.EntityType) && cfg.EntityType != model.EntityGPU {
+		return cmdbConfig{}, fmt.Errorf("%w: unsupported entity_type; supported: device, data_center, cabinet, interface, transformer, ups_group, ups, rpp", ErrCMDBConfig)
 	}
 	if _, err := c.conditionFor(source, cfg.EntityType); err != nil {
 		return cmdbConfig{}, err
@@ -125,7 +125,7 @@ func (c *CMDB) configFor(source model.Source) (cmdbConfig, error) {
 }
 
 func supportedCMDBEntity(entity model.EntityType) bool {
-	return entity == model.EntityDevice || entity == model.EntityDataCenter || entity == model.EntityCabinet || entity == model.EntityInterface || entity == model.EntityTransformer
+	return entity == model.EntityDevice || entity == model.EntityDataCenter || entity == model.EntityCabinet || entity == model.EntityInterface || entity == model.EntityTransformer || entity == model.EntityUPSGroup || entity == model.EntityUPS || entity == model.EntityRPP || entity == model.EntityPod
 }
 
 func (c *CMDB) SelectedEntity(source model.Source) (model.EntityType, error) {
@@ -144,12 +144,12 @@ func (c *CMDB) CoversFullSource(source model.Source, entity model.EntityType) (b
 	if err != nil {
 		return false, err
 	}
-	return len(condition) == 0, nil
+	return entity != model.EntityPod && len(condition) == 0, nil
 }
 
 func (c *CMDB) conditionFor(source model.Source, entity model.EntityType) (map[string]any, error) {
-	if !supportedCMDBEntity(entity) {
-		return nil, fmt.Errorf("%w: unsupported entity_type; supported: device, data_center, cabinet, interface, transformer", ErrCMDBConfig)
+	if !supportedCMDBEntity(entity) && entity != model.EntityGPU {
+		return nil, fmt.Errorf("%w: unsupported entity_type; supported: device, data_center, cabinet, interface, transformer, ups_group, ups, rpp", ErrCMDBConfig)
 	}
 	key := "inventory.cmdb.sources." + source.ConfigRef + "." + string(entity) + "_condition"
 	if !c.conf.IsSet(key) {

@@ -140,12 +140,16 @@ type serverUplinkPersistenceReport struct {
 }
 
 func validateServerUplinkPersistenceReport(r *serverUplinkPersistenceReport) error {
+	return validateServerUplinkPersistenceReportAt(r, time.Time{})
+}
+
+func validateServerUplinkPersistenceReportAt(r *serverUplinkPersistenceReport, expected time.Time) error {
 	if r.Run == nil || r.Checkpoint == nil || r.Graph == nil {
 		return errors.New("server uplink persisted run or checkpoint missing")
 	}
 	run, checkpoint, graph := r.Run, r.Checkpoint, r.Graph
 	cursor := checkpoint.Cursor
-	if run.SourceID != r.SourceID || run.Status != model.SyncRunStatusSucceeded || run.StartedAt == nil || run.FinishedAt == nil || run.LeaseExpiresAt != nil || run.FinishedAt.Before(*run.StartedAt) || !checkpoint.Complete || checkpoint.CompletedAt == nil || checkpoint.CompletedAt.Before(*run.StartedAt) || !checkpoint.CompletedAt.Equal(*run.FinishedAt) || cursor.Version != 1 || cursor.RunID != run.ID || !cursor.SnapshotAt.Equal(*run.StartedAt) || cursor.Total < 0 || cursor.NextOffset != cursor.Total || graph.Current != cursor.Total || graph.ValidEndpointCount != cursor.Total || graph.Total < graph.Current {
+	if run.SourceID != r.SourceID || run.Status != model.SyncRunStatusSucceeded || run.StartedAt == nil || run.FinishedAt == nil || run.LeaseExpiresAt != nil || run.FinishedAt.Before(*run.StartedAt) || !checkpoint.Complete || checkpoint.CompletedAt == nil || checkpoint.CompletedAt.Before(*run.StartedAt) || !checkpoint.CompletedAt.Equal(*run.FinishedAt) || cursor.Version != 1 || cursor.RunID != run.ID || !persistenceSnapshotMatches(run.StartedAt, cursor.SnapshotAt, expected) || cursor.Total < 0 || cursor.NextOffset != cursor.Total || graph.Current != cursor.Total || graph.ValidEndpointCount != cursor.Total || graph.Total < graph.Current {
 		return errors.New("server uplink persisted run, checkpoint, or graph snapshot does not match")
 	}
 	r.Status = "PASS"
@@ -222,7 +226,7 @@ func verifyServerUplink(ctx context.Context, conf *viper.Viper, sourceID, runID 
 		return err
 	}
 	if runID != "" {
-		if err := validateServerUplinkPersistenceReport(r); err != nil {
+		if err := validateServerUplinkPersistenceReportAt(r, service.SyncSnapshot(ctx, time.Time{})); err != nil {
 			return err
 		}
 	}
@@ -333,7 +337,7 @@ func verifyServerUplinkGraph(ctx context.Context, client graphclient.Client, sou
 		src, srcErr := identity.From.VID()
 		dst, dstErr := identity.To.VID()
 		edge := seen[id]
-		if idErr != nil || rankErr != nil || storedErr != nil || ownerErr != nil || ownerType != 54 || owner == "" || serverErr != nil || serverType != 52 || persistenceString(row[8]) != "physics" || persistenceString(row[9]) != sourceID || id != persistenceString(row[4]) || rank != storedRank || syncedErr != nil || !synced.Equal(snapshot) || srcErr != nil || dstErr != nil || edge == nil || persistenceString(edge[0]) != src || persistenceString(edge[1]) != dst || edge[2] != row[5] || matched[id] {
+		if idErr != nil || rankErr != nil || storedErr != nil || ownerErr != nil || ownerType != 54 || owner == "" || serverErr != nil || serverType != 52 || persistenceString(row[9]) != sourceID || id != persistenceString(row[4]) || rank != storedRank || syncedErr != nil || !synced.Equal(snapshot) || srcErr != nil || dstErr != nil || edge == nil || persistenceString(edge[0]) != src || persistenceString(edge[1]) != dst || edge[2] != row[5] || matched[id] {
 			return r, errors.New("server uplink identity, rank, classification, or unique ownership mismatch")
 		}
 		matched[id] = true
@@ -424,8 +428,9 @@ func executeServerUplink(ctx context.Context, control repository.InventoryReposi
 	if err = checkCancel(); err != nil {
 		return result, err
 	}
-	snapshot := run.StartedAt.UTC().Truncate(time.Microsecond)
-	if _, err = control.BeginCheckpoint(leaseCtx, source.ID, serverUplinkResource, run.ID, snapshot, serverUplinkNow()); err != nil {
+	snapshot := service.SyncSnapshot(ctx, *run.StartedAt)
+	checkpoint, beginErr := control.BeginCheckpoint(leaseCtx, source.ID, serverUplinkResource, run.ID, snapshot, serverUplinkNow())
+	if beginErr != nil || checkpoint == nil || !checkpoint.Cursor.SnapshotAt.Equal(snapshot) {
 		return result, errors.New("server uplink checkpoint begin failed")
 	}
 	if result, err = worker.Run(leaseCtx, source, snapshot); err != nil {

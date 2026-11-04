@@ -10,8 +10,8 @@
 
 本实体遵守以下边界：
 
-1. UPS 组节点以 `idc_ups_group.uuid` 作为最终身份。
-2. 保留 `inst_id`，用于解析 `rpp.ups_group`、`ups.ups_group` 和按数字 ID 查询 CMDB；数字 ID 不替代 UUID。
+1. UPS 组节点以 `idc_ups_group.inst_id` 作为权威稳定身份，不要求或生成 UUID。
+2. `inst_id` 同时用于解析 `rpp.ups_group`、`ups.ups_group` 和按数字 ID 查询 CMDB。
 3. 保留 `transformer_id_up`，用于建立 `ups_group → transformer` 的供电上游关系。
 4. 保留来源 `idc`，作为后续版本建立 `ups_group → data_center` 关系的入口；当前版本不解析、不建边，也不记录该引用的关系解析诊断。
 5. UPS 设备通过自身 `ups_group` 字段建立 `ups → ups_group` 成员关系；组节点不保存成员列表。
@@ -66,18 +66,19 @@
 UPS 组最终身份使用：
 
 ```text
-ups_group.uuid
+ups_group.inst_id
 ```
 
 逻辑 UPS 组身份：
 
 ```text
-source_id:ups_group:uuid
+[source_id, "ups_group", "1156"]
 ```
 
-以下字段均不能替代 UUID：
+`StableID` 使用正整数 `inst_id` 的规范十进制字符串，无符号、前导零或空白；逻辑身份由 `source_id`、实体类型和该字符串组成。VID 为 `SHA-256(["vertex", source_id, "ups_group", stable_id])` 的小写十六进制，不直接使用数字 ID。
 
-- `inst_id`
+以下字段均不能替代 `inst_id`：
+
 - `code`
 - `idc`
 - `transformer_id_up`
@@ -89,8 +90,7 @@ source_id:ups_group:uuid
 | 目标字段 | 来源 | 必要性 |
 |---|---|---|
 | `source_id` | 同步配置 | 避免不同 CMDB 来源之间发生身份碰撞 |
-| `uuid` | `idc_ups_group.uuid` | UPS 组稳定身份 |
-| `inst_id` | `idc_ups_group.inst_id` | CMDB 数字 ID，用于 RPP/UPS 引用解析、查询和来源追溯 |
+| `inst_id` | `idc_ups_group.inst_id` | 权威稳定身份；图属性为 `INT NOT NULL`，同时用于 RPP/UPS 引用解析、查询和来源追溯 |
 | `code` | `idc_ups_group.code` | UPS 组编码和主要展示名称 |
 | `idc_id` | `idc_ups_group.idc` | 数据中心数字引用；仅为后续版本关系预留，当前不解析 |
 | `transformer_id_up` | `idc_ups_group.transformer_id_up` | 上游变压器数字引用，用于解析 `transformer.inst_id` |
@@ -106,8 +106,8 @@ source_id:ups_group:uuid
 - 字符串去除首尾空白后保存，空字符串统一写为 `NULL`。
 - `inst_id`、`idc_id` 和 `transformer_id_up` 按来源整数保存。
 - 数字引用为空、为 `0` 或非法值时统一写为 `NULL`。
-- UUID 为空时不能建立 UPS 组节点，并记录同步诊断。
-- 数字 ID 变化不改变 UPS 组身份。
+- `inst_id` 缺失、非正整数或超出有符号 64 位整数范围时不能建立 UPS 组节点，并记录同步诊断；不使用编码或 UUID 回退。
+- `inst_id` 变化表示不同 UPS 组身份。
 
 #### 编码和展示名称
 
@@ -115,7 +115,7 @@ source_id:ups_group:uuid
 
 ```text
 code 非空 → code
-否则 → uuid
+否则 → inst_id 的规范十进制字符串
 ```
 
 `code` 变化不影响 UPS 组身份。
@@ -136,7 +136,7 @@ ups_group.idc_id → data_center.inst_id
 #### 上游变压器引用
 
 - 来源 `transformer_id_up` 直接保存为同名节点属性。
-- `transformer_id_up` 通过 `transformer.inst_id` 解析目标 UUID。
+- `transformer_id_up` 直接匹配同一 `source_id` 下的 `transformer.inst_id`，以目标规范 `StableID` 生成端点 VID，不经过 UUID 映射。
 - 无法唯一解析时不生成上游关系，并记录同步诊断。
 - 引用变化不改变 UPS 组身份；完整成功后更新上游关系。
 
@@ -178,18 +178,18 @@ ups_group.idc_id → data_center.inst_id
 使用：
 
 ```text
-rpp.ups_group_id → ups_group.inst_id → ups_group.uuid
+rpp.ups_group_id → ups_group.inst_id
 ```
 
 解析成功后生成：
 
 ```text
-rpp(uuid) -[power_relation {relation_kind: "power_upstream"}]-> ups_group(uuid)
+rpp(inst_id) -[power_relation {relation_kind: "power_upstream"}]-> ups_group(inst_id)
 ```
 
 规则：
 
-1. `rpp.ups_group_id` 必须唯一解析到一个 UPS 组 UUID。
+1. `rpp.ups_group_id` 必须在同一 `source_id` 下唯一匹配一个 UPS 组 `inst_id`。
 2. 不使用 UPS 组编码或标签猜测目标。
 3. 引用为空、为 `0`、目标不存在或匹配不唯一时，不创建占位节点或关系，并记录同步诊断。
 4. RPP 引用变化时生成新关系；完整成功后清理旧的 UPS 组上联关系。
@@ -199,13 +199,13 @@ rpp(uuid) -[power_relation {relation_kind: "power_upstream"}]-> ups_group(uuid)
 使用：
 
 ```text
-ups.ups_group_id → ups_group.inst_id → ups_group.uuid
+ups.ups_group_id → ups_group.inst_id
 ```
 
 解析成功后生成：
 
 ```text
-ups(uuid) -[power_relation {relation_kind: "member_of"}]-> ups_group(uuid)
+ups(inst_id) -[power_relation {relation_kind: "member_of"}]-> ups_group(inst_id)
 ```
 
 规则：
@@ -222,18 +222,18 @@ ups(uuid) -[power_relation {relation_kind: "member_of"}]-> ups_group(uuid)
 使用：
 
 ```text
-ups_group.transformer_id_up → transformer.inst_id → transformer.uuid
+ups_group.transformer_id_up → transformer.inst_id
 ```
 
 解析成功后生成：
 
 ```text
-ups_group(uuid) -[power_relation {relation_kind: "power_upstream"}]-> transformer(uuid)
+ups_group(inst_id) -[power_relation {relation_kind: "power_upstream"}]-> transformer(inst_id)
 ```
 
 规则：
 
-1. `transformer_id_up` 必须唯一解析到一个变压器 UUID。
+1. `transformer_id_up` 必须在同一 `source_id` 下唯一匹配一个变压器 `inst_id`。
 2. 不使用变压器编码、标签或位置字段猜测目标。
 3. 引用为空、为 `0`、目标不存在或匹配不唯一时，不创建占位节点或关系，并记录同步诊断。
 4. 引用变化时生成新关系；完整成功后清理旧的上游变压器关系。
@@ -290,24 +290,24 @@ ups_group -[spatial_relation {relation_kind: "located_in"}]-> data_center
 
 | Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
 |---|---|---|---|---|---|
-| `power_relation` | `power_upstream` | `rpp(uuid) → ups_group(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `rpp.ups_group_id` |
-| `power_relation` | `member_of` | `ups(uuid) → ups_group(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `ups.ups_group_id` |
-| `power_relation` | `power_upstream` | `ups_group(uuid) → transformer(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `ups_group.transformer_id_up` |
+| `power_relation` | `power_upstream` | `rpp(inst_id) → ups_group(inst_id)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `rpp.ups_group_id` |
+| `power_relation` | `member_of` | `ups(inst_id) → ups_group(inst_id)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `ups.ups_group_id` |
+| `power_relation` | `power_upstream` | `ups_group(inst_id) → transformer(inst_id)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `ups_group.transformer_id_up` |
 
 关系身份规则：
 
 - 上述来源均没有独立关系 UUID。
 - 每条 `relation_id` 由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。
-- 两端完整逻辑身份必须包含 `source_id`、对象类型和稳定 UUID。
-- 不使用组标签、设备标签或数字引用直接作为最终关系身份。
+- 两端完整逻辑身份必须包含 `source_id`、对象类型和 `inst_id` 的规范十进制字符串。
+- 不使用组标签、设备标签或裸数字引用直接作为最终关系身份；数字引用必须先唯一匹配目标实体的完整逻辑身份。
 
 ## 6. 同步与清理约定
 
-1. UPS 组节点按 `uuid` 去重；同一 `source_id` 下 UUID 必须唯一。
-2. 同一 `inst_id` 映射多个 UUID，或同一 UUID 同时出现多个 `inst_id` 时，本轮报身份冲突。
-3. 完整同步应先完整分页采集 `ups_group` 和 `transformer`，建立本轮临时 `inst_id → UUID` 映射，再解析组上游关系；RPP 和 UPS 关系在对应数据可用后解析。
+1. UPS 组节点按 `inst_id` 去重；同一 `source_id`、同一实体类型下 `inst_id` 必须唯一。
+2. 同一作用域内重复 `inst_id` 的记录属性冲突时，本轮报身份冲突；不校验或建立 UUID 绑定。
+3. 完整同步应先完整分页采集 `ups_group` 和 `transformer`，建立本轮按 `source_id + 实体类型 + inst_id` 索引的目标集合，再直接解析组上游关系；RPP 和 UPS 关系在对应数据可用后解析。
 4. `idc_id` 只保存为节点属性，当前不加入关系解析阶段。
-5. `transformer_id_up` 解析失败时记录 UPS 组 UUID、引用值和错误类型，不生成占位变压器。
+5. `transformer_id_up` 解析失败时记录 UPS 组 `inst_id`、引用值和错误类型，不生成占位变压器。
 6. UPS 设备和 RPP 的变压器引用校验结果进入同步诊断，不改变主供电关系。
 7. `ups_group_num` 不进入模型，也不参与成员完整性判断；来源返回三台 UPS 只证明当前样例有三条成员引用。
 8. “发布成功”只表示该轮完整采集、解析和图写入成功后将任务状态置为成功；当前不承诺图写入过程中的原子快照可见性。
@@ -323,8 +323,8 @@ ups_group -[spatial_relation {relation_kind: "located_in"}]-> data_center
 当前 UPS 组样例：
 
 ```text
-uuid               = 1461bad1-8c8b-47c8-ad37-dc12399bdeb4
 inst_id            = 1156
+StableID           = "1156"
 code               = F2-UPS-A1
 idc_id             = 451
 transformer_id_up  = 1588
@@ -334,7 +334,7 @@ transformer_id_up  = 1588
 
 1. RPP 样例 `ups_group_id=1156` 可匹配该 UPS 组的 `inst_id=1156`。
 2. 三台 UPS 设备 `inst_id=3255/3280/3370` 均使用 `ups_group=1156`，可分别建立一条 `member_of` 关系。
-3. 该 UPS 组的 `transformer_id_up=1588` 可匹配变压器 UUID `8ff80fda-20d5-4193-b16e-8808d87108a5`。
+3. 该 UPS 组的 `transformer_id_up=1588` 可直接匹配变压器 `inst_id=1588`。
 4. 三台 UPS 设备自身的 `transformer_id_up` 均为 `1588`，与组上游一致，但不生成 UPS 到变压器的直连关系。
 5. RPP 的 `transformer_group_a_id=1588` 与组上游一致，但不生成 RPP 到变压器的直连关系。
 6. `idc_id=451` 可作为后续版本连接 `data_center.inst_id=451` 的来源证据，当前不解析、不建边。
@@ -343,15 +343,15 @@ transformer_id_up  = 1588
 当前主链和成员关系为：
 
 ```text
-rpp(9f283fc3-d029-4a4d-b312-d23b5c2c4cd5)
+rpp(inst_id=6204)
   -[power_relation {relation_kind: "power_upstream"}]->
-ups_group(1461bad1-8c8b-47c8-ad37-dc12399bdeb4)
+ups_group(inst_id=1156)
   -[power_relation {relation_kind: "power_upstream"}]->
-transformer(8ff80fda-20d5-4193-b16e-8808d87108a5)
+transformer(inst_id=1588)
 
-ups(ddc7cfc5-1b84-43e9-8ba7-78685d38f4b1) ─┐
-ups(be8db0e1-6624-4bbd-9113-b1b894385f65) ─┼─[member_of]→ ups_group
-ups(72d59d8d-74bc-4230-b236-27e1e6527f8f) ─┘
+ups(inst_id=3255) ─┐
+ups(inst_id=3280) ─┼─[member_of]→ ups_group(inst_id=1156)
+ups(inst_id=3370) ─┘
 ```
 
 ## 8. 来源证据

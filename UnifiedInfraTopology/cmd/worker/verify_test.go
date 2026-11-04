@@ -3,12 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"UnifiedInfraTopology/internal/model"
+	"UnifiedInfraTopology/internal/repository"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	nebulago "github.com/vesoft-inc/nebula-go/v3"
@@ -29,6 +32,42 @@ func verificationFixture(t *testing.T, total int64) (persistenceReport, []persis
 		samples = append(samples, persistenceSample{VID: vid, StableID: stable, Code: "dc", CreatedAt: at.Add(-time.Hour), SyncedAt: at})
 	}
 	return r, samples
+}
+
+func TestPersistenceValidatorsRequireExactRoundSnapshot(t *testing.T) {
+	for _, name := range []string{"entity", "server_uplink", "links_to", "standalone", "power"} {
+		t.Run(name, func(t *testing.T) {
+			started := time.Now().UTC().Truncate(time.Microsecond)
+			snapshot := started.Add(-time.Hour)
+			finished := started.Add(time.Second)
+			run := &persistenceRun{ID: "run", SourceID: "source", Status: model.SyncRunStatusSucceeded, StartedAt: &started, FinishedAt: &finished}
+			cp := &persistenceCheckpoint{Complete: true, CompletedAt: &finished, Cursor: persistenceCursor{Version: 1, RunID: "run", SnapshotAt: snapshot}}
+			validate := func(expected time.Time) error {
+				switch name {
+				case "entity":
+					return validatePersistenceReportAt(&persistenceReport{SourceID: "source", Run: run, Checkpoint: cp}, nil, expected)
+				case "server_uplink":
+					return validateServerUplinkPersistenceReportAt(&serverUplinkPersistenceReport{SourceID: "source", Run: run, Checkpoint: cp, Graph: &serverUplinkGraphReport{}}, expected)
+				case "links_to":
+					return validateLinksToPersistenceReportAt(&linksToPersistenceReport{SourceID: "source", Run: run, Checkpoint: cp, Graph: &linksToGraphReport{}}, expected)
+				case "standalone":
+					return validateStandaloneRelationPersistenceAt(&standaloneRelationPersistenceReport{SourceID: "source", Run: run, Checkpoint: cp, Graph: &podMembershipGraphReport{}}, 0, 0, expected)
+				default:
+					return validatePowerSyncCheckpointAt("source", &model.SyncRun{ID: "run", SourceID: "source", Status: model.SyncRunStatusSucceeded, StartedAt: &started, FinishedAt: &finished}, &repository.DeviceSyncCheckpoint{Complete: true, CompletedAt: &finished, Cursor: repository.DeviceSyncCursor{Version: 1, RunID: "run", SnapshotAt: cp.Cursor.SnapshotAt}}, expected)
+				}
+			}
+			require.NoError(t, validate(snapshot))
+			require.Error(t, validate(time.Time{}))
+			require.Error(t, validate(snapshot.Add(time.Microsecond)))
+			cp.Cursor.SnapshotAt = started.Add(time.Microsecond)
+			require.Error(t, validate(cp.Cursor.SnapshotAt))
+			cp.Cursor.SnapshotAt = started
+			require.NoError(t, validate(time.Time{}))
+			require.NoError(t, validate(started))
+			cp.Cursor.SnapshotAt = time.Time{}
+			require.Error(t, validate(snapshot))
+		})
+	}
 }
 
 func TestValidatePersistenceReport(t *testing.T) {
@@ -86,8 +125,32 @@ func TestValidatePersistenceReport(t *testing.T) {
 	})
 }
 
+func TestValidatePowerPersistenceRequiresDecimalInstID(t *testing.T) {
+	for _, entity := range []model.EntityType{model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP} {
+		t.Run(string(entity), func(t *testing.T) {
+			r, samples := verificationFixture(t, 1)
+			r.Entity = entity
+			samples[0].StableID = "9223372036854775807"
+			vid, err := (model.EntityIdentity{SourceID: r.SourceID, EntityType: entity, StableID: samples[0].StableID}).VID()
+			require.NoError(t, err)
+			samples[0].VID = vid
+			require.NoError(t, validatePersistenceReport(&r, samples))
+			for _, invalid := range []string{"legacy-uuid", "001", "+1", "1.0", "0", "-1", "9223372036854775808", "null"} {
+				t.Run(invalid, func(t *testing.T) {
+					samples[0].StableID = invalid
+					payload, err := json.Marshal([]string{"vertex", r.SourceID, string(entity), invalid})
+					require.NoError(t, err)
+					digest := sha256.Sum256(payload)
+					samples[0].VID = hex.EncodeToString(digest[:])
+					require.Error(t, validatePersistenceReport(&r, samples))
+				})
+			}
+		})
+	}
+}
+
 func TestVerificationGraphQueriesAreReadOnlyAndParameterized(t *testing.T) {
-	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityDataCenter, model.EntityCabinet, model.EntityInterface, model.EntityTransformer} {
+	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityDataCenter, model.EntityCabinet, model.EntityInterface, model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP} {
 		for _, current := range []bool{false, true} {
 			for _, count := range []bool{false, true} {
 				query, err := persistenceGraphQuery(entity, current, count)
@@ -107,6 +170,10 @@ func TestVerificationGraphQueriesAreReadOnlyAndParameterized(t *testing.T) {
 						require.Contains(t, query, "interface.port_uuid")
 						require.Contains(t, query, "interface.port_name AS code")
 						require.NotContains(t, query, "interface.uuid")
+					} else if entity == model.EntityTransformer || entity == model.EntityUPSGroup || entity == model.EntityUPS || entity == model.EntityRPP {
+						require.Contains(t, query, string(entity)+".inst_id AS identity")
+						require.NotContains(t, query, ".uuid")
+						require.Contains(t, query, string(entity)+".code")
 					} else {
 						require.Contains(t, query, string(entity)+".uuid")
 						require.Contains(t, query, string(entity)+".code")
@@ -119,6 +186,20 @@ func TestVerificationGraphQueriesAreReadOnlyAndParameterized(t *testing.T) {
 	require.Error(t, err)
 	_, err = persistenceGraphQuery(model.EntityGPU, true, true)
 	require.Error(t, err)
+}
+
+func TestPodVerificationUsesUUIDAndBasicCode(t *testing.T) {
+	query, err := persistenceGraphQuery(model.EntityPod, true, false)
+	require.NoError(t, err)
+	require.Contains(t, query, "pod.uuid AS identity")
+	require.Contains(t, query, "pod.basic_code AS code")
+	require.NotContains(t, query, "pod.code")
+	r, samples := verificationFixture(t, 1)
+	r.Entity = model.EntityPod
+	samples[0].StableID = "POD-UUID-101"
+	samples[0].VID, err = (model.EntityIdentity{SourceID: r.SourceID, EntityType: r.Entity, StableID: samples[0].StableID}).VID()
+	require.NoError(t, err)
+	require.NoError(t, validatePersistenceReport(&r, samples))
 }
 
 func TestVerifyPersistenceRejectsNonMySQLBeforeConnecting(t *testing.T) {

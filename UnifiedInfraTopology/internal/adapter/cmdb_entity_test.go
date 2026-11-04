@@ -15,6 +15,172 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCMDBPowerIdentityUsesInstIDWithoutUUIDFallback(t *testing.T) {
+	for _, entity := range []model.EntityType{model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP} {
+		for _, uuid := range []string{"", `,"uuid":"legacy"`, `,"uuid":9`, `,"uuid":null`} {
+			var item map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(`{"inst_id":9223372036854775807`+uuid+`}`), &item))
+			record, err := cmdbEntityRecord(item, entity)
+			require.NoError(t, err, entity)
+			require.Equal(t, "9223372036854775807", record.Identity)
+			require.Equal(t, int64(9223372036854775807), record.SourceInstanceID)
+			require.Equal(t, record.SourceInstanceID, record.Properties["inst_id"])
+			require.NotContains(t, record.Properties, "uuid")
+		}
+		for _, instID := range []string{"null", "0", "-1", "1.5", `"1"`, "9223372036854775808", "true", "{}"} {
+			var item map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(`{"inst_id":`+instID+`,"uuid":"fallback"}`), &item))
+			_, err := cmdbEntityRecord(item, entity)
+			require.ErrorIs(t, err, ErrCMDBRecord)
+		}
+		_, err := cmdbEntityRecord(map[string]json.RawMessage{"uuid": json.RawMessage(`"fallback"`)}, entity)
+		require.ErrorIs(t, err, ErrCMDBRecord)
+	}
+}
+
+func TestCMDBCollectUPSRPPPagesMapOnlyGraphProperties(t *testing.T) {
+	for _, entity := range []model.EntityType{model.EntityUPS, model.EntityRPP} {
+		t.Run(string(entity), func(t *testing.T) {
+			object := "idc_ups"
+			fields := []string{"inst_id", "code", "idc", "ups_group", "transformer_id_up", "ups_brand", "ups_type", "ups_capacity", "create_time", "last_time"}
+			want := map[string]any{"inst_id": int64(1156), "code": "POWER-A1", "idc_id": int64(1030), "ups_group_id": int64(20), "source_created_at": time.Date(2024, 8, 13, 6, 53, 29, 417000000, time.UTC), "source_updated_at": time.Date(2024, 9, 3, 5, 26, 35, 408000000, time.UTC)}
+			if entity == model.EntityUPS {
+				want["transformer_id_up"], want["brand"], want["model"], want["rated_capacity"] = int64(1588), "brand", "model", int64(500)
+			} else {
+				object = "idc_RPP"
+				fields = []string{"inst_id", "code", "idc", "ups_group", "transformer_group_a", "create_time", "last_time"}
+				want["transformer_group_a_id"] = int64(1588)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/pub/api/v3/find/instance/object/"+object, r.URL.Path)
+				var request cmdbEntityRequest
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				require.ElementsMatch(t, fields, request.Fields)
+				require.Equal(t, map[string]any{"idc": float64(1030)}, request.Condition)
+				fmt.Fprint(w, entityResponse(`{"inst_id":1156,"uuid":" Power-UUID ","code":" POWER-A1 ","idc":1030,"ups_group":20,"transformer_id_up":1588,"transformer_group_a":1588,"ups_brand":" brand ","ups_type":" model ","ups_capacity":500,"create_time":"2024-08-13T14:53:29.417+08:00","last_time":"2024-09-03T13:26:35.408+08:00","idc_id":999,"brand":"wrong","building":404}`, 1))
+			}))
+			defer server.Close()
+			conf := cmdbTestConfig(server.URL, nil)
+			conf.Set("inventory.cmdb.sources.primary.entity_type", string(entity))
+			conf.Set("inventory.cmdb.sources.primary."+string(entity)+"_condition", map[string]any{"idc": 1030})
+			collector := NewCMDBWithClient(conf, server.Client())
+			selected, err := collector.SelectedEntity(model.Source{ConfigRef: "primary"})
+			require.NoError(t, err)
+			require.Equal(t, entity, selected)
+			page, err := collector.CollectEntityPage(context.Background(), model.Source{ConfigRef: "primary"}, entity, 0)
+			require.NoError(t, err)
+			require.Equal(t, EntityPage{Records: []EntityRecord{{SourceInstanceID: 1156, Identity: "1156", Properties: want}}, NextOffset: 1, Total: 1, Done: true}, page)
+		})
+	}
+}
+
+func TestCMDBUPSRPPRecordsNormalizeOptionalRefs(t *testing.T) {
+	for _, entity := range []model.EntityType{model.EntityUPS, model.EntityRPP} {
+		for _, value := range []string{"null", "0", "-1", "1.5", `"1030"`, `{}`, `true`, `[]`, "9223372036854775808"} {
+			t.Run(string(entity)+"/"+value, func(t *testing.T) {
+				var item map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal([]byte(`{"inst_id":1,"uuid":" Power-UUID ","idc":`+value+`,"ups_group":`+value+`,"transformer_id_up":`+value+`,"transformer_group_a":`+value+`}`), &item))
+				record, err := cmdbEntityRecord(item, entity)
+				require.NoError(t, err)
+				require.Equal(t, "1", record.Identity)
+				require.Nil(t, record.Properties["idc_id"])
+				require.Contains(t, record.Properties, "ups_group_id")
+				require.Nil(t, record.Properties["ups_group_id"])
+				require.NotContains(t, record.Properties, "uuid")
+				if entity == model.EntityUPS {
+					require.Contains(t, record.Properties, "transformer_id_up")
+					require.Nil(t, record.Properties["transformer_id_up"])
+				} else {
+					require.Contains(t, record.Properties, "transformer_group_a_id")
+					require.Nil(t, record.Properties["transformer_group_a_id"])
+				}
+			})
+		}
+	}
+}
+
+func TestCMDBUPSRPPRecordsRejectInvalidIdentityAndUPSCapacity(t *testing.T) {
+	for _, entity := range []model.EntityType{model.EntityUPS, model.EntityRPP} {
+		cases := []string{`"uuid":"power"`, `"inst_id":0,"uuid":"power"`, `"inst_id":1.5,"uuid":"power"`, `"inst_id":1,"uuid":"power","code":9`}
+		if entity == model.EntityUPS {
+			cases = append(cases, `"inst_id":1,"uuid":"power","ups_capacity":1.5`, `"inst_id":1,"uuid":"power","ups_capacity":"500"`, `"inst_id":1,"uuid":"power","ups_brand":9`)
+		}
+		for _, fields := range cases {
+			t.Run(string(entity)+"/"+fields, func(t *testing.T) {
+				var item map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal([]byte(`{`+fields+`}`), &item))
+				_, err := cmdbEntityRecord(item, entity)
+				require.ErrorIs(t, err, ErrCMDBRecord)
+			})
+		}
+	}
+}
+
+func TestCMDBCollectUPSGroupPageMapsOnlyGraphProperties(t *testing.T) {
+	item := `{"inst_id":1156,"uuid":" UPS-GROUP-UUID ","code":" F2-UPS-A1 ","idc":1030,"transformer_id_up":1588,"create_time":"2024-08-13T14:53:29.417+08:00","last_time":"2024-09-03T13:26:35.408+08:00","idc_id":999,"created_at":"2025-01-01 00:00:00","updated_at":"2025-01-01 00:00:00","building":404,"module":100,"ups_group_num":3,"ups_group_id_tag":"A1-1-1","ups_external_bypass":1,"ups_only_IT":1,"ups_only_jd":[1]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/pub/api/v3/find/instance/object/idc_ups_group", r.URL.Path)
+		var request cmdbEntityRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+		require.ElementsMatch(t, []string{"inst_id", "code", "idc", "transformer_id_up", "create_time", "last_time"}, request.Fields)
+		require.Equal(t, deviceViewPage{Start: 2, Limit: 2, Sort: "inst_id"}, request.Page)
+		require.Equal(t, map[string]any{"idc": float64(1030)}, request.Condition)
+		require.NotContains(t, request.Condition, "idc_id")
+		fmt.Fprint(w, entityResponse(item, 3))
+	}))
+	defer server.Close()
+	conf := cmdbTestConfig(server.URL, nil)
+	conf.Set("inventory.cmdb.sources.primary.entity_type", "ups_group")
+	conf.Set("inventory.cmdb.sources.primary.ups_group_condition", map[string]any{"idc": 1030})
+	conf.Set("inventory.cmdb.sources.primary.device_condition", map[string]any{"inst_id": 999})
+	conf.Set("inventory.cmdb.sources.primary.transformer_condition", map[string]any{"idc": 999})
+	collector := NewCMDBWithClient(conf, server.Client())
+	page, err := collector.CollectEntityPage(context.Background(), model.Source{ConfigRef: "primary"}, model.EntityUPSGroup, 2)
+	require.NoError(t, err)
+	require.Equal(t, EntityPage{Records: []EntityRecord{{SourceInstanceID: 1156, Identity: "1156", Properties: map[string]any{
+		"inst_id": int64(1156), "code": "F2-UPS-A1", "idc_id": int64(1030), "transformer_id_up": int64(1588),
+		"source_created_at": time.Date(2024, 8, 13, 6, 53, 29, 417000000, time.UTC),
+		"source_updated_at": time.Date(2024, 9, 3, 5, 26, 35, 408000000, time.UTC),
+	}}}, NextOffset: 3, Total: 3, Done: true}, page)
+}
+
+func TestCMDBUPSGroupRecordNormalizesOptionalValuesAndUsesInstID(t *testing.T) {
+	for _, fields := range []string{
+		`"unused":true`, `"idc":null,"transformer_id_up":null`, `"idc":0,"transformer_id_up":0`,
+		`"idc":-1030,"transformer_id_up":-1`, `"idc":1.5,"transformer_id_up":2.5`,
+		`"idc":"1030","transformer_id_up":"invalid"`, `"idc":{},"transformer_id_up":true`,
+		`"idc":9223372036854775808,"transformer_id_up":[]`,
+	} {
+		t.Run(fields, func(t *testing.T) {
+			var item map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(`{"inst_id":1,"uuid":" Ups-GROUP ","code":" ","create_time":"2000-01-01 00:00:00","last_time":"invalid",`+fields+`}`), &item))
+			record, err := cmdbEntityRecord(item, model.EntityUPSGroup)
+			require.NoError(t, err)
+			require.Equal(t, EntityRecord{SourceInstanceID: 1, Identity: "1", Properties: map[string]any{
+				"inst_id": int64(1), "code": nil, "idc_id": nil, "transformer_id_up": nil,
+				"source_created_at": nil, "source_updated_at": nil,
+			}}, record)
+		})
+	}
+}
+
+func TestCMDBUPSGroupRecordRejectsInvalidIdentityAndCode(t *testing.T) {
+	for _, fields := range []string{
+		`"uuid":"ups-group"`,
+		`"inst_id":0,"uuid":"ups-group"`, `"inst_id":-1,"uuid":"ups-group"`,
+		`"inst_id":1.5,"uuid":"ups-group"`, `"inst_id":"1","uuid":"ups-group"`,
+		`"inst_id":1,"uuid":"ups-group","code":9`,
+	} {
+		t.Run(fields, func(t *testing.T) {
+			var item map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(`{`+fields+`}`), &item))
+			_, err := cmdbEntityRecord(item, model.EntityUPSGroup)
+			require.ErrorIs(t, err, ErrCMDBRecord)
+		})
+	}
+}
+
 func TestCMDBCollectTransformerPageMapsOnlyGraphProperties(t *testing.T) {
 	item := `{"inst_id":1588,"uuid":" TRANSFORMER-UUID ","code":" 1T203 ","idc":1030,"standby_transformer":1593,"transformer_brand":" 许继 ","transformer_type":" SCB11-2500KVA/10 ","transformer_capacity":2500,"create_time":"2024-08-13T13:53:25.913+08:00","last_time":"2024-10-31T16:32:33.631+08:00","idc_id":999,"brand":"wrong","created_at":"2025-01-01 00:00:00","updated_at":"2025-01-01 00:00:00","building":404,"module":100,"transformer_id_tag":"A1-1"}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +190,7 @@ func TestCMDBCollectTransformerPageMapsOnlyGraphProperties(t *testing.T) {
 		require.Equal(t, "cmdb_all", r.URL.Query().Get("user"))
 		var request cmdbEntityRequest
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
-		require.ElementsMatch(t, []string{"inst_id", "uuid", "code", "idc", "standby_transformer", "transformer_brand", "transformer_type", "transformer_capacity", "create_time", "last_time"}, request.Fields)
+		require.ElementsMatch(t, []string{"inst_id", "code", "idc", "standby_transformer", "transformer_brand", "transformer_type", "transformer_capacity", "create_time", "last_time"}, request.Fields)
 		require.Equal(t, deviceViewPage{Start: 2, Limit: 2, Sort: "inst_id"}, request.Page)
 		require.Equal(t, map[string]any{"idc": float64(1030)}, request.Condition)
 		fmt.Fprint(w, entityResponse(item, 3))
@@ -39,7 +205,7 @@ func TestCMDBCollectTransformerPageMapsOnlyGraphProperties(t *testing.T) {
 	collector := NewCMDBWithClient(conf, server.Client())
 	page, err := collector.CollectEntityPage(context.Background(), model.Source{ConfigRef: "primary"}, model.EntityTransformer, 2)
 	require.NoError(t, err)
-	require.Equal(t, EntityPage{Records: []EntityRecord{{SourceInstanceID: 1588, Identity: "TRANSFORMER-UUID", Properties: map[string]any{
+	require.Equal(t, EntityPage{Records: []EntityRecord{{SourceInstanceID: 1588, Identity: "1588", Properties: map[string]any{
 		"inst_id": int64(1588), "code": "1T203", "idc_id": int64(1030), "standby_transformer_id": int64(1593),
 		"brand": "许继", "model": "SCB11-2500KVA/10", "rated_capacity": int64(2500),
 		"source_created_at": time.Date(2024, 8, 13, 5, 53, 25, 913000000, time.UTC),
@@ -66,7 +232,7 @@ func TestCMDBTransformerRecordNormalizesOptionalValues(t *testing.T) {
 			require.NoError(t, json.Unmarshal([]byte(`{"inst_id":1,"uuid":" transformer ","code":" ","transformer_brand":" ","transformer_type":"","create_time":"2000-01-01 00:00:00","last_time":"invalid",`+tc.fields+`}`), &item))
 			record, err := cmdbEntityRecord(item, model.EntityTransformer)
 			require.NoError(t, err)
-			require.Equal(t, EntityRecord{SourceInstanceID: 1, Identity: "transformer", Properties: map[string]any{
+			require.Equal(t, EntityRecord{SourceInstanceID: 1, Identity: "1", Properties: map[string]any{
 				"inst_id": int64(1), "code": nil, "idc_id": nil, "standby_transformer_id": nil,
 				"brand": nil, "model": nil, "rated_capacity": tc.capacity, "source_created_at": nil, "source_updated_at": nil,
 			}}, record)
@@ -76,9 +242,9 @@ func TestCMDBTransformerRecordNormalizesOptionalValues(t *testing.T) {
 
 func TestCMDBTransformerRecordRejectsInvalidIdentityAndSpecifications(t *testing.T) {
 	for _, fields := range []string{
-		`"inst_id":1`, `"inst_id":1,"uuid":" "`, `"inst_id":1,"uuid":null`, `"uuid":"transformer"`,
+		`"uuid":"transformer"`,
 		`"inst_id":0,"uuid":"transformer"`, `"inst_id":-1,"uuid":"transformer"`,
-		`"inst_id":1.5,"uuid":"transformer"`, `"inst_id":"1","uuid":"transformer"`, `"inst_id":1,"uuid":9`,
+		`"inst_id":1.5,"uuid":"transformer"`, `"inst_id":"1","uuid":"transformer"`,
 		`"inst_id":1,"uuid":"transformer","code":9`, `"inst_id":1,"uuid":"transformer","transformer_brand":true`,
 		`"inst_id":1,"uuid":"transformer","transformer_type":{}`,
 		`"inst_id":1,"uuid":"transformer","transformer_capacity":"2500"`,
@@ -197,7 +363,11 @@ func TestCMDBSelectedEntityValidatesConfiguredWhitelist(t *testing.T) {
 		{name: "cabinet", value: "cabinet", want: model.EntityCabinet},
 		{name: "interface", value: "interface", want: model.EntityInterface},
 		{name: "transformer", value: "transformer", want: model.EntityTransformer},
-		{name: "unsupported", value: "pod", invalid: true},
+		{name: "UPS group", value: "ups_group", want: model.EntityUPSGroup},
+		{name: "entity case is exact", value: "UPS_GROUP", invalid: true},
+		{name: "POD", value: "pod", want: model.EntityPod},
+		{name: "GPU independent task", value: "gpu", want: model.EntityGPU},
+		{name: "unsupported", value: "unknown", invalid: true},
 		{name: "empty configured", value: "", invalid: true},
 		{name: "wrong type", value: []string{"cabinet"}, invalid: true},
 	} {
@@ -222,11 +392,11 @@ func TestCMDBSelectedEntityValidatesConfiguredWhitelist(t *testing.T) {
 }
 
 func TestCMDBCoversFullSourceUsesOnlyEntityCondition(t *testing.T) {
-	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityDataCenter, model.EntityCabinet, model.EntityInterface, model.EntityTransformer} {
+	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityDataCenter, model.EntityCabinet, model.EntityInterface, model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP} {
 		t.Run(string(entity), func(t *testing.T) {
 			conf := cmdbTestConfig("https://cmdb.example.test", nil)
 			prefix := "inventory.cmdb.sources.primary."
-			for _, other := range []model.EntityType{model.EntityDevice, model.EntityDataCenter, model.EntityCabinet, model.EntityInterface, model.EntityTransformer} {
+			for _, other := range []model.EntityType{model.EntityDevice, model.EntityDataCenter, model.EntityCabinet, model.EntityInterface, model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP} {
 				if other != entity {
 					conf.Set(prefix+string(other)+"_condition", map[string]any{"idc_id": 451})
 				}
@@ -481,14 +651,15 @@ func TestCMDBCollectEntityPagePreservesTransportSafeguards(t *testing.T) {
 func TestCMDBCollectEntityPageRejectsUnsupportedEntityAndOffset(t *testing.T) {
 	collector, ok := any(NewCMDB(cmdbTestConfig("https://cmdb.example.test", nil))).(EntityPageCollector)
 	require.True(t, ok)
-	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityPod, "unknown"} {
+	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityGPU, "unknown"} {
 		_, err := collector.CollectEntityPage(context.Background(), model.Source{ConfigRef: "primary"}, entity, 0)
 		require.ErrorIs(t, err, ErrCMDBConfig)
 	}
 	_, err := collector.CollectEntityPage(context.Background(), model.Source{ConfigRef: "primary"}, model.EntityDataCenter, -1)
 	require.ErrorIs(t, err, ErrCMDBConfig)
-	_, err = collector.CoversFullSource(model.Source{ConfigRef: "primary"}, model.EntityPod)
-	require.ErrorIs(t, err, ErrCMDBConfig)
+	full, err := collector.CoversFullSource(model.Source{ConfigRef: "primary"}, model.EntityPod)
+	require.NoError(t, err)
+	require.False(t, full)
 }
 
 func TestCMDBSourceTimeNormalizesOnlyKnownPlaceholders(t *testing.T) {

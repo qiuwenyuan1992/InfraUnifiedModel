@@ -235,6 +235,18 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 	case model.EntityTransformer:
 		resource = "transformers"
 		collectionErrorCode = "entity_collection_failed"
+	case model.EntityUPSGroup:
+		resource = "ups_groups"
+		collectionErrorCode = "entity_collection_failed"
+	case model.EntityUPS:
+		resource = "ups"
+		collectionErrorCode = "entity_collection_failed"
+	case model.EntityRPP:
+		resource = "rpps"
+		collectionErrorCode = "entity_collection_failed"
+	case model.EntityPod:
+		resource = "pods"
+		collectionErrorCode = "entity_collection_failed"
 	default:
 		return w.failOrCancel(ctx, run.ID, status, syncErrorSourceValidation)
 	}
@@ -244,21 +256,27 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 	}
 	w.logger.Info("sync entity selected", zap.String("run_id", run.ID), zap.String("source_id", source.ID), zap.String("entity_type", string(entity)), zap.String("resource", resource))
 
-	checkpoint, err := w.runs.BeginCheckpoint(ctx, source.ID, resource, run.ID, startedAt, w.currentTime())
+	checkpoint, err := w.runs.BeginCheckpoint(ctx, source.ID, resource, run.ID, SyncSnapshot(ctx, startedAt), w.currentTime())
 	if err != nil || checkpoint == nil {
 		return w.failOrCancel(ctx, run.ID, status, syncErrorCheckpoint)
 	}
 	cursor := checkpoint.Cursor
+	if !cursor.SnapshotAt.Equal(SyncSnapshot(ctx, cursor.SnapshotAt)) {
+		return w.failOrCancel(ctx, run.ID, status, syncErrorCheckpoint)
+	}
 	snapshotAt := cursor.SnapshotAt
 	identityDigest := sha256.New()
 	seenDeviceSN := make(map[string]struct{})
 	verifiedOwners := make(map[model.EntityIdentity]struct{})
 	partitionOwners := make(map[int64]string)
 	var pass adapter.EntityPageStream
-	if entity == model.EntityInterface {
+	if entity == model.EntityInterface || entity == model.EntityPod {
 		pass, err = w.source.OpenEntityPass(ctx, source, entity)
 		if err != nil {
 			return w.failOrCancel(ctx, run.ID, status, collectionErrorCode)
+		}
+		if scope, ok := pass.(interface{ ScopeSummary() map[string]int }); ok {
+			w.logger.Info("sync reference-derived scope", zap.String("run_id", run.ID), zap.String("entity_type", string(entity)), zap.Any("summary", scope.ScopeSummary()))
 		}
 	}
 
@@ -273,7 +291,7 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 
 		var page adapter.EntityPage
 		var collectErr error
-		if entity == model.EntityInterface {
+		if entity == model.EntityInterface || entity == model.EntityPod {
 			page, collectErr = pass.Page(ctx, cursor.NextOffset)
 		} else {
 			page, collectErr = w.collectEntityPage(ctx, source, entity, cursor.NextOffset)
@@ -339,7 +357,7 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 	}
 	status = model.SyncRunStatusValidating
 
-	if err := w.validateEntitySnapshot(ctx, run.ID, source, entity, cursor.Total, identityDigest.Sum(nil)); err != nil {
+	if err := w.validateEntitySnapshot(ctx, run.ID, source, entity, cursor.Total, identityDigest.Sum(nil), entityPassScopeDigest(pass)); err != nil {
 		if errors.Is(err, errSyncLeaseLost) {
 			return err
 		}
@@ -402,11 +420,18 @@ func (w *SyncWorker) collectEntityPage(ctx context.Context, source model.Source,
 	return adapter.EntityPage{Records: records, NextOffset: page.NextOffset, Total: page.Total, Done: page.Done}, nil
 }
 
-func (w *SyncWorker) validateEntitySnapshot(ctx context.Context, runID string, source model.Source, entity model.EntityType, expectedTotal int, expectedDigest []byte) error {
+func entityPassScopeDigest(pass adapter.EntityPageStream) string {
+	if scope, ok := pass.(interface{ ScopeDigest() string }); ok {
+		return scope.ScopeDigest()
+	}
+	return ""
+}
+
+func (w *SyncWorker) validateEntitySnapshot(ctx context.Context, runID string, source model.Source, entity model.EntityType, expectedTotal int, expectedDigest []byte, scopeDigest string) error {
 	cursor := repository.DeviceSyncCursor{Version: repository.DeviceSyncCursorVersion, Total: expectedTotal}
 	digest := sha256.New()
 	var pass adapter.EntityPageStream
-	if entity == model.EntityInterface {
+	if entity == model.EntityInterface || entity == model.EntityPod {
 		var err error
 		pass, err = w.source.OpenEntityPass(ctx, source, entity)
 		if err != nil {
@@ -415,6 +440,9 @@ func (w *SyncWorker) validateEntitySnapshot(ctx context.Context, runID string, s
 			}
 			return err
 		}
+	}
+	if entityPassScopeDigest(pass) != scopeDigest {
+		return errSyncDevicePage
 	}
 	for {
 		canceled, err := w.cancellationRequested(ctx, runID)
@@ -425,7 +453,7 @@ func (w *SyncWorker) validateEntitySnapshot(ctx context.Context, runID string, s
 			return errSyncCanceled
 		}
 		var page adapter.EntityPage
-		if entity == model.EntityInterface {
+		if entity == model.EntityInterface || entity == model.EntityPod {
 			page, err = pass.Page(ctx, cursor.NextOffset)
 		} else {
 			page, err = w.collectEntityPage(ctx, source, entity, cursor.NextOffset)

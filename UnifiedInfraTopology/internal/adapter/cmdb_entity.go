@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,9 +30,24 @@ var cabinetFields = []string{
 }
 
 var transformerFields = []string{
-	"inst_id", "uuid", "code", "idc", "standby_transformer",
+	"inst_id", "code", "idc", "standby_transformer",
 	"transformer_brand", "transformer_type", "transformer_capacity", "create_time", "last_time",
 }
+
+var upsGroupFields = []string{
+	"inst_id", "code", "idc", "transformer_id_up", "create_time", "last_time",
+}
+
+var upsFields = []string{
+	"inst_id", "code", "idc", "ups_group", "transformer_id_up",
+	"ups_brand", "ups_type", "ups_capacity", "create_time", "last_time",
+}
+
+var rppFields = []string{
+	"inst_id", "code", "idc", "ups_group", "transformer_group_a", "create_time", "last_time",
+}
+
+var podFields = []string{"inst_id", "uuid", "basic_code", "name", "full_name", "plane", "mode", "rdma", "phy_building_id", "idc_logic_id", "is_delete", "is_sync", "created_at", "create_time", "updated_at", "last_time"}
 
 var interfaceFields = []string{
 	"inst_id", "port_uuid", "port_name", "port_type", "port_speed", "port_operation_status",
@@ -56,8 +72,8 @@ type cmdbEntityData struct {
 }
 
 func (c *CMDB) CollectEntityPage(ctx context.Context, source model.Source, entity model.EntityType, start int) (EntityPage, error) {
-	if start < 0 || entity != model.EntityDataCenter && entity != model.EntityCabinet && entity != model.EntityInterface && entity != model.EntityTransformer {
-		return EntityPage{}, fmt.Errorf("%w: entity_type must be data_center, cabinet, interface, or transformer; offset must be nonnegative", ErrCMDBConfig)
+	if start < 0 || !supportedCMDBEntity(entity) || entity == model.EntityDevice {
+		return EntityPage{}, fmt.Errorf("%w: entity_type must be data_center, cabinet, interface, transformer, ups_group, ups, or rpp; offset must be nonnegative", ErrCMDBConfig)
 	}
 	cfg, err := c.configFor(source)
 	if err != nil {
@@ -78,6 +94,14 @@ func (c *CMDB) collectEntityPage(ctx context.Context, cfg cmdbConfig, condition 
 		endpoint, fields = "/pub/api/v3/find/instance/object/port_view", interfaceFields
 	} else if entity == model.EntityTransformer {
 		endpoint, fields = "/pub/api/v3/find/instance/object/idc_transformer", transformerFields
+	} else if entity == model.EntityUPSGroup {
+		endpoint, fields = "/pub/api/v3/find/instance/object/idc_ups_group", upsGroupFields
+	} else if entity == model.EntityUPS {
+		endpoint, fields = "/pub/api/v3/find/instance/object/idc_ups", upsFields
+	} else if entity == model.EntityRPP {
+		endpoint, fields = "/pub/api/v3/find/instance/object/idc_RPP", rppFields
+	} else if entity == model.EntityPod {
+		endpoint, fields = "/pub/api/v3/find/instance/object/pod", podFields
 	}
 	body, err := json.Marshal(cmdbEntityRequest{Fields: fields, Page: deviceViewPage{Start: start, Limit: cfg.PageSize, Sort: "inst_id"}, Condition: condition})
 	if err != nil {
@@ -155,9 +179,19 @@ func cmdbEntityRecord(item map[string]json.RawMessage, entity model.EntityType) 
 	if entity == model.EntityTransformer {
 		return cmdbTransformerRecord(item)
 	}
+	if entity == model.EntityUPSGroup {
+		return cmdbUPSGroupRecord(item)
+	}
+	if entity == model.EntityUPS || entity == model.EntityRPP {
+		return cmdbUPSRPPRecord(item, entity)
+	}
 	properties := make(map[string]any)
 	textFields := []string{"uuid", "code", "cn_name", "address", "location"}
 	integerFields := []string{"inst_id"}
+	if entity == model.EntityPod {
+		textFields = []string{"uuid", "basic_code", "name", "full_name", "mode"}
+		integerFields = append(integerFields, "plane", "rdma", "phy_building_id", "idc_logic_id", "is_delete", "is_sync")
+	}
 	if entity == model.EntityCabinet {
 		textFields = []string{"uuid", "code", "dc_colo_rack", "isp_rack_code", "rack", "rack_column_code", "rack_row"}
 		integerFields = append(integerFields, "idc_id", "phy_building_id", "phy_room_id", "idc_module_id", "idc_building_structure_id", "idc_rows_code", "row_switch_id_A", "row_switch_id_B")
@@ -214,12 +248,99 @@ func cmdbEntityRecord(item map[string]json.RawMessage, entity model.EntityType) 
 		properties["pod_ids"] = podIDs
 	}
 	properties["source_created_at"] = cmdbSourceTime(item["created_at"])
+	if entity == model.EntityPod && properties["source_created_at"] == nil {
+		properties["source_created_at"] = cmdbSourceTime(item["create_time"])
+	}
 	properties["source_updated_at"] = cmdbSourceTime(item["updated_at"])
 	if properties["source_updated_at"] == nil {
 		properties["source_updated_at"] = cmdbSourceTime(item["last_time"])
 	}
 	delete(properties, "uuid")
 	return EntityRecord{SourceInstanceID: instID, Identity: uuid, Properties: properties}, nil
+}
+
+func cmdbUPSRPPRecord(item map[string]json.RawMessage, entity model.EntityType) (EntityRecord, error) {
+	record, err := cmdbUPSGroupRecord(item)
+	if err != nil {
+		return EntityRecord{}, err
+	}
+	properties := record.Properties
+	refs := []struct{ source, target string }{{"ups_group", "ups_group_id"}}
+	if entity == model.EntityRPP {
+		delete(properties, "transformer_id_up")
+		refs = append(refs, struct{ source, target string }{"transformer_group_a", "transformer_group_a_id"})
+	}
+	for _, field := range refs {
+		properties[field.target] = nil
+		var value int64
+		if raw := item[field.source]; len(raw) != 0 && json.Unmarshal(raw, &value) == nil && value > 0 {
+			properties[field.target] = value
+		}
+	}
+	if entity == model.EntityUPS {
+		for _, field := range []struct{ source, target string }{{"ups_brand", "brand"}, {"ups_type", "model"}} {
+			var value *string
+			if raw := item[field.source]; len(raw) != 0 {
+				if err := json.Unmarshal(raw, &value); err != nil {
+					return EntityRecord{}, fmt.Errorf("%w: invalid text field %s", ErrCMDBRecord, field.source)
+				}
+			}
+			properties[field.target] = nil
+			if value != nil && strings.TrimSpace(*value) != "" {
+				properties[field.target] = strings.TrimSpace(*value)
+			}
+		}
+		properties["rated_capacity"] = nil
+		var capacity *int64
+		if raw := item["ups_capacity"]; len(raw) != 0 {
+			if err := json.Unmarshal(raw, &capacity); err != nil {
+				return EntityRecord{}, fmt.Errorf("%w: invalid integer field ups_capacity", ErrCMDBRecord)
+			}
+		}
+		if capacity != nil {
+			properties["rated_capacity"] = *capacity
+		}
+	}
+	return record, nil
+}
+
+func cmdbUPSGroupRecord(item map[string]json.RawMessage) (EntityRecord, error) {
+	properties := make(map[string]any)
+	var instID int64
+	if raw := item["inst_id"]; len(raw) != 0 {
+		if err := json.Unmarshal(raw, &instID); err != nil {
+			return EntityRecord{}, fmt.Errorf("%w: invalid integer field inst_id", ErrCMDBRecord)
+		}
+	}
+	for _, field := range []string{"code"} {
+		var value *string
+		if raw := item[field]; len(raw) != 0 {
+			if err := json.Unmarshal(raw, &value); err != nil {
+				return EntityRecord{}, fmt.Errorf("%w: invalid text field %s", ErrCMDBRecord, field)
+			}
+		}
+		properties[field] = nil
+		if value != nil && strings.TrimSpace(*value) != "" {
+			properties[field] = strings.TrimSpace(*value)
+		}
+	}
+	if instID <= 0 {
+		return EntityRecord{}, fmt.Errorf("%w: positive inst_id is required", ErrCMDBRecord)
+	}
+	identity := strconv.FormatInt(instID, 10)
+	properties["inst_id"] = instID
+	for _, field := range []struct{ source, target string }{
+		{"idc", "idc_id"}, {"transformer_id_up", "transformer_id_up"},
+	} {
+		properties[field.target] = nil
+		var value int64
+		if raw := item[field.source]; len(raw) != 0 && json.Unmarshal(raw, &value) == nil && value > 0 {
+			properties[field.target] = value
+		}
+	}
+	properties["source_created_at"] = cmdbSourceTime(item["create_time"])
+	properties["source_updated_at"] = cmdbSourceTime(item["last_time"])
+	return EntityRecord{SourceInstanceID: instID, Identity: identity, Properties: properties}, nil
 }
 
 func cmdbTransformerRecord(item map[string]json.RawMessage) (EntityRecord, error) {
@@ -231,7 +352,7 @@ func cmdbTransformerRecord(item map[string]json.RawMessage) (EntityRecord, error
 		}
 	}
 	for _, field := range []struct{ source, target string }{
-		{"uuid", "uuid"}, {"code", "code"}, {"transformer_brand", "brand"}, {"transformer_type", "model"},
+		{"code", "code"}, {"transformer_brand", "brand"}, {"transformer_type", "model"},
 	} {
 		var value *string
 		if raw := item[field.source]; len(raw) != 0 {
@@ -244,11 +365,10 @@ func cmdbTransformerRecord(item map[string]json.RawMessage) (EntityRecord, error
 			properties[field.target] = strings.TrimSpace(*value)
 		}
 	}
-	identity, _ := properties["uuid"].(string)
-	if instID <= 0 || identity == "" {
-		return EntityRecord{}, fmt.Errorf("%w: positive inst_id and uuid are required", ErrCMDBRecord)
+	if instID <= 0 {
+		return EntityRecord{}, fmt.Errorf("%w: positive inst_id is required", ErrCMDBRecord)
 	}
-	delete(properties, "uuid")
+	identity := strconv.FormatInt(instID, 10)
 	properties["inst_id"] = instID
 	for _, field := range []struct{ source, target string }{
 		{"idc", "idc_id"}, {"standby_transformer", "standby_transformer_id"},

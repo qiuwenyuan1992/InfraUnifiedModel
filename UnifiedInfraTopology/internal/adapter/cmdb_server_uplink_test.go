@@ -47,7 +47,7 @@ func uplinkTestCMDB(t *testing.T, servers []map[string]any, ports []map[string]a
 				}
 			}
 		} else {
-			if r.URL.Path != "/pub/api/v3/find/instance/object/port_view" || req.Condition["sn"] != "tor-a" || req.Condition["port_type"] != "physics" {
+			if r.URL.Path != "/pub/api/v3/find/instance/object/port_view" || req.Condition["sn"] != "tor-a" || len(req.Condition) != 1 {
 				t.Errorf("unindexed port request: %s %v", r.URL.Path, req.Condition)
 			}
 			if _, restricted := req.Condition["idc_id"]; restricted {
@@ -75,6 +75,14 @@ func uplinkServer(raw any) map[string]any {
 	return map[string]any{"inst_id": 1, "device_sn": "server-a", "parent_type_id": 52, "server_tor_ports": raw}
 }
 func uplinkManifest(ports ...string) any { return []map[string]any{{"sn": "tor-a", "ports": ports}} }
+
+func TestCollectServerUplinkIncludesAggregationPort(t *testing.T) {
+	c := uplinkTestCMDB(t, []map[string]any{uplinkServer(uplinkManifest("Bridge-Aggregation10"))}, []map[string]any{{"inst_id": 1, "port_uuid": "aggregate-a", "port_name": "Bridge-Aggregation10", "port_type": "virtual", "local_device_sn": "tor-a"}}, nil)
+	page, err := c.CollectServerUplinkPage(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, 0)
+	if err != nil || len(page.Links) != 1 || page.Links[0].To.StableID != "aggregate-a" {
+		t.Fatalf("aggregation port rejected: %+v %v", page, err)
+	}
+}
 
 func TestCollectServerUplinkPageRequiresActualNetworkToR(t *testing.T) {
 	for _, device := range []map[string]any{

@@ -13,13 +13,22 @@ func testEntity(entityType EntityType, stableID string) EntityIdentity {
 
 func testRelation(edgeType EdgeType, kind RelationKind, fromType, toType EntityType) Relation {
 	now := time.Now().UTC().Truncate(time.Second)
+	fromID, toID := string(fromType)+"-from", string(toType)+"-to"
+	switch fromType {
+	case EntityTransformer, EntityUPSGroup, EntityUPS, EntityRPP:
+		fromID = "101"
+	}
+	switch toType {
+	case EntityTransformer, EntityUPSGroup, EntityUPS, EntityRPP:
+		toID = "102"
+	}
 	return Relation{
 		Identity: RelationIdentity{
 			SourceID: "cmdb-primary",
 			EdgeType: edgeType,
 			Kind:     kind,
-			From:     testEntity(fromType, string(fromType)+"-from"),
-			To:       testEntity(toType, string(toType)+"-to"),
+			From:     testEntity(fromType, fromID),
+			To:       testEntity(toType, toID),
 		},
 		CreatedAt: now,
 		SyncedAt:  now,
@@ -58,7 +67,7 @@ func TestRelationMatrixAcceptsAllSupportedEndpoints(t *testing.T) {
 			relation.Properties = test.properties
 			relation.Identity.SourceRelationID = test.sourceID
 			if test.kind == RelationHasStandby {
-				relation.Identity.To.StableID = "standby-transformer"
+				relation.Identity.To.StableID = "103"
 			}
 			require.NoError(t, ValidateRelation(relation))
 		})

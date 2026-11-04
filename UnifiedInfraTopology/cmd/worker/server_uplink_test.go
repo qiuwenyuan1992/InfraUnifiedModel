@@ -19,10 +19,11 @@ import (
 )
 
 type uplinkTestClient struct {
-	t       *testing.T
-	at      time.Time
-	failure string
-	empty   bool
+	t        *testing.T
+	at       time.Time
+	failure  string
+	portType string
+	empty    bool
 }
 
 type uplinkControlTest struct {
@@ -124,6 +125,91 @@ type uplinkRunnerTest func(context.Context, model.Source, time.Time) (service.Se
 
 func (f uplinkRunnerTest) Run(ctx context.Context, source model.Source, at time.Time) (service.ServerUplinkResult, error) {
 	return f(ctx, source, at)
+}
+
+func TestServerUplinkInjectedSnapshotKeepsRealLease(t *testing.T) {
+	started := serverUplinkNow()
+	snapshot := started.Add(-time.Hour)
+	lease := started.Add(time.Minute)
+	ctx, cancel := context.WithTimeout(service.WithSyncSnapshot(context.Background(), snapshot), time.Second)
+	defer cancel()
+	run := &model.SyncRun{ID: "run", SourceID: "source", Status: model.SyncRunStatusRunning, StartedAt: &started, LeaseExpiresAt: &lease}
+	control := &snapshotUplinkControlTest{uplinkControlTest: uplinkControlTest{status: model.SyncRunStatusRunning, renewed: make(chan string, 16)}, times: make(chan time.Time, 16)}
+	runner := uplinkRunnerTest(func(c context.Context, _ model.Source, at time.Time) (service.ServerUplinkResult, error) {
+		require.Equal(t, snapshot, at)
+		require.Equal(t, snapshot, service.SyncSnapshot(c, started))
+		select {
+		case renewed := <-control.times:
+			require.False(t, renewed.Before(started))
+		case <-c.Done():
+			return service.ServerUplinkResult{}, c.Err()
+		}
+		return service.ServerUplinkResult{Edges: 1}, nil
+	})
+	_, err := executeServerUplink(ctx, control, runner, run, model.Source{ID: "source"}, time.Millisecond, func(_ context.Context, at time.Time, n int64) error {
+		require.Equal(t, snapshot, at)
+		require.Equal(t, int64(1), n)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, started, *run.StartedAt)
+	require.Equal(t, lease, *run.LeaseExpiresAt)
+	require.Equal(t, snapshot, control.beginSnapshot)
+	require.Equal(t, snapshot, control.cursor.SnapshotAt)
+	require.True(t, control.completed)
+	for _, at := range control.controlTimes {
+		require.False(t, at.Before(started))
+	}
+}
+
+func TestServerUplinkInjectedSnapshotRejectsDifferentResumedCheckpoint(t *testing.T) {
+	started := serverUplinkNow()
+	snapshot := started.Add(-time.Hour)
+	lease := started.Add(time.Minute)
+	run := &model.SyncRun{ID: "run", SourceID: "source", Status: model.SyncRunStatusRunning, StartedAt: &started, LeaseExpiresAt: &lease}
+	control := &snapshotUplinkControlTest{uplinkControlTest: uplinkControlTest{status: model.SyncRunStatusRunning, renewed: make(chan string, 16)}, returnedSnapshot: snapshot.Add(-time.Second)}
+	called := false
+	runner := uplinkRunnerTest(func(context.Context, model.Source, time.Time) (service.ServerUplinkResult, error) {
+		called = true
+		return service.ServerUplinkResult{}, nil
+	})
+	_, err := executeServerUplink(service.WithSyncSnapshot(context.Background(), snapshot), control, runner, run, model.Source{ID: "source"}, time.Hour, func(context.Context, time.Time, int64) error { return nil })
+	require.Error(t, err)
+	require.False(t, called)
+	require.False(t, control.completed)
+	require.Equal(t, model.SyncRunStatusFailed, control.status)
+}
+
+type snapshotUplinkControlTest struct {
+	returnedSnapshot time.Time
+	uplinkControlTest
+	times        chan time.Time
+	controlTimes []time.Time
+}
+
+func (c *snapshotUplinkControlTest) RenewRunLease(ctx context.Context, id string, at time.Time) error {
+	c.times <- at
+	return c.uplinkControlTest.RenewRunLease(ctx, id, at)
+}
+func (c *snapshotUplinkControlTest) BeginCheckpoint(ctx context.Context, source, resource, run string, snapshot, at time.Time) (*repository.DeviceSyncCheckpoint, error) {
+	c.controlTimes = append(c.controlTimes, at)
+	cp, err := c.uplinkControlTest.BeginCheckpoint(ctx, source, resource, run, snapshot, at)
+	if !c.returnedSnapshot.IsZero() && cp != nil {
+		cp.Cursor.SnapshotAt = c.returnedSnapshot
+	}
+	return cp, err
+}
+func (c *snapshotUplinkControlTest) AdvanceCheckpoint(ctx context.Context, source, resource, run string, cursor repository.DeviceSyncCursor, at time.Time) (*repository.DeviceSyncCheckpoint, error) {
+	c.controlTimes = append(c.controlTimes, at)
+	return c.uplinkControlTest.AdvanceCheckpoint(ctx, source, resource, run, cursor, at)
+}
+func (c *snapshotUplinkControlTest) TransitionRun(ctx context.Context, id, from, to string, at time.Time, code string) (*model.SyncRun, error) {
+	c.controlTimes = append(c.controlTimes, at)
+	return c.uplinkControlTest.TransitionRun(ctx, id, from, to, at, code)
+}
+func (c *snapshotUplinkControlTest) CompleteCheckpointAndRun(ctx context.Context, source, resource, run, status string, at time.Time) (*model.SyncRun, error) {
+	c.controlTimes = append(c.controlTimes, at)
+	return c.uplinkControlTest.CompleteCheckpointAndRun(ctx, source, resource, run, status, at)
 }
 
 func TestServerUplinkExecutionKeepsLeaseThroughPublishing(t *testing.T) {
@@ -268,7 +354,11 @@ func (c *uplinkTestClient) ExecuteParameter(_ context.Context, query string, par
 			owner = 52
 		}
 		if !c.empty && c.failure != "endpoint" {
-			rows = [][]any{{"SN", "PORT", "TOR", owner, id, rank, at, int64(52), "physics", "source"}}
+			portType := c.portType
+			if portType == "" {
+				portType = "physics"
+			}
+			rows = [][]any{{"SN", "PORT", "TOR", owner, id, rank, at, int64(52), portType, "source"}}
 			if c.failure == "multiple owners" {
 				rows = append(rows, []any{"SN", "PORT", "WRONG", int64(52), id, rank, at, int64(52), "physics", "source"})
 			}
@@ -303,6 +393,18 @@ func TestServerUplinkVerificationRejectsFalseSuccess(t *testing.T) {
 				require.Error(t, err)
 				return
 			}
+			require.NoError(t, err)
+			require.Equal(t, int64(1), r.ValidEndpointCount)
+			require.Len(t, r.Samples, 1)
+		})
+	}
+}
+
+func TestServerUplinkVerificationAllowsAggregateAndVirtualPorts(t *testing.T) {
+	at := time.Date(2026, 10, 30, 1, 2, 3, 0, time.UTC)
+	for _, portType := range []string{"aggregation", "virtual"} {
+		t.Run(portType, func(t *testing.T) {
+			r, err := verifyServerUplinkGraph(context.Background(), &uplinkTestClient{t: t, at: at, portType: portType}, "source", at, 1)
 			require.NoError(t, err)
 			require.Equal(t, int64(1), r.ValidEndpointCount)
 			require.Len(t, r.Samples, 1)

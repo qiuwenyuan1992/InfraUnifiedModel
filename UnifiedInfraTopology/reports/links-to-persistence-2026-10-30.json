@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-30",
+  "runtime_verdict": "PASS_WITH_SKIPPED_CANDIDATES",
+  "relation_kind": "links_to",
+  "edge_type": "network_relation",
+  "source_id": "00000000000000000000000000001030",
+  "source_network_devices": 2180,
+  "source_scope": {"idc_id": 1030, "parent_type_id": 54, "port_type": "physics"},
+  "target_query": "SN-targeted network device and physical port queries without IDC restriction; actual graph endpoints still required",
+  "source_identity_fields": ["port_uuid", "remote_interface_uuid"],
+  "run_id": "35853dcd7965e41779d894202b284628",
+  "snapshot_at": "2026-10-30T07:25:48.630478Z",
+  "finished_at": "2026-10-30T07:30:49.858857Z",
+  "mysql_status": "succeeded",
+  "lease_expires_at": null,
+  "checkpoint": {"resource": "links_to", "complete": true, "next_offset": 36404, "total": 36404, "last_instance_id": 0},
+  "graph": {"before_count": 0, "total": 36404, "current_snapshot": 36404, "unique_valid_four_node_paths": 36404},
+  "skipped": {
+    "source_observations_missing_remote_sn_or_port_uuid": 101769,
+    "unique_candidates_missing_or_mismatched_graph_endpoints": 2,
+    "aggregate_reported_count": 101771,
+    "counting_note": "Source observations and deduplicated graph candidates are different units. No-remote observations are not treated as failed links; each of the two graph-invalid candidates was skipped without fabrication. Read-only diagnosis confirmed both remote network devices belong to other IDCs and their devices/ports are absent from the IDC1030 graph."
+  },
+  "rejected_endpoint_diagnosis": [
+    {"local_device_sn": "210235A2JMH2580H0023", "local_port_uuid": "01ce860b-5a78-4112-8d72-90c0adb5ab35", "remote_device_sn": "2102113774P0K5000105", "remote_port_uuid": "0842ac0a-c50a-4c36-ae11-a4a706bd117c", "remote_idc_id": 148, "remote_parent_type_id": 54, "cause": "cross-IDC remote device and port not synchronized into this graph; local endpoint and owner valid"},
+    {"local_device_sn": "210235A2JMH2580H0024", "local_port_uuid": "0dd1f58b-7829-483c-b002-faa954fb0913", "remote_device_sn": "2102113774P0K5000117", "remote_port_uuid": "b4b6ad47-6d20-41a2-9d92-00af406274da", "remote_idc_id": 138, "remote_parent_type_id": 54, "cause": "cross-IDC remote device and port not synchronized into this graph; local endpoint and owner valid"}
+  ],
+  "normalization": "Candidates use model.NormalizeRelation before identity/rank and deduplication. Reciprocal observations produce a single canonical physical connection. Stored direction is not traffic direction.",
+  "independent_verification": "PASS for all 36404 current edges: model ID/rank, endpoint VIDs, timestamp, physical interface types, network device classification, sources, and exactly one full ownership path per edge",
+  "fresh_source_path_samples": {
+    "verdict": "PASS",
+    "count": 5,
+    "samples": [
+      {"from_device_sn": "210235A53N5261L100BV", "from_port_uuid": "9be4e49e-596f-4886-a617-c8711695aaeb", "to_port_uuid": "e3665178-1dcc-48fe-bcc1-41f268f7214b", "to_device_sn": "210235A53N525CL1003W"},
+      {"from_device_sn": "210235A53N525CL1003W", "from_port_uuid": "d9ee5b26-ccce-4ade-99ae-0a32c008056a", "to_port_uuid": "ee4d7f34-3bc2-45d4-9d21-e68ba3662b62", "to_device_sn": "210235A53N5261L100BV"},
+      {"from_device_sn": "210235A53L5258L100ZQ", "from_port_uuid": "8931e2c7-51a8-4771-a926-371cb6bd6ffd", "to_port_uuid": "cec2b15f-ef67-4590-af7f-cb3e1cfffb05", "to_device_sn": "210235A53N525CL1003W"},
+      {"from_device_sn": "210235A53N5261L100BV", "from_port_uuid": "794452dd-82f2-4380-af0e-c1a842eb4980", "to_port_uuid": "cf23518a-f6f7-433f-970c-420ad88098ea", "to_device_sn": "210235A53N525CL1003W"},
+      {"from_device_sn": "210235A53N525CL1003W", "from_port_uuid": "38219fe0-1707-493a-b5a8-28980b131317", "to_port_uuid": "6ecb3e03-0df0-4583-a3a4-81d862c69dee", "to_device_sn": "210235A53L5258L100SC"}
+    ]
+  },
+  "interrupted_attempts": [
+    {"run_id": "88ff73d2cdfa87802ecc5528fc20b1ee", "cause": "Foreground execution tool reached its 600-second limit", "final_status": "failed", "error_code": "worker_execution_interrupted", "graph_count_observed_after": 0},
+    {"run_id": "3bbb82fc8130f9839120b2f89873ef0c", "cause": "Background task tool reported timeout but OS process remained alive; process existence and SQL lease were checked, then SIGINT was approved and sent", "final_status": "canceled", "lease_released": true}
+  ],
+  "performance_changes": {"source_device_page_max": 200, "port_page_max_in_cli": 2000, "source_pages_in_parallel": 4, "endpoint_checks_or_writes_in_parallel": 8, "source_results_digest_order": "fixed source offset order", "cache_scope": "one source device page; no whole-run port graph index"},
+  "tests": {"red_green": "source/endpoint/CLI contracts plus duplicate source UUID and hidden-owner queries", "all_packages": "PASS", "affected_packages_race": "PASS", "vet": "PASS", "three_entrypoint_build": "PASS", "git_diff_check": "PASS"},
+  "safety": {"new_vertex_writes": false, "cleanup": false, "placeholder_endpoints": false, "schema_changes": false, "config_files_changed": false, "approval_hooks_changed": false},
+  "limits": ["No remote-SN fallback from UUID and no port-name fallback when remote port UUID is missing", "Two cross-IDC remote endpoints are diagnosed but not synchronized; no graph data was changed during diagnosis", "Old links are retained if upstream connections disappear", "Source is not an atomic CMDB snapshot; graph publication is not rolled back on later failure", "External endpoint deletion is not atomically prevented", "Production and other IDC source discovery not tested", "The previous six confirmed CMDB server-uplink data issues are separate and were not patched"]
+}

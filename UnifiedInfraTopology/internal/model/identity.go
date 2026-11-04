@@ -26,6 +26,13 @@ func (i EntityIdentity) validate() error {
 	if i.StableID == "" {
 		return errors.New("stable ID is required")
 	}
+	switch i.EntityType {
+	case EntityTransformer, EntityUPSGroup, EntityUPS, EntityRPP:
+		instID, err := strconv.ParseInt(i.StableID, 10, 64)
+		if err != nil || instID <= 0 || strconv.FormatInt(instID, 10) != i.StableID {
+			return errors.New("power stable ID must be a canonical positive int64 inst_id")
+		}
+	}
 	return nil
 }
 

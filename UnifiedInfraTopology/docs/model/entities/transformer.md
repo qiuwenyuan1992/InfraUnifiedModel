@@ -8,8 +8,8 @@
 
 本实体遵守以下边界：
 
-1. 变压器节点以 `idc_transformer.uuid` 作为最终身份。
-2. 保留 `inst_id`，用于解析 `ups_group.transformer_id_up`、其他实体的校验引用、备用变压器引用和按数字 ID 查询 CMDB；数字 ID 不替代 UUID。
+1. 变压器节点以 `idc_transformer.inst_id` 作为权威稳定身份，不要求或生成 UUID。
+2. `inst_id` 同时用于解析 `ups_group.transformer_id_up`、其他实体的校验引用、备用变压器引用和按数字 ID 查询 CMDB。
 3. UPS 组通过 `transformer_id_up` 建立 `ups_group → transformer` 的 `power_upstream` 关系。
 4. 保留 `standby_transformer`，目标唯一解析时建立 `transformer → transformer` 的 `has_standby` 关系。
 5. `has_standby` 仅表达 CMDB 配置的备用引用，不属于当前供电路径，不参与默认故障影响遍历。
@@ -64,18 +64,19 @@
 变压器最终身份使用：
 
 ```text
-transformer.uuid
+transformer.inst_id
 ```
 
 逻辑变压器身份：
 
 ```text
-source_id:transformer:uuid
+[source_id, "transformer", "1588"]
 ```
 
-以下字段均不能替代 UUID：
+`StableID` 使用正整数 `inst_id` 的规范十进制字符串，无符号、前导零或空白；逻辑身份由 `source_id`、实体类型和该字符串组成。VID 为 `SHA-256(["vertex", source_id, "transformer", stable_id])` 的小写十六进制，不直接使用数字 ID。
 
-- `inst_id`
+以下字段均不能替代 `inst_id`：
+
 - `code`
 - `idc`
 - `standby_transformer`
@@ -90,8 +91,7 @@ source_id:transformer:uuid
 | 目标字段 | 来源 | 必要性 |
 |---|---|---|
 | `source_id` | 同步配置 | 避免不同 CMDB 来源之间发生身份碰撞 |
-| `uuid` | `idc_transformer.uuid` | 变压器稳定身份 |
-| `inst_id` | `idc_transformer.inst_id` | CMDB 数字 ID，用于查询、关系解析和来源追溯 |
+| `inst_id` | `idc_transformer.inst_id` | 权威稳定身份；图属性为 `INT NOT NULL`，同时用于查询、关系解析和来源追溯 |
 | `code` | `idc_transformer.code` | 变压器编码和主要展示名称 |
 | `idc_id` | `idc_transformer.idc` | 数据中心数字引用；仅为后续版本关系预留，当前不解析 |
 | `standby_transformer_id` | `idc_transformer.standby_transformer` | 备用变压器数字引用，用于解析目标 `transformer.inst_id` |
@@ -110,8 +110,8 @@ source_id:transformer:uuid
 - 字符串去除首尾空白后保存，空字符串统一写为 `NULL`。
 - `inst_id`、`idc_id` 和 `standby_transformer_id` 按来源整数保存。
 - 数字引用为空、为 `0` 或非法值时统一写为 `NULL`。
-- UUID 为空时不能建立变压器节点，并记录同步诊断。
-- 数字 ID 变化不改变变压器身份。
+- `inst_id` 缺失、非正整数或超出有符号 64 位整数范围时不能建立变压器节点，并记录同步诊断；不使用编码或 UUID 回退。
+- `inst_id` 变化表示不同变压器身份。
 
 #### 编码和展示名称
 
@@ -119,7 +119,7 @@ source_id:transformer:uuid
 
 ```text
 code 非空 → code
-否则 → uuid
+否则 → inst_id 的规范十进制字符串
 ```
 
 `code` 变化不影响变压器身份。
@@ -140,11 +140,11 @@ transformer.idc_id → data_center.inst_id
 #### 备用变压器引用
 
 - 来源 `standby_transformer` 规范保存为 `standby_transformer_id`。
-- `standby_transformer_id` 通过同一 `source_id` 下的 `transformer.inst_id` 解析目标 UUID。
+- `standby_transformer_id` 直接匹配同一 `source_id` 下的 `transformer.inst_id`，以目标规范 `StableID` 生成端点 VID，不经过 UUID 映射。
 - 引用为空时不建立备用关系，也不记录错误。
 - 目标不存在或匹配不唯一时不创建占位节点或关系，并记录 `unresolved`。
 - 当前变压器引用自身时记录 `self_reference`，不发布关系。
-- 多条备用引用形成有向环时记录 `cycle`，不发布该环中的备用关系。
+- 两台或多台备用配置均按来源方向保存；备用循环仅作配置特征记录，不拒绝发布，不当作主供电环路。
 - 引用变化不改变变压器身份；完整成功后更新备用关系。
 
 #### 核心规格
@@ -202,18 +202,18 @@ transformer.idc_id → data_center.inst_id
 使用：
 
 ```text
-ups_group.transformer_id_up → transformer.inst_id → transformer.uuid
+ups_group.transformer_id_up → transformer.inst_id
 ```
 
 解析成功后生成：
 
 ```text
-ups_group(uuid) -[power_relation {relation_kind: "power_upstream"}]-> transformer(uuid)
+ups_group(inst_id) -[power_relation {relation_kind: "power_upstream"}]-> transformer(inst_id)
 ```
 
 规则：
 
-1. `transformer_id_up` 必须唯一解析到一个变压器 UUID。
+1. `transformer_id_up` 必须在同一 `source_id` 下唯一匹配一个变压器 `inst_id`。
 2. 不使用变压器编码、标签、品牌、型号或位置字段猜测目标。
 3. 引用为空、为 `0`、目标不存在或匹配不唯一时，不创建占位节点或关系，并记录同步诊断。
 4. UPS 组引用变化时生成新关系；完整成功后清理旧的上游变压器关系。
@@ -226,13 +226,12 @@ ups_group(uuid) -[power_relation {relation_kind: "power_upstream"}]-> transforme
 ```text
 transformer.standby_transformer_id
   → transformer.inst_id
-  → transformer.uuid
 ```
 
 解析成功并通过自引用、循环检查后生成：
 
 ```text
-transformer(primary_uuid) -[power_relation {relation_kind: "has_standby"}]-> transformer(standby_uuid)
+transformer(primary_inst_id) -[power_relation {relation_kind: "has_standby"}]-> transformer(standby_inst_id)
 ```
 
 规则：
@@ -242,7 +241,7 @@ transformer(primary_uuid) -[power_relation {relation_kind: "has_standby"}]-> tra
 3. 该关系不属于默认 `power_upstream` 路径，不参与默认故障影响范围查询。
 4. 同一主变压器与同一备用变压器只生成一条关系。
 5. 不使用编码、标签、位置或规格猜测备用目标。
-6. 自引用、目标不唯一或有向环不发布关系，并记录明确诊断。
+6. 自引用、目标缺失或不唯一不发布；多台备用循环按配置事实保存，保持在默认主供电链之外。
 7. 若业务查询需要评估切换可能性，必须显式包含 `has_standby`，且结果只能表示候选备用配置，不能表示可切换或可用。
 
 ### 4.3 当前不建立的数据中心关系
@@ -273,26 +272,26 @@ LVP_generator_incoming_id
 
 | Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
 |---|---|---|---|---|---|
-| `power_relation` | `power_upstream` | `ups_group(uuid) → transformer(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `ups_group.transformer_id_up` |
-| `power_relation` | `has_standby` | `transformer(primary_uuid) → transformer(standby_uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `transformer.standby_transformer_id` |
+| `power_relation` | `power_upstream` | `ups_group(inst_id) → transformer(inst_id)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `ups_group.transformer_id_up` |
+| `power_relation` | `has_standby` | `transformer(primary_inst_id) → transformer(standby_inst_id)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `transformer.standby_transformer_id` |
 
 关系身份规则：
 
 - 上述来源均没有独立关系 UUID。
 - 每条 `relation_id` 由 `Edge Type`、`relation_kind` 和两端完整逻辑身份确定性生成。
-- 两端完整逻辑身份必须包含 `source_id`、对象类型和稳定 UUID。
-- 不使用数字引用、编码或标签直接作为最终关系身份。
-- `has_standby(A,B)` 与 `has_standby(B,A)` 是不同关系，但若共同形成循环则均不发布。
+- 两端完整逻辑身份必须包含 `source_id`、对象类型和 `inst_id` 的规范十进制字符串。
+- 不使用裸数字引用、编码或标签直接作为最终关系身份；数字引用必须先唯一匹配目标实体的完整逻辑身份。
+- `has_standby(A,B)` 与 `has_standby(B,A)` 是两条不同且允许同时发布的互备关系；不合并为一条，不表示同时供电。
 
 ## 6. 同步与清理约定
 
-1. 变压器节点按 `uuid` 去重；同一 `source_id` 下 UUID 必须唯一。
-2. 同一 `inst_id` 映射多个 UUID，或同一 UUID 同时出现多个 `inst_id` 时，本轮报身份冲突。
-3. 完整同步应先完整分页采集全部 `transformer`，建立本轮临时 `inst_id → UUID` 映射，再解析备用关系和 UPS 组上游关系。
+1. 变压器节点按 `inst_id` 去重；同一 `source_id`、同一实体类型下 `inst_id` 必须唯一。
+2. 同一作用域内重复 `inst_id` 的记录属性冲突时，本轮报身份冲突；不校验或建立 UUID 绑定。
+3. 完整同步应先完整分页采集全部 `transformer`，建立本轮按 `source_id + 实体类型 + inst_id` 索引的目标集合，再直接解析备用关系和 UPS 组上游关系。
 4. `idc_id` 只保存为节点属性，当前不加入关系解析阶段。
 5. 备用关系必须在完整变压器集合上执行目标解析、自引用和有向环检查。
-6. `standby_transformer_id` 解析失败时记录变压器 UUID、引用值和错误类型，不生成占位变压器。
-7. UPS 组上游解析失败时记录 UPS 组 UUID、引用值和错误类型，不生成占位变压器。
+6. `standby_transformer_id` 解析失败时记录变压器 `inst_id`、引用值和错误类型，不生成占位变压器。
+7. UPS 组上游解析失败时记录 UPS 组 `inst_id`、引用值和错误类型，不生成占位变压器。
 8. RPP 和 UPS 设备的变压器引用校验结果进入同步诊断，不创建跨层关系。
 9. “发布成功”只表示该轮完整采集、解析和图写入成功后将任务状态置为成功；当前不承诺图写入过程中的原子快照可见性。
 10. 本轮见到的变压器节点和成功解析的关系统一刷新 `synced_at=T`；`created_at` 仅在首次创建时写入。
@@ -307,8 +306,8 @@ LVP_generator_incoming_id
 当前变压器样例：
 
 ```text
-uuid                    = 8ff80fda-20d5-4193-b16e-8808d87108a5
 inst_id                 = 1588
+StableID                = "1588"
 code                    = 1T203
 idc_id                  = 451
 standby_transformer_id  = 1593
@@ -330,9 +329,9 @@ rated_capacity          = 2500
 当前已闭合主链为：
 
 ```text
-ups_group(1461bad1-8c8b-47c8-ad37-dc12399bdeb4)
+ups_group(inst_id=1156)
   -[power_relation {relation_kind: "power_upstream"}]->
-transformer(8ff80fda-20d5-4193-b16e-8808d87108a5)
+transformer(inst_id=1588)
 ```
 
 当前未闭合备用引用为：

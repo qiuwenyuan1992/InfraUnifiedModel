@@ -59,7 +59,7 @@ func (r *topologyGraphRepository) ServerUplinkEndpointsValid(ctx context.Context
 	if err != nil {
 		return false, errors.New("invalid uplink endpoint row")
 	}
-	expectedText := map[int]string{0: server.StableID, 2: tor.SourceID, 3: tor.StableID, 5: port.StableID, 6: "physics"}
+	expectedText := map[int]string{0: server.StableID, 2: tor.SourceID, 3: tor.StableID, 5: port.StableID}
 	for index, expected := range expectedText {
 		value, err := row.GetValueByIndex(index)
 		if err != nil || !value.IsString() {

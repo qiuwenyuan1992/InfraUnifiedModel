@@ -51,7 +51,11 @@ func interfacePassDevice(id int64, sn string) map[string]any {
 }
 
 func interfacePassPort(id int64) map[string]any {
-	return map[string]any{"inst_id": id, "port_uuid": fmt.Sprintf("port-%d", id)}
+	kind, name := "physics", "Ethernet1"
+	if id == 101 {
+		kind, name = "virtual", "Bridge-Aggregation10"
+	}
+	return map[string]any{"inst_id": id, "port_uuid": fmt.Sprintf("port-%d", id), "port_type": kind, "port_name": name}
 }
 
 func TestCMDBInterfacePassFlattensDevicePartitionsWithoutCachingPorts(t *testing.T) {
@@ -67,7 +71,7 @@ func TestCMDBInterfacePassFlattensDevicePartitionsWithoutCachingPorts(t *testing
 		}
 		require.Equal(t, "/pub/api/v3/find/instance/object/port_view", req.path)
 		require.Equal(t, float64(1030), req.body.Condition["idc_id"])
-		require.Equal(t, "physics", req.body.Condition["port_type"])
+		require.NotContains(t, req.body.Condition, "port_type")
 		require.NotContains(t, req.body.Condition, "local_device_sn")
 		ports := map[string][]map[string]any{
 			"SN-A": {interfacePassPort(100), interfacePassPort(101), interfacePassPort(102)},
@@ -101,6 +105,10 @@ func TestCMDBInterfacePassFlattensDevicePartitionsWithoutCachingPorts(t *testing
 		require.Len(t, page.Records, tc.size)
 		for _, record := range page.Records {
 			require.Equal(t, tc.partition, record.Partition)
+			if record.Identity == "port-101" {
+				require.Equal(t, "virtual", record.Properties["port_type"])
+				require.Equal(t, "Bridge-Aggregation10", record.Properties["port_name"])
+			}
 			require.Equal(t, map[int64]string{10: "SN-A", 20: "SN-B"}[tc.partition], record.OwnerDeviceSN)
 			require.NotContains(t, record.Properties, "owner_device_sn")
 			require.NotContains(t, record.Properties, "OwnerDeviceSN")

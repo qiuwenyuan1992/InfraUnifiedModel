@@ -95,6 +95,62 @@ func TestNebulaSchemaContract(t *testing.T) {
 	}
 }
 
+func TestNebulaPowerInstIDIdentityMigration(t *testing.T) {
+	raw, err := os.ReadFile("nebula/0003_power_inst_id_identity.ngql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	statements := splitNebulaStatements(string(raw))
+	want := []string{"USE unified_infra_topology"}
+	for _, tag := range []string{"transformer", "ups_group", "ups", "rpp"} {
+		want = append(want, "DROP TAG INDEX IF EXISTS idx_"+tag+"_identity")
+	}
+	for _, tag := range []string{"transformer", "ups_group", "ups", "rpp"} {
+		want = append(want, "ALTER TAG "+tag+" DROP (uuid), CHANGE (inst_id INT NULL)")
+	}
+	for _, tag := range []string{"transformer", "ups_group", "ups", "rpp"} {
+		want = append(want, "CREATE TAG INDEX IF NOT EXISTS idx_"+tag+"_identity ON "+tag+" (source_id(64), inst_id)")
+	}
+	if len(statements) != len(want) {
+		t.Fatalf("增量迁移语句数量错误: got %d, want %d", len(statements), len(want))
+	}
+	for i := range want {
+		if statements[i] != want[i] {
+			t.Fatalf("增量迁移语句 %d 错误: got %q, want %q", i, statements[i], want[i])
+		}
+	}
+	if !strings.Contains(string(raw), "NOT NULL") || !strings.Contains(string(raw), "DEFAULT") {
+		t.Fatal("迁移必须说明 CHANGE NOT NULL 需要 DEFAULT，因此保守保留可空列")
+	}
+}
+
+func TestNebulaGPUPartsSNIdentityMigration(t *testing.T) {
+	raw, err := os.ReadFile("nebula/0004_gpu_parts_sn_identity.ngql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	statements := splitNebulaStatements(string(raw))
+	want := []string{
+		"USE unified_infra_topology",
+		"DROP TAG INDEX IF EXISTS idx_gpu_identity",
+		`ALTER TAG gpu DROP (uuid), CHANGE (parts_sn STRING NOT NULL DEFAULT "")`,
+		"CREATE TAG INDEX IF NOT EXISTS idx_gpu_identity ON gpu (source_id(64), parts_sn(192))",
+	}
+	if len(statements) != len(want) {
+		t.Fatalf("GPU 增量迁移语句数量错误: got %d, want %d", len(statements), len(want))
+	}
+	for i := range want {
+		if statements[i] != want[i] {
+			t.Fatalf("GPU 增量迁移语句 %d 错误: got %q, want %q", i, statements[i], want[i])
+		}
+	}
+	for _, required := range []string{"0", "NOT NULL", "DEFAULT", "parts_sn", "手动"} {
+		if !strings.Contains(string(raw), required) {
+			t.Fatalf("GPU 迁移必须说明空图前提、手动执行及 NOT NULL/DEFAULT 限制，缺少 %q", required)
+		}
+	}
+}
+
 func splitNebulaStatements(raw string) []string {
 	var statements []string
 	for _, part := range strings.Split(stripNebulaComments(raw), ";") {
@@ -204,11 +260,15 @@ func assertNebulaIdentityIndexes(t *testing.T, indexes map[string][]string, tags
 		t.Fatalf("Tag 身份索引不符合精确白名单:\n%s", diff)
 	}
 	stableFields := map[string]string{
-		"device": "device_sn", "interface": "port_uuid", "gpu": "uuid", "pod": "uuid", "cabinet": "uuid",
-		"data_center": "uuid", "rpp": "uuid", "ups_group": "uuid", "ups": "uuid", "transformer": "uuid",
+		"device": "device_sn", "interface": "port_uuid", "gpu": "parts_sn", "pod": "uuid", "cabinet": "uuid",
+		"data_center": "uuid", "rpp": "inst_id", "ups_group": "inst_id", "ups": "inst_id", "transformer": "inst_id",
 	}
 	for tag, stableField := range stableFields {
-		want := []string{"source_id(64)", stableField + "(192)"}
+		identity := stableField + "(192)"
+		if stableField == "inst_id" {
+			identity = stableField
+		}
+		want := []string{"source_id(64)", identity}
 		got := indexes[tag]
 		if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 			t.Fatalf("Tag %q 身份索引字段错误: got %v, want %v", tag, got, want)
@@ -233,9 +293,13 @@ func expectedNebulaTags() map[string]map[string]nebulaField {
 	required := func(typeName string) nebulaField { return nebulaField{typeName: typeName, notNull: true} }
 	optional := func(typeName string) nebulaField { return nebulaField{typeName: typeName} }
 	common := func(stableField string) map[string]nebulaField {
+		identityType := "STRING"
+		if stableField == "inst_id" {
+			identityType = "INT"
+		}
 		return map[string]nebulaField{
 			"source_id":  required("STRING"),
-			stableField:  required("STRING"),
+			stableField:  required(identityType),
 			"created_at": required("DATETIME"),
 			"synced_at":  required("DATETIME"),
 		}
@@ -256,8 +320,8 @@ func expectedNebulaTags() map[string]map[string]nebulaField {
 			"group_uuid": "STRING", "port_group_uuid": "STRING", "group_name": "STRING", "group_type": "INT",
 			"port_group_type": "INT", "group_subtype": "INT",
 		}),
-		"gpu": with(common("uuid"), map[string]string{
-			"parts_sn": "STRING", "parts_number": "STRING", "manufacturer": "STRING", "model": "STRING",
+		"gpu": with(common("parts_sn"), map[string]string{
+			"parts_number": "STRING", "manufacturer": "STRING", "model": "STRING",
 			"specification": "STRING", "card_index": "STRING", "slot": "STRING", "bmc_slot": "STRING",
 			"bus_address": "STRING", "connector": "STRING", "conn_ports": "STRING", "vram": "STRING", "tdp": "STRING",
 			"computer_perf": "STRING", "gpu_fp": "STRING", "gpu_fp64": "STRING", "fp16_tensor_sparsity": "STRING",
@@ -281,21 +345,17 @@ func expectedNebulaTags() map[string]map[string]nebulaField {
 			"inst_id": "INT", "code": "STRING", "cn_name": "STRING", "address": "STRING", "location": "STRING",
 			"source_created_at": "DATETIME", "source_updated_at": "DATETIME",
 		}),
-		"rpp": with(common("uuid"), map[string]string{
-			"inst_id": "INT", "code": "STRING", "idc_id": "INT", "ups_group_id": "INT", "transformer_group_a_id": "INT",
+		"rpp": with(common("inst_id"), map[string]string{"code": "STRING", "idc_id": "INT", "ups_group_id": "INT", "transformer_group_a_id": "INT",
 			"source_created_at": "DATETIME", "source_updated_at": "DATETIME",
 		}),
-		"ups_group": with(common("uuid"), map[string]string{
-			"inst_id": "INT", "code": "STRING", "idc_id": "INT", "transformer_id_up": "INT",
+		"ups_group": with(common("inst_id"), map[string]string{"code": "STRING", "idc_id": "INT", "transformer_id_up": "INT",
 			"source_created_at": "DATETIME", "source_updated_at": "DATETIME",
 		}),
-		"ups": with(common("uuid"), map[string]string{
-			"inst_id": "INT", "code": "STRING", "idc_id": "INT", "ups_group_id": "INT", "transformer_id_up": "INT",
+		"ups": with(common("inst_id"), map[string]string{"code": "STRING", "idc_id": "INT", "ups_group_id": "INT", "transformer_id_up": "INT",
 			"brand": "STRING", "model": "STRING", "rated_capacity": "INT", "source_created_at": "DATETIME",
 			"source_updated_at": "DATETIME",
 		}),
-		"transformer": with(common("uuid"), map[string]string{
-			"inst_id": "INT", "code": "STRING", "idc_id": "INT", "standby_transformer_id": "INT", "brand": "STRING",
+		"transformer": with(common("inst_id"), map[string]string{"code": "STRING", "idc_id": "INT", "standby_transformer_id": "INT", "brand": "STRING",
 			"model": "STRING", "rated_capacity": "INT", "source_created_at": "DATETIME", "source_updated_at": "DATETIME",
 		}),
 	}

@@ -30,7 +30,7 @@ func TestMigrateServerStartReturnsAndCreatesSchema(t *testing.T) {
 	srv := NewMigrateServer(db, &log.Logger{Logger: zap.NewNop()})
 	require.NoError(t, srv.Start(context.Background()))
 	require.True(t, db.Migrator().HasTable(&model.User{}))
-	for _, table := range []string{"topology_schema_migrations", "sources", "sync_runs", "sync_checkpoints", "sync_diagnostics", "publications"} {
+	for _, table := range []string{"topology_schema_migrations", "sources", "sync_runs", "sync_checkpoints", "sync_diagnostics", "publications", "sync_rounds", "sync_round_phases"} {
 		require.True(t, db.Migrator().HasTable(table), table)
 	}
 	for _, table := range []string{"inventory_state", "generations", "sync_run_sources", "entities", "source_keys", "identity_bindings", "device_versions", "interface_versions", "address_versions"} {
@@ -39,7 +39,7 @@ func TestMigrateServerStartReturnsAndCreatesSchema(t *testing.T) {
 	require.NoError(t, srv.Start(context.Background()))
 	var count int64
 	require.NoError(t, db.Table("topology_schema_migrations").Where("state = ?", "applied").Count(&count).Error)
-	require.EqualValues(t, 3, count)
+	require.EqualValues(t, 4, count)
 	require.True(t, db.Migrator().HasColumn(&model.Publication{}, "schema_version"))
 }
 

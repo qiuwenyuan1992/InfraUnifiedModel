@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-30",
+  "scope": "Read-only analysis of current IDC238 power source; no graph or schema changes",
+  "standby_rejections": {
+    "rejected_edges": 22,
+    "mutual_pairs": 11,
+    "long_cycles": 0,
+    "self_references": 0,
+    "example": {"first": {"inst_id": 1047, "code": "D1-DT4"}, "second": {"inst_id": 1109, "code": "D2-DT3"}, "source_references": "1047 -> 1109 and 1109 -> 1047"},
+    "immediate_reason": "Current model forbids all directed cycles for has_standby, so it rejects reciprocal standby pairs.",
+    "interpretation": "All observed cycles are mutual pairs. This is consistent with possible mutual-backup configuration, not evidence of a cyclic primary power-upstream chain. Confirm domain semantics with user before changing the no-cycle rule."
+  },
+  "consistency_diagnostics": {
+    "total": 110,
+    "rpp": 110,
+    "ups": 0,
+    "main_relationships_rejected": false,
+    "matches_known_mutual_standby_partner": 106,
+    "remaining": 4,
+    "example": {"rpp": {"inst_id": 520, "code": "A211PDU-2A"}, "ups_group": {"inst_id": 896, "code": "1U7B"}, "group_upstream_transformer": {"inst_id": 1108, "code": "B2-BT7"}, "rpp_transformer_reference": {"inst_id": 1101, "code": "B1-BT8"}, "known_pair": "1101 <-> 1108"},
+    "remaining_four_rpps": ["A207PDU-7A", "A207PDU-7B", "A207PDU-8B", "A207PDU-8A"],
+    "remaining_transformers": [{"inst_id": 1745, "code": "A2-AT3"}, {"inst_id": 1746, "code": "A1-AT4"}],
+    "remaining_note": "Both transformers have empty standby references; their mutual-backup status is not confirmed by the current source fields.",
+    "interpretation": "The equality-only check flags different transformer IDs. Most differences point at an explicitly configured standby partner, so these may represent valid A/B or backup semantics rather than erroneous CMDB data. The exact meaning of RPP transformer_group_a must be confirmed."
+  },
+  "zero_cabinet_references": {
+    "references": 12,
+    "cabinets": 6,
+    "codes": ["1#-A6备用间-GRD-01", "1#-A7备用间-GRD-01", "1#-库房B-GRD-01", "1#-库房B-GRD-02", "1#-库房B-GRD-03", "1#-库房B-GRD-04"],
+    "interpretation": "All 12 source values are zero; names indicate spare-room/storage cabinets, but whether they should have power references requires domain confirmation. No power edges were invented."
+  },
+  "published_power_relations": 5416,
+  "recommended_decision": "Confirm whether has_standby describes mutual backup and whether transformer_group_a may reference the backup side. If yes, allow verified reciprocal pairs outside the primary power-chain traversal and distinguish standby-consistent references from genuine unresolved conflicts. Do not change rules merely from naming patterns."
+}

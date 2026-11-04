@@ -289,15 +289,15 @@ cabinet(uuid) -[spatial_relation {relation_kind: "tagged_with"}]-> pod(uuid)
 分别解析：
 
 ```text
-cabinet.row_switch_id_A → rpp.inst_id → rpp.uuid
-cabinet.row_switch_id_B → rpp.inst_id → rpp.uuid
+cabinet.row_switch_id_A → rpp.inst_id
+cabinet.row_switch_id_B → rpp.inst_id
 ```
 
 生成：
 
 ```text
-cabinet(uuid) -[power_relation {relation_kind: "power_upstream", power_path: "A"}]-> rpp(uuid)
-cabinet(uuid) -[power_relation {relation_kind: "power_upstream", power_path: "B"}]-> rpp(uuid)
+cabinet(uuid) -[power_relation {relation_kind: "power_upstream", power_path: "A"}]-> rpp(inst_id)
+cabinet(uuid) -[power_relation {relation_kind: "power_upstream", power_path: "B"}]-> rpp(inst_id)
 ```
 
 规则：
@@ -307,6 +307,7 @@ cabinet(uuid) -[power_relation {relation_kind: "power_upstream", power_path: "B"
 3. 若 A、B 路引用同一 RPP，仍保留两条关系，关系身份必须包含 `power_path`。
 4. 引用为空、为 `0`、目标不存在或匹配不唯一时，不生成对应路径关系。
 5. 该关系表示 CMDB 配置的上游供电引用，不证明实时通电状态、电流方向或切换状态。
+6. 数字引用直接匹配同一 `source_id` 下的 RPP `inst_id`，不经过 UUID 映射；以目标正整数 `inst_id` 的规范十进制字符串作为 `StableID`，结合来源和类型生成哈希 VID。机柜自身身份仍为 UUID。
 
 ## 5. 拓扑关系
 
@@ -315,7 +316,7 @@ cabinet(uuid) -[power_relation {relation_kind: "power_upstream", power_path: "B"
 | `spatial_relation` | `located_in` | `device(device_sn) → cabinet(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `device_view.cabinet_uuid` |
 | `spatial_relation` | `located_in` | `cabinet(uuid) → data_center(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `cabinet.idc_id` |
 | `spatial_relation` | `tagged_with` | `cabinet(uuid) → pod(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `cabinet.pod_ids[]` |
-| `power_relation` | `power_upstream` | `cabinet(uuid) → rpp(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `power_path` | `row_switch_id_A/B` |
+| `power_relation` | `power_upstream` | `cabinet(uuid) → rpp(inst_id)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `power_path` | `row_switch_id_A/B` |
 
 关系身份规则：
 
@@ -329,7 +330,7 @@ cabinet(uuid) -[power_relation {relation_kind: "power_upstream", power_path: "B"
 1. 机柜节点按 `uuid` 去重；同一 `source_id` 下 UUID 必须唯一。
 2. 同一 `inst_id` 映射多个 UUID，或同一 UUID 同时出现多个 `inst_id` 时，本轮报身份冲突。
 3. 完整同步应先完整分页采集 `data_center`、`pod`、`rpp` 和 `cabinet`，再解析机柜关系；设备位置关系在设备数据可用后解析。
-4. `idc_id`、`pod_ids[]` 和 `row_switch_id_A/B` 可通过本轮已采集对象的临时 `inst_id → UUID` 映射解析，也可按 `inst_id` 查询对应 API；临时映射不写入 MySQL。
+4. `idc_id`、`pod_ids[]` 可通过本轮已采集对象的临时 `inst_id → UUID` 映射解析；`row_switch_id_A/B` 直接匹配同一来源下 RPP 的权威 `inst_id`，不经过 UUID 映射。也可按 `inst_id` 查询对应 API；临时索引不写入 MySQL。
 5. 机柜节点保存已确认的数字来源引用，但这些字段不替代关系，也不作为图端点身份。
 6. 引用为空、目标不存在、匹配不唯一或身份冲突时不生成关系，并记录对象类型、机柜 UUID、来源字段、引用值和错误类型。
 7. “发布成功”只表示该轮完整采集、解析和图写入成功后将任务状态置为成功；当前不承诺图写入过程中的原子快照可见性。
@@ -364,7 +365,7 @@ row_switch_id_B           = 6114
 1. `device_view_demo.json` 中 6 台设备的 `cabinet_uuid` 均匹配该机柜 UUID。
 2. `idc_id=451` 可匹配 `data_center.inst_id=451`，目标 UUID 为 `0e32c4d6-a29f-4d8b-94c8-38ac791e363d`。
 3. `pod_ids=[914]` 可匹配 `pod.inst_id=914`，目标 UUID 为 `5fffffb0-ecf0-6623-97f2-00ebe4d84212`。
-4. A 路 `row_switch_id_A=6204` 可匹配 RPP UUID `9f283fc3-d029-4a4d-b312-d23b5c2c4cd5`。
+4. A 路 `row_switch_id_A=6204` 可直接匹配 RPP `inst_id=6204`，其逻辑身份为 `[source_id,"rpp","6204"]`。
 5. B 路 `row_switch_id_B=6114` 当前未提供目标 RPP 样例，因此只确认引用存在；同步时按同样规则查询，未解析前不生成 B 路关系。
 
 ## 8. 来源证据

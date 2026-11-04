@@ -17,9 +17,13 @@ func TestSyncFilteredRejectsUnsafeRequestsBeforeConnections(t *testing.T) {
 		entity model.EntityType
 		want   string
 	}{
-		{source: "invalid", entity: model.EntityCabinet, want: "filtered sync requires a valid source ID and device, data_center, cabinet, interface, or transformer"},
+		{source: "invalid", entity: model.EntityCabinet, want: "filtered sync requires a valid source ID and device, data_center, cabinet, interface, transformer, ups_group, ups, or rpp"},
+		{source: strings.Repeat("a", 32), entity: model.EntityPod, want: "filtered sync requires the configured MySQL control database"},
 		{source: strings.Repeat("a", 32), entity: model.EntityDevice, want: "filtered sync requires the configured MySQL control database"},
 		{source: strings.Repeat("a", 32), entity: model.EntityCabinet, want: "filtered sync requires the configured MySQL control database"},
+		{source: strings.Repeat("a", 32), entity: model.EntityUPSGroup, want: "filtered sync requires the configured MySQL control database"},
+		{source: strings.Repeat("a", 32), entity: model.EntityUPS, want: "filtered sync requires the configured MySQL control database"},
+		{source: strings.Repeat("a", 32), entity: model.EntityRPP, want: "filtered sync requires the configured MySQL control database"},
 	} {
 		_, err := syncFiltered(context.Background(), viper.New(), nil, tc.source, tc.entity, io.Discard)
 		require.EqualError(t, err, tc.want)

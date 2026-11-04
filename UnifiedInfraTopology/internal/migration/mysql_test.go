@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -77,11 +78,25 @@ func TestMySQLRejectsNonAutocommitSession(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestMySQLSyncRoundMigrationHasNoRepeatedStatements(t *testing.T) {
+	steps, err := loadSteps("mysql")
+	require.NoError(t, err)
+	seen := make(map[string]bool)
+	for _, statement := range strings.Split(steps[3].sql, ";") {
+		statement = strings.TrimSpace(statement)
+		if statement == "" {
+			continue
+		}
+		require.False(t, seen[statement], statement)
+		seen[statement] = true
+	}
+}
+
 func TestMySQLSkipsAllAppliedMigrations(t *testing.T) {
 	db, mock := mockMySQL(t)
 	steps, err := loadSteps("mysql")
 	require.NoError(t, err)
-	require.Len(t, steps, 3)
+	require.Len(t, steps, 4)
 	prior := sqlmock.NewRows([]string{"version", "name", "checksum", "state"})
 	for _, step := range steps {
 		prior.AddRow(step.version, step.name, step.checksum, "applied")

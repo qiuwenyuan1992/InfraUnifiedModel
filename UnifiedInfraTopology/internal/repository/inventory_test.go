@@ -36,7 +36,7 @@ func inventoryRepositoryFixtureWithDSN(t *testing.T, dsn string, maxOpenConns in
 	}
 	sqlDB.SetMaxOpenConns(maxOpenConns)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err = db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncCheckpoint{}); err != nil {
+	if err = db.AutoMigrate(&model.Source{}, &model.SyncRun{}, &model.SyncRound{}, &model.SyncRoundPhase{}, &model.SyncCheckpoint{}); err != nil {
 		t.Fatal(err)
 	}
 	repository := NewRepository(nil, db)

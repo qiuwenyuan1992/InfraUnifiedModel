@@ -1,6 +1,6 @@
 # GPU 实体定义
 
-状态：最小拓扑模型设计稿。依据截至 2026-09-20 已确认的 CMDB 规则和样例整理；用于 GPU 资产、服务器包含关系和 GPU 上联分析，不复制完整 `server_gpu` 或 `gpu_uplink` 记录。
+状态：GPU 实际 SN 身份契约已于 2026-11-02 经用户批准；用于 GPU 资产、服务器包含关系和 GPU 上联分析，不复制完整 `server_gpu` 或 `gpu_uplink` 记录。
 
 ## 1. 设计目标
 
@@ -9,7 +9,7 @@
 本实体遵守以下边界：
 
 1. 先从 `device_view` 识别 GPU 服务器，再按服务器 `device_sn` 查询该设备包含的 GPU 卡。
-2. GPU 卡节点按当前模型约定以 `server_gpu.uuid` 作为稳定身份；`parts_sn` 是来源匹配键和资产属性，不替代 UUID。
+2. GPU 卡节点以实际 GPU SN `server_gpu.parts_sn` 作为唯一稳定身份；缺失、空字符串或纯空白 SN 的卡记录直接忽略。卡 `uuid` 不参与身份，也不保存。
 3. GPU 上联通过 `gpu_uplink.gpu_sn = server_gpu.parts_sn` 解析 GPU，再通过 `tor_sn + tor_port` 解析网络设备接口。
 4. `ib1`、`ib8` 等 `gpu_port` 按已确认语义表示 GPU 关联网卡端口，当前不建立网卡或网卡端口节点。
 5. NebulaGraph 只保存 GPU 节点和已解析成功的关系；MySQL 不保存 GPU 快照、上联候选或临时别名索引。
@@ -38,23 +38,23 @@ device_type_id = 58
 
 完整分页读取该服务器的 GPU 卡后：
 
-1. 按 `server_gpu.uuid` 创建或更新 GPU 节点。
+1. 按 `server_gpu.parts_sn` 创建或更新 GPU 节点；忽略缺失或空白 SN 的卡记录，不生成对应关系。
 2. 通过 `server_gpu.device_sn = device.device_sn` 建立 `contains_gpu` 关系。
 3. 不使用设备汇总字段 `parts_count.gpu` 或 `parts_gpu` 代替 GPU 卡明细。
 
 ### 2.2 查询 GPU 上联
 
-GPU 卡读取完成后，以同一服务器 `device_sn` 查询 `gpu_uplink`：
+GPU 卡读取完成后，对每张具有有效 `parts_sn` 的卡查询 `gpu_uplink`，请求条件必须是 `gpu_sn=parts_sn`：
 
 ```json
 {
   "condition": {
-    "device_sn": "219685020073"
+    "gpu_sn": "MY15960263P00569"
   }
 }
 ```
 
-API 也支持按单张卡的 `gpu_sn` 查询，但完整同步优先按服务器查询全部上联，避免逐卡请求：
+上述请求中的 `gpu_sn` 必须取自该卡实际 SN，不使用服务器 `device_sn` 代替上联请求条件。API 支持的 `device_sn` 条件不作为本同步流程的兼容回退。每张有效卡的上联均须完整分页读取：
 
 ```json
 {
@@ -87,33 +87,34 @@ gpu_uplink.tor_port = port_view.port_name
 GPU 最终身份使用：
 
 ```text
-server_gpu.uuid
+server_gpu.parts_sn
 ```
 
 逻辑 GPU 身份：
 
 ```text
-source_id:gpu:uuid
+source_id:gpu:parts_sn
 ```
 
-以下字段均不能替代 GPU UUID：
+`parts_sn` 进入身份函数前仅 trim 首尾空白，不折叠大小写或转换数字。缺失、空字符串或纯空白 SN 的记录直接忽略，不创建节点或关系。
+
+以下字段均不能替代 GPU SN：
 
 - `server_gpu.id`
 - `server_gpu.inst_id`
-- `parts_sn`
+- `server_gpu.uuid`
 - `index`
 - `slot`
 - `bus_address`
 
-`parts_sn` 用于将 `gpu_uplink.gpu_sn` 解析到 GPU UUID。即使当前样例中配件 SN 唯一，也不将其提升为最终身份。
+`gpu_uplink.gpu_sn` 直接匹配实际 GPU SN `parts_sn`。不建立 SN 到卡 UUID 的身份映射，不兼容旧 UUID VID，不双写身份。
 
 ### 3.2 当前保存字段
 
 | 目标字段 | 来源 | 必要性 |
 |---|---|---|
 | `source_id` | 同步配置 | 避免不同 CMDB 来源之间发生身份碰撞 |
-| `uuid` | `server_gpu.uuid` | GPU 卡稳定身份 |
-| `parts_sn` | `server_gpu.parts_sn` | GPU 资产 SN，也是上联匹配键 |
+| `parts_sn` | `server_gpu.parts_sn` | 唯一 GPU 稳定身份与上联匹配键；`STRING NOT NULL`，必须非空 |
 | `parts_number` | `server_gpu.parts_number` | GPU 配件编号 |
 | `manufacturer` | `server_gpu.manufacturer` | GPU 厂商 |
 | `model` | `server_gpu.model` | GPU 型号 |
@@ -146,7 +147,7 @@ source_id:gpu:uuid
 
 字段规范：
 
-- 空字符串统一写为 `NULL`；空数组写为空数组，不写含空字符串的数组元素。
+- 可选属性的空字符串写为 `NULL`；身份 `parts_sn` 缺失或空白时忽略整条卡记录，不写 `NULL` 或默认身份。空数组写为空数组，不写含空字符串的数组元素。
 - `index` 来源为字符串，目标字段命名为 `card_index`，避免与查询关键字混淆；保持来源值，不据此推导卡身份。
 - `VRAM`、`tdp` 以及性能字段的单位未形成统一结构化契约，当前保存原始字符串。
 - `npu_versions` 当前是 JSON 字符串；因尚无正式结构契约，暂不拆分为独立属性。
@@ -155,6 +156,7 @@ source_id:gpu:uuid
 
 以下字段不进入 GPU 节点：
 
+- `server_gpu.uuid`：CMDB 卡记录字段，不是 GPU 身份，不持久化
 - `server_gpu.id`
 - `device_sn`：只用于查询所属服务器和生成 `contains_gpu`，正式归属由关系表达
 - `inst_id`
@@ -196,13 +198,13 @@ source_id:gpu:uuid
 
 ```text
 server_gpu.device_sn → device.device_sn
-server_gpu.uuid      → gpu.uuid
+server_gpu.parts_sn  → gpu.parts_sn
 ```
 
 生成：
 
 ```text
-device(device_sn) -[composition_relation {relation_kind: "contains_gpu"}]-> gpu(uuid)
+device(device_sn) -[composition_relation {relation_kind: "contains_gpu"}]-> gpu(parts_sn)
 ```
 
 规则：
@@ -210,7 +212,8 @@ device(device_sn) -[composition_relation {relation_kind: "contains_gpu"}]-> gpu(
 - `device_sn` 为空或设备不存在时，不创建孤立 GPU 节点和关系，记录同步诊断。
 - 所属设备应为 GPU 服务器；当前以 `device_type_id=58` 校验。
 - `parts_count.gpu` 只可用于数量核对，不可代替实际 GPU 节点数量。
-- 同一服务器下重复的 GPU UUID 只创建一个节点。
+- 同一来源下相同的实际 GPU SN 只创建一个节点；所属服务器由关系表达，不进入 GPU 身份。
+- 按用户确认，先完整采集所有卡；同SN的归属或领域属性冲突时排除该SN全部记录，不择一、不合并，也不查询其上联。记录被排除的原始记录数和冲突SN组数；相同归属和属性的重复记录仅去重。
 
 ### 4.2 GPU 上联匹配
 
@@ -219,7 +222,7 @@ device(device_sn) -[composition_relation {relation_kind: "contains_gpu"}]-> gpu(
 ```text
 (gpu_uplink.device_sn, gpu_uplink.gpu_sn)
     → (server_gpu.device_sn, server_gpu.parts_sn)
-    → gpu.uuid
+    → gpu.parts_sn
 ```
 
 再执行以下交叉校验：
@@ -254,15 +257,15 @@ device(device_sn) -[composition_relation {relation_kind: "contains_gpu"}]-> gpu(
 解析成功后生成：
 
 ```text
-gpu(uuid) -[network_relation {relation_kind: "gpu_uplink"}]-> interface(port_uuid)
+gpu(parts_sn) -[network_relation {relation_kind: "gpu_uplink"}]-> interface(port_uuid)
 ```
 
 ## 5. 拓扑关系
 
 | Edge Type | `relation_kind` | 端点 | 通用属性 | 业务属性 | 来源 |
 |---|---|---|---|---|---|
-| `composition_relation` | `contains_gpu` | `device(device_sn) → gpu(uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `server_gpu.device_sn + uuid` |
-| `network_relation` | `gpu_uplink` | `gpu(uuid) → interface(port_uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `tor_port` 是建边所需来源字段；边属性均允许为空：`gpu_port`、`gpu_port_speed`、`gpu_ip`、`gpu_slot`、`server_port_speed`、`bond_name`、`tor_port`、`tor_port_speed`、`tor_role`、`source` | `gpu_uplink` |
+| `composition_relation` | `contains_gpu` | `device(device_sn) → gpu(parts_sn)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | 无 | `server_gpu.device_sn + parts_sn` |
+| `network_relation` | `gpu_uplink` | `gpu(parts_sn) → interface(port_uuid)` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` | `tor_port` 是建边所需来源字段；边属性均允许为空：`gpu_port`、`gpu_port_speed`、`gpu_ip`、`gpu_slot`、`server_port_speed`、`bond_name`、`tor_port`、`tor_port_speed`、`tor_role`、`source` | `gpu_uplink` |
 
 上联速率字段全部保持来源字符串，不进行单位换算或跨字段数值比较；当前样例的 `gpu_port_speed/server_port_speed` 使用 `400G/100G`，而 `tor_port_speed` 使用 `400000`，其单位尚未由接口契约明确。
 
@@ -277,9 +280,9 @@ gpu(uuid) -[network_relation {relation_kind: "gpu_uplink"}]-> interface(port_uui
 ## 6. 同步约定
 
 1. 只对已识别的 GPU 服务器查询 `server_gpu`；按服务器完整分页读取 GPU 卡。
-2. GPU 卡采集完成后，再按同一 `device_sn` 完整分页查询 `gpu_uplink`。
-3. GPU 节点按 `server_gpu.uuid` 去重；上联记录按 `gpu_uplink.uuid` 去重。
-4. 在单台服务器请求范围内，可使用本次 `server_gpu` 响应构建临时 `parts_sn → GPU UUID` 映射，也可按 `parts_sn` 再查 `server_gpu`；该映射不跨服务器、不保存在 MySQL，也不成为整轮同步状态。
+2. GPU 卡采集完成后，对每张有效卡按 `gpu_sn=parts_sn` 完整分页查询 `gpu_uplink`；缺失或空白 SN 的卡不发起上联请求。
+3. GPU 节点按同一来源内的 `server_gpu.parts_sn` 去重；上联记录仍按 `gpu_uplink.uuid` 去重。
+4. 上联 `gpu_sn` 直接解析到同一来源的 `gpu(parts_sn)`，并核对所属服务器；不建立 `parts_sn → GPU UUID` 映射，不持久化卡 UUID 或临时别名索引。
 5. ToR 接口按 `tor_sn + tor_port` 查询或匹配 `port_view`；不建立整轮 `tor_sn → device` 或 `(tor_sn, tor_port) → port_uuid` 索引。
 6. API 请求处理中的局部匹配结果不作为持久化状态；重试、恢复和图重建均重新读取 CMDB。
 7. “发布成功”只表示该轮完整采集、解析和图写入成功后将任务状态置为成功；当前不承诺图写入过程中的原子快照可见性。
@@ -287,7 +290,7 @@ gpu(uuid) -[network_relation {relation_kind: "gpu_uplink"}]-> interface(port_uui
 9. 对单台 GPU 服务器执行旧数据清理前，必须确认该服务器的 `server_gpu` 与 `gpu_uplink` 全部分页、必要接口解析和图写入均成功。任一环节失败时，跳过该服务器范围的全部 GPU 清理。
 10. 当前上联记录引用的 GPU 或 ToR 接口无法解析时，不生成新边，也不得删除该记录可能对应的旧上联边；无法安全确定影响范围时，跳过该服务器的上联清理并记录原因。
 11. 清理顺序为过期 `gpu_uplink` → 过期 `contains_gpu` → 无其他有效引用的过期 GPU 节点。删除 GPU 节点前必须确认上联范围完整，避免留下悬空边或误删仍被引用的 GPU。
-12. 引用为空、身份冲突或目标无法唯一解析时，记录对象类型、服务器 SN、来源 UUID、错误类型和数量；不在 MySQL 保存原始关系候选。
+12. 引用为空、身份冲突或目标无法唯一解析时，记录对象类型、服务器 SN、GPU SN、上联来源关系 UUID、错误类型和数量；不在 MySQL 保存原始关系候选，不以卡 UUID 回退。
 
 ## 7. 样例闭环
 
@@ -312,8 +315,7 @@ server_gpu.conn_ports contains gpu_uplink.gpu_port
 例如：
 
 ```text
-GPU uuid:  b6ea16f9-e0a8-427a-a44e-8224e14f2087
-parts_sn:  MY15960263P01637
+GPU parts_sn: MY15960263P01637
 slot:      204
 conn_port: ib8
 uplink uuid: 24572728-bd42-4acb-bb94-d02552cf8600

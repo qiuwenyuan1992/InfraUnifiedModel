@@ -33,15 +33,30 @@ func (r *inventoryRepository) Enqueue(ctx context.Context, request *model.SyncRu
 			}
 			return err
 		}
-		if err := expireStaleSyncRuns(db, time.Now().UTC().Truncate(time.Microsecond), request.SourceID); err != nil {
+		now := time.Now().UTC().Truncate(time.Microsecond)
+		if err := expireStaleSyncRounds(db, now, request.SourceID); err != nil {
 			return err
+		}
+		if err := expireStaleSyncRuns(db, now, request.SourceID); err != nil {
+			return err
+		}
+		var parentPhase *model.SyncRoundPhase
+		if roundID, phase := RoundStage(ctx); roundID != "" || phase != "" {
+			var err error
+			parentPhase, err = validateRoundStage(db, ctx, request.SourceID, now)
+			if err != nil {
+				return err
+			}
 		}
 
 		var existing model.SyncRun
-		err := db.Where("source_id = ? AND idempotency_key = ?", request.SourceID, request.IdempotencyKey).First(&existing).Error
+		err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("source_id = ? AND idempotency_key = ?", request.SourceID, request.IdempotencyKey).First(&existing).Error
 		if err == nil {
 			if existing.RequestHash != request.RequestHash {
 				return ErrInventoryIdempotency
+			}
+			if parentPhase != nil && parentPhase.RunID != existing.ID {
+				return ErrInventoryConflict
 			}
 			result = &existing
 			return nil
@@ -53,8 +68,20 @@ func (r *inventoryRepository) Enqueue(ctx context.Context, request *model.SyncRu
 		if !source.Enabled {
 			return ErrInventorySource
 		}
+		if parentPhase == nil {
+			var activeRound model.SyncRound
+			err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("source_id = ? AND status IN ?", request.SourceID, []string{"queued", "running"}).First(&activeRound).Error
+			if err == nil {
+				return ErrInventoryConflict
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		} else if parentPhase.RunID != "" {
+			return ErrInventoryConflict
+		}
 		var active model.SyncRun
-		err = db.Where("source_id = ? AND status IN ?", request.SourceID, []string{
+		err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("source_id = ? AND status IN ?", request.SourceID, []string{
 			model.SyncRunStatusQueued,
 			model.SyncRunStatusRunning,
 			model.SyncRunStatusValidating,
@@ -71,6 +98,17 @@ func (r *inventoryRepository) Enqueue(ctx context.Context, request *model.SyncRu
 		run := *request
 		if err := db.Create(&run).Error; err != nil {
 			return err
+		}
+		if parentPhase != nil {
+			bound := db.Model(&model.SyncRoundPhase{}).
+				Where("round_id = ? AND name = ? AND status = ? AND run_id IS NULL", parentPhase.RoundID, parentPhase.Name, "running").
+				Update("run_id", run.ID)
+			if bound.Error != nil {
+				return bound.Error
+			}
+			if bound.RowsAffected != 1 {
+				return ErrInventoryConflict
+			}
 		}
 		result = &run
 		return nil
@@ -152,6 +190,13 @@ func (r *inventoryRepository) claim(ctx context.Context, startedAt time.Time, ru
 	defer inventoryClaimLock.Unlock()
 
 	startedAt = startedAt.UTC().Truncate(time.Microsecond)
+	if runID == "" {
+		if err := r.r.Transaction(ctx, func(txCtx context.Context) error {
+			return expireStaleSyncRounds(r.r.DB(txCtx), startedAt, "")
+		}); err != nil {
+			return nil, nil, err
+		}
+	}
 	var claimed *model.SyncRun
 	var source *model.Source
 	err := r.r.Transaction(ctx, func(txCtx context.Context) error {
@@ -164,6 +209,8 @@ func (r *inventoryRepository) claim(ctx context.Context, startedAt time.Time, ru
 		query := db.Where("status = ? AND cancel_requested_at IS NULL", model.SyncRunStatusQueued)
 		if runID != "" {
 			query = query.Where("id = ?", runID)
+		} else {
+			query = query.Where("NOT EXISTS (SELECT 1 FROM sync_round_phases WHERE sync_round_phases.run_id = sync_runs.id)")
 		}
 		var run model.SyncRun
 		if err := query.Order("created_at ASC, id ASC").First(&run).Error; err != nil {
@@ -171,6 +218,21 @@ func (r *inventoryRepository) claim(ctx context.Context, startedAt time.Time, ru
 				return ErrInventoryNoRun
 			}
 			return err
+		}
+
+		if runID != "" {
+			var ownership model.SyncRoundPhase
+			err := db.Where("run_id = ?", run.ID).First(&ownership).Error
+			if err == nil {
+				phase, err := validateRoundStage(db, ctx, run.SourceID, startedAt)
+				if err != nil || phase.RoundID != ownership.RoundID || phase.Name != ownership.Name || phase.RunID != run.ID {
+					return ErrInventoryConflict
+				}
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			} else if roundID, name := RoundStage(ctx); roundID != "" || name != "" {
+				return ErrInventoryConflict
+			}
 		}
 
 		var runSource model.Source
@@ -288,6 +350,7 @@ func expireStaleSyncRuns(db *gorm.DB, now time.Time, sourceID string) error {
 	stale := func() *gorm.DB {
 		query := db.Model(&model.SyncRun{}).
 			Where("status IN ?", activeStatuses).
+			Where("NOT EXISTS (SELECT 1 FROM sync_round_phases WHERE sync_round_phases.run_id = sync_runs.id)").
 			Where("lease_expires_at <= ? OR (lease_expires_at IS NULL AND started_at IS NOT NULL AND started_at <= ?)", now, staleLegacyBefore)
 		if sourceID != "" {
 			query = query.Where("source_id = ?", sourceID)

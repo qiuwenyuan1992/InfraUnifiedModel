@@ -1,0 +1,10 @@
+-- GPU 唯一身份改为实际 SN parts_sn；仅供人工评审后手动执行，应用不得自动执行 DDL。
+-- 执行前必须再次确认 gpu 节点数为 0；存在 GPU 节点时停止，不在此迁移中搬迁旧 UUID VID。
+-- 本文件独立于 0003 电力身份迁移；不做 UUID 兼容或双写。
+-- NebulaGraph CHANGE NOT NULL 要求 DEFAULT；空字符串仅满足 DDL 语法，不是可用 GPU 身份。
+-- 采集忽略缺失/空白 parts_sn，写入必须显式提供非空 parts_sn，不依赖 DEFAULT。
+USE unified_infra_topology;
+
+DROP TAG INDEX IF EXISTS idx_gpu_identity;
+ALTER TAG gpu DROP (uuid), CHANGE (parts_sn STRING NOT NULL DEFAULT "");
+CREATE TAG INDEX IF NOT EXISTS idx_gpu_identity ON gpu (source_id(64), parts_sn(192));

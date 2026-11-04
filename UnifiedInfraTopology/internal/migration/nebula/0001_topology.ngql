@@ -37,8 +37,7 @@ CREATE TAG IF NOT EXISTS interface (
 
 CREATE TAG IF NOT EXISTS gpu (
   source_id STRING NOT NULL,
-  uuid STRING NOT NULL,
-  parts_sn STRING NULL,
+  parts_sn STRING NOT NULL,
   parts_number STRING NULL,
   manufacturer STRING NULL,
   model STRING NULL,
@@ -131,8 +130,7 @@ CREATE TAG IF NOT EXISTS data_center (
 
 CREATE TAG IF NOT EXISTS rpp (
   source_id STRING NOT NULL,
-  uuid STRING NOT NULL,
-  inst_id INT NULL,
+  inst_id INT NOT NULL,
   code STRING NULL,
   idc_id INT NULL,
   ups_group_id INT NULL,
@@ -145,8 +143,7 @@ CREATE TAG IF NOT EXISTS rpp (
 
 CREATE TAG IF NOT EXISTS ups_group (
   source_id STRING NOT NULL,
-  uuid STRING NOT NULL,
-  inst_id INT NULL,
+  inst_id INT NOT NULL,
   code STRING NULL,
   idc_id INT NULL,
   transformer_id_up INT NULL,
@@ -158,8 +155,7 @@ CREATE TAG IF NOT EXISTS ups_group (
 
 CREATE TAG IF NOT EXISTS ups (
   source_id STRING NOT NULL,
-  uuid STRING NOT NULL,
-  inst_id INT NULL,
+  inst_id INT NOT NULL,
   code STRING NULL,
   idc_id INT NULL,
   ups_group_id INT NULL,
@@ -175,8 +171,7 @@ CREATE TAG IF NOT EXISTS ups (
 
 CREATE TAG IF NOT EXISTS transformer (
   source_id STRING NOT NULL,
-  uuid STRING NOT NULL,
-  inst_id INT NULL,
+  inst_id INT NOT NULL,
   code STRING NULL,
   idc_id INT NULL,
   standby_transformer_id INT NULL,
@@ -235,14 +230,14 @@ CREATE EDGE IF NOT EXISTS power_relation (
 
 CREATE TAG INDEX IF NOT EXISTS idx_device_identity ON device (source_id(64), device_sn(192));
 CREATE TAG INDEX IF NOT EXISTS idx_interface_identity ON interface (source_id(64), port_uuid(192));
-CREATE TAG INDEX IF NOT EXISTS idx_gpu_identity ON gpu (source_id(64), uuid(192));
+CREATE TAG INDEX IF NOT EXISTS idx_gpu_identity ON gpu (source_id(64), parts_sn(192));
 CREATE TAG INDEX IF NOT EXISTS idx_pod_identity ON pod (source_id(64), uuid(192));
 CREATE TAG INDEX IF NOT EXISTS idx_cabinet_identity ON cabinet (source_id(64), uuid(192));
 CREATE TAG INDEX IF NOT EXISTS idx_data_center_identity ON data_center (source_id(64), uuid(192));
-CREATE TAG INDEX IF NOT EXISTS idx_rpp_identity ON rpp (source_id(64), uuid(192));
-CREATE TAG INDEX IF NOT EXISTS idx_ups_group_identity ON ups_group (source_id(64), uuid(192));
-CREATE TAG INDEX IF NOT EXISTS idx_ups_identity ON ups (source_id(64), uuid(192));
-CREATE TAG INDEX IF NOT EXISTS idx_transformer_identity ON transformer (source_id(64), uuid(192));
+CREATE TAG INDEX IF NOT EXISTS idx_rpp_identity ON rpp (source_id(64), inst_id);
+CREATE TAG INDEX IF NOT EXISTS idx_ups_group_identity ON ups_group (source_id(64), inst_id);
+CREATE TAG INDEX IF NOT EXISTS idx_ups_identity ON ups (source_id(64), inst_id);
+CREATE TAG INDEX IF NOT EXISTS idx_transformer_identity ON transformer (source_id(64), inst_id);
 
 CREATE EDGE INDEX IF NOT EXISTS idx_spatial_relation_cleanup ON spatial_relation (source_id(64), synced_at);
 CREATE EDGE INDEX IF NOT EXISTS idx_composition_relation_cleanup ON composition_relation (source_id(64), synced_at);

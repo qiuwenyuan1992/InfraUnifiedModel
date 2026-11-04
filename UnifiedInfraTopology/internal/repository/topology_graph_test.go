@@ -23,7 +23,7 @@ type topologyGraphCall struct {
 }
 
 type topologyGraphFake struct {
-	results []*nebulago.ResultSet
+	results   []*nebulago.ResultSet
 	err       error
 	calls     []topologyGraphCall
 	onExecute func(context.Context)
@@ -101,9 +101,87 @@ func topologyGraphStringResult(t *testing.T, columns []string, rows ...[]string)
 	return result
 }
 
+func topologyGraphIdentityResult(t *testing.T, source, stable *nebula.Value) *nebulago.ResultSet {
+	t.Helper()
+	result, err := nebulago.GenResultSet(&graph.ExecutionResponse{ErrorCode: nebula.ErrorCode_SUCCEEDED, Data: &nebula.DataSet{
+		ColumnNames: [][]byte{[]byte("source_id"), []byte("stable_id")},
+		Rows:        []*nebula.Row{{Values: []*nebula.Value{source, stable}}},
+	}})
+	require.NoError(t, err)
+	return result
+}
+
+func TestTopologyGraphPowerIdentityUsesIntegerAndNeverUpdatesInstID(t *testing.T) {
+	for _, entity := range []model.EntityType{model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP} {
+		for _, props := range []map[string]any{nil, {"inst_id": int64(1588)}, {"inst_id": int(1588), "code": "T1"}} {
+			t.Run(string(entity)+"/"+strconv.Itoa(len(props)), func(t *testing.T) {
+				identity := model.EntityIdentity{SourceID: "cmdb-primary", EntityType: entity, StableID: "1588"}
+				instID := int64(1588)
+				result := topologyGraphIdentityResult(t, &nebula.Value{SVal: []byte(identity.SourceID)}, &nebula.Value{IVal: &instID})
+				fake := &topologyGraphFake{results: []*nebulago.ResultSet{result}}
+				exists, err := (&topologyGraphRepository{client: fake}).VertexExists(context.Background(), identity)
+				require.NoError(t, err)
+				require.True(t, exists)
+				require.Contains(t, fake.calls[0].statement, "properties(vertex).inst_id AS stable_id")
+				fake = &topologyGraphFake{results: []*nebulago.ResultSet{topologyGraphResult(t), result, topologyGraphResult(t)}}
+				now := time.Now()
+				err = (&topologyGraphRepository{client: fake}).UpsertVertex(context.Background(), TopologyVertex{Identity: identity, Properties: props, CreatedAt: now, SyncedAt: now})
+				require.NoError(t, err)
+				require.Len(t, fake.calls, 3)
+				require.Equal(t, instID, fake.calls[0].params["stable_id"])
+				require.Equal(t, 1, strings.Count(fake.calls[0].statement, "inst_id"))
+				require.NotContains(t, fake.calls[0].params, "inst_id")
+				require.NotContains(t, fake.calls[0].statement, "uuid")
+				require.NotContains(t, fake.calls[2].statement, "inst_id")
+				require.NotContains(t, fake.calls[2].statement, "datetime($created_at)")
+				require.NotContains(t, fake.calls[2].params, "created_at")
+				require.NotContains(t, fake.calls[2].statement, "source_id")
+				require.NotContains(t, fake.calls[2].params, "stable_id")
+			})
+		}
+	}
+}
+
+func TestTopologyGraphPowerIdentityReadFailsClosed(t *testing.T) {
+	wrongID := int64(1589)
+	null := nebula.NullType___NULL__
+	for _, entity := range []model.EntityType{model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP} {
+		identity := model.EntityIdentity{SourceID: "cmdb-primary", EntityType: entity, StableID: "1588"}
+		for _, stable := range []*nebula.Value{{IVal: &wrongID}, {SVal: []byte("1588")}, {NVal: &null}} {
+			result := topologyGraphIdentityResult(t, &nebula.Value{SVal: []byte(identity.SourceID)}, stable)
+			fake := &topologyGraphFake{results: []*nebulago.ResultSet{result}}
+			exists, err := (&topologyGraphRepository{client: fake}).VertexExists(context.Background(), identity)
+			require.Error(t, err)
+			require.False(t, exists)
+			fake = &topologyGraphFake{results: []*nebulago.ResultSet{topologyGraphResult(t), result}}
+			now := time.Now()
+			err = (&topologyGraphRepository{client: fake}).UpsertVertex(context.Background(), TopologyVertex{Identity: identity, CreatedAt: now, SyncedAt: now})
+			require.Error(t, err)
+			require.Len(t, fake.calls, 2)
+		}
+		for _, value := range []any{nil, int64(1589), "1588"} {
+			fake := &topologyGraphFake{}
+			now := time.Now()
+			err := (&topologyGraphRepository{client: fake}).UpsertVertex(context.Background(), TopologyVertex{Identity: identity, Properties: map[string]any{"inst_id": value}, CreatedAt: now, SyncedAt: now})
+			require.Error(t, err)
+			require.Empty(t, fake.calls)
+		}
+		fake := &topologyGraphFake{}
+		now := time.Now()
+		err := (&topologyGraphRepository{client: fake}).UpsertVertex(context.Background(), TopologyVertex{Identity: identity, Properties: map[string]any{"uuid": "legacy"}, CreatedAt: now, SyncedAt: now})
+		require.Error(t, err)
+		require.Empty(t, fake.calls)
+	}
+}
+
 func TestTopologyGraphVertexExistsMatchesTypedIdentity(t *testing.T) {
 	for _, entityType := range []model.EntityType{model.EntityDevice, model.EntityInterface, model.EntityGPU} {
 		t.Run(string(entityType), func(t *testing.T) {
+			if entityType == model.EntityGPU {
+				require.Equal(t, "parts_sn", topologyEntitySchemas[entityType].stableField)
+				require.NotContains(t, topologyEntitySchemas[entityType].properties, "parts_sn")
+				require.NotContains(t, topologyEntitySchemas[entityType].properties, "uuid")
+			}
 			identity := model.EntityIdentity{SourceID: `cmdb\"primary`, EntityType: entityType, StableID: `SN\"001`}
 			vid, err := identity.VID()
 			require.NoError(t, err)

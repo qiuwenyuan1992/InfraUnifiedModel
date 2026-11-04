@@ -56,7 +56,7 @@ func inventoryRouter(t *testing.T, s *inventoryStub) (*gin.Engine, string) {
 	require.NoError(t, err)
 	l := &log.Logger{Logger: zap.NewNop()}
 	r := gin.New()
-	InitInventoryRouter(RouterDeps{JWT: j, Logger: l, Config: conf, InventoryHandler: handler.NewInventoryHandler(handler.NewHandler(l), s)}, r.Group("/v1"))
+	InitInventoryRouter(RouterDeps{JWT: j, Logger: l, Config: conf, InventoryHandler: handler.NewInventoryHandler(handler.NewHandler(l), s), InventoryRoundHandler: handler.NewInventoryRoundHandler(handler.NewHandler(l), &roundInventoryStub{})}, r.Group("/v1"))
 	return r, token
 }
 func TestInventoryRoutesRequireAuthAndHideSecrets(t *testing.T) {

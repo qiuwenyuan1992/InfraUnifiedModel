@@ -107,11 +107,15 @@ func (r *topologyGraphRepository) VertexExists(ctx context.Context, identity mod
 	if err != nil || result == nil || !result.IsSucceed() {
 		return false, ErrInventoryNotReady
 	}
+	return topologyVertexIdentityMatches(result, identity, schema, true)
+}
+
+func topologyVertexIdentityMatches(result *nebulago.ResultSet, identity model.EntityIdentity, schema topologyEntitySchema, allowMissing bool) (bool, error) {
 	columns := result.GetColNames()
 	if len(columns) != 2 || columns[0] != "source_id" || columns[1] != "stable_id" {
 		return false, errors.New("invalid topology endpoint columns")
 	}
-	if result.GetRowSize() == 0 {
+	if allowMissing && result.GetRowSize() == 0 {
 		return false, nil
 	}
 	if result.GetRowSize() != 1 || result.GetColSize() != 2 {
@@ -121,14 +125,32 @@ func (r *topologyGraphRepository) VertexExists(ctx context.Context, identity mod
 	if err != nil {
 		return false, errors.New("invalid topology endpoint row")
 	}
-	for index, expected := range []string{identity.SourceID, identity.StableID} {
+	stableID, err := topologyStableIdentityValue(identity, schema)
+	if err != nil {
+		return false, err
+	}
+	for index, expected := range []any{identity.SourceID, stableID} {
 		value, err := row.GetValueByIndex(index)
-		if err != nil || !value.IsString() {
+		if err != nil {
 			return false, errors.New("invalid topology endpoint identity")
 		}
-		text, err := value.AsString()
-		if err != nil || text != expected {
-			return false, errors.New("topology endpoint identity mismatch")
+		switch expected := expected.(type) {
+		case string:
+			if !value.IsString() {
+				return false, errors.New("invalid topology endpoint identity")
+			}
+			text, err := value.AsString()
+			if err != nil || text != expected {
+				return false, errors.New("topology endpoint identity mismatch")
+			}
+		case int64:
+			if !value.IsInt() {
+				return false, errors.New("invalid topology endpoint identity")
+			}
+			integer, err := value.AsInt()
+			if err != nil || integer != expected {
+				return false, errors.New("topology endpoint identity mismatch")
+			}
 		}
 	}
 	return true, nil
@@ -185,9 +207,9 @@ var topologyEntitySchemas = map[model.EntityType]topologyEntitySchema{
 		},
 	},
 	model.EntityGPU: {
-		stableField: "uuid",
+		stableField: "parts_sn",
 		properties: map[string]topologyPropertyType{
-			"parts_sn": topologyString, "parts_number": topologyString, "manufacturer": topologyString,
+			"parts_number": topologyString, "manufacturer": topologyString,
 			"model": topologyString, "specification": topologyString, "card_index": topologyString,
 			"slot": topologyString, "bmc_slot": topologyString, "bus_address": topologyString,
 			"connector": topologyString, "conn_ports": topologyStringList, "vram": topologyString,
@@ -229,7 +251,7 @@ var topologyEntitySchemas = map[model.EntityType]topologyEntitySchema{
 		},
 	},
 	model.EntityRPP: {
-		stableField: "uuid",
+		stableField: "inst_id",
 		properties: map[string]topologyPropertyType{
 			"inst_id": topologyInteger, "code": topologyString, "idc_id": topologyInteger,
 			"ups_group_id": topologyInteger, "transformer_group_a_id": topologyInteger,
@@ -237,7 +259,7 @@ var topologyEntitySchemas = map[model.EntityType]topologyEntitySchema{
 		},
 	},
 	model.EntityUPSGroup: {
-		stableField: "uuid",
+		stableField: "inst_id",
 		properties: map[string]topologyPropertyType{
 			"inst_id": topologyInteger, "code": topologyString, "idc_id": topologyInteger,
 			"transformer_id_up": topologyInteger, "source_created_at": topologyDateTime,
@@ -245,7 +267,7 @@ var topologyEntitySchemas = map[model.EntityType]topologyEntitySchema{
 		},
 	},
 	model.EntityUPS: {
-		stableField: "uuid",
+		stableField: "inst_id",
 		properties: map[string]topologyPropertyType{
 			"inst_id": topologyInteger, "code": topologyString, "idc_id": topologyInteger,
 			"ups_group_id": topologyInteger, "transformer_id_up": topologyInteger, "brand": topologyString,
@@ -254,7 +276,7 @@ var topologyEntitySchemas = map[model.EntityType]topologyEntitySchema{
 		},
 	},
 	model.EntityTransformer: {
-		stableField: "uuid",
+		stableField: "inst_id",
 		properties: map[string]topologyPropertyType{
 			"inst_id": topologyInteger, "code": topologyString, "idc_id": topologyInteger,
 			"standby_transformer_id": topologyInteger, "brand": topologyString, "model": topologyString,
@@ -276,6 +298,13 @@ var topologyEdgeSchemas = map[model.EdgeType]map[string]topologyPropertyType{
 	model.EdgePower: {"power_path": topologyString},
 }
 
+func topologyStableIdentityValue(identity model.EntityIdentity, schema topologyEntitySchema) (any, error) {
+	if schema.stableField == "inst_id" {
+		return strconv.ParseInt(identity.StableID, 10, 64)
+	}
+	return identity.StableID, nil
+}
+
 func (r *topologyGraphRepository) UpsertVertex(ctx context.Context, vertex TopologyVertex) error {
 	schema, ok := topologyEntitySchemas[vertex.Identity.EntityType]
 	if !ok {
@@ -288,7 +317,33 @@ func (r *topologyGraphRepository) UpsertVertex(ctx context.Context, vertex Topol
 	if vertex.CreatedAt.IsZero() || vertex.SyncedAt.IsZero() {
 		return errors.New("topology vertex timestamps are required")
 	}
-	properties, names, err := normalizeTopologyProperties(vertex.Properties, schema.properties)
+	stableID, err := topologyStableIdentityValue(vertex.Identity, schema)
+	if err != nil {
+		return err
+	}
+	ordinaryProperties := vertex.Properties
+	ordinarySchema := schema.properties
+	if schema.stableField == "inst_id" {
+		if value, provided := vertex.Properties[schema.stableField]; provided {
+			instID, err := topologyIntegerValue(value)
+			if err != nil || instID != stableID {
+				return errors.New("topology inst_id property does not match identity")
+			}
+		}
+		ordinaryProperties = make(map[string]any, len(vertex.Properties))
+		for name, value := range vertex.Properties {
+			if name != schema.stableField {
+				ordinaryProperties[name] = value
+			}
+		}
+		ordinarySchema = make(map[string]topologyPropertyType, len(schema.properties))
+		for name, propertyType := range schema.properties {
+			if name != schema.stableField {
+				ordinarySchema[name] = propertyType
+			}
+		}
+	}
+	properties, names, err := normalizeTopologyProperties(ordinaryProperties, ordinarySchema)
 	if err != nil {
 		return err
 	}
@@ -297,7 +352,7 @@ func (r *topologyGraphRepository) UpsertVertex(ctx context.Context, vertex Topol
 
 	params := map[string]interface{}{
 		"source_id":  vertex.Identity.SourceID,
-		"stable_id":  vertex.Identity.StableID,
+		"stable_id":  stableID,
 		"created_at": topologyTime(vertex.CreatedAt),
 		"synced_at":  topologyTime(vertex.SyncedAt),
 	}
@@ -324,12 +379,8 @@ func (r *topologyGraphRepository) UpsertVertex(ctx context.Context, vertex Topol
 	if err != nil {
 		return err
 	}
-	identityValues, err := topologySingleStringRow(identityResult, "source_id", "stable_id")
-	if err != nil {
-		return err
-	}
-	if identityValues[0] != vertex.Identity.SourceID || identityValues[1] != vertex.Identity.StableID {
-		return errors.New("topology vertex identity collision")
+	if _, err := topologyVertexIdentityMatches(identityResult, vertex.Identity, schema, false); err != nil {
+		return fmt.Errorf("topology vertex identity collision: %w", err)
 	}
 
 	assignments := make([]string, 0, len(names)+1)

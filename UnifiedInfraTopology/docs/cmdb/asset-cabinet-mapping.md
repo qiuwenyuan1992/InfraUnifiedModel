@@ -1,6 +1,8 @@
 # CMDB 资产、端口与供电链路：阶段性模型总结
 
-状态：已完成现有接口文档与样例的逐项校对；仍含明确列出的待确认项，不是已实施的 Go/API/Nebula 契约。
+状态：历史阶段资料，仍含已被后续模型取代的假设，不是当前 Go/API/Nebula 契约。
+
+> 2026-10-30 更正：transformer、ups_group、ups、rpp 使用 CMDB 正整数 `inst_id` 为权威身份，不要求 UUID。本文及对应历史架构图中的电力 UUID 假设已失效；以 `docs/model/`、当前 Schema 和 `docs/cmdb-sync/README.md` 为准。
 
 ## 本阶段结论速览
 
@@ -339,13 +341,13 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 ## 11. GPU 资产与上联关系
 
 - GPU 服务器已有 `device_view` 样例：`parent_type="服务器"`、`device_type="GPU服务器"`、`device_type_id=58`。大类单独不能区分 GPU；以类型 ID 识别，名称用于展示和校验，不再要求补设备资产接口。
-- GPU 卡自身以 `server_gpu.uuid` 标识；卡记录的另一个 `id` 不替代 UUID。保留 `parts_sn`、型号、显存、槽位、PCI 地址、驱动等来源属性；未明确的单位保持原值。
-- API 关联先用来源字段匹配，再取得目标实体的稳定身份；设备稳定身份为 `device_sn`，GPU 卡稳定身份仍为 `server_gpu.uuid`。
+- GPU 卡以实际 SN `server_gpu.parts_sn` 作为唯一稳定身份；缺失、空字符串或纯空白 SN 的卡直接忽略。卡 `uuid` 不参与身份也不保存，不以 `id`、`inst_id` 或槽位回退，不做兼容双写。保留型号、显存、槽位、PCI 地址、驱动等来源属性；未明确的单位保持原值。
+- API 关联先用来源字段匹配，再取得目标实体的稳定身份；设备稳定身份为 `device_sn`，GPU 卡稳定身份为 `parts_sn`，完整逻辑身份为 `source_id + gpu + parts_sn`。GPU 上联请求必须使用 `gpu_sn=parts_sn`。
 
 | 来源匹配 | 解析结果 |
 |---|---|
 | `server_gpu.device_sn = device_view.device_sn` | GPU 卡所属服务器 `device_sn` |
-| `gpu_uplink.device_sn = server_gpu.device_sn` 且 `gpu_uplink.gpu_sn = server_gpu.parts_sn` | 上联记录所属 GPU UUID |
+| `gpu_uplink.device_sn = server_gpu.device_sn` 且 `gpu_uplink.gpu_sn = server_gpu.parts_sn` | 上联记录所属 GPU 实际 SN `parts_sn` |
 | `gpu_uplink.tor_sn = device_view.device_sn` | 上联网络设备 `device_sn` |
 | 已解析的上联设备 `device_sn` + `gpu_uplink.tor_port = port_view.port_name` | 上联网络端口 `port_uuid`；不能仅按端口名跨设备匹配 |
 
@@ -356,13 +358,13 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 用户确认 `ib8` 等表示 GPU 关联网卡的端口，不是 GPU 自身的物理网络口。
 
 ```text
-服务器 SN ─包含→ GPU UUID ─经关联网卡上联→ 交换机端口 UUID
+服务器 SN ─包含→ GPU SN(parts_sn) ─经关联网卡上联→ 交换机端口 UUID
                                   属性：gpu_port=ib8
 ```
 
 - GPU 保留 `conn_ports` 列表；上联关系保留 `gpu_port`、`gpu_port_speed`、`server_port_speed`、`tor_port_speed`、`bond_name` 及来源信息。
 - `gpu_uplink.gpu_ip` 是可选上联来源属性。当前 8 条样例全部为空字符串，因此不进入 GPU 节点；取得非空样例并确认卡级地址语义后再评估节点地址字段。
-- `gpu_uplink.uuid` 用于关系记录身份与溯源，不是 GPU UUID。多条上联不能仅因 GPU 与交换机相同就合并。
+- `gpu_uplink.uuid` 仍用于来源关系记录身份与溯源，不是 GPU 卡身份。多条上联不能仅因 GPU 与交换机相同就合并。
 - 网卡端口名只在所属服务器范围内识别；不为 `ib8` 虚构全局 UUID，不据此创建独立网卡/网卡端口节点。
 - 以后有网卡身份及管理需求时，可细化为 GPU → 网卡/网卡端口 → 交换机端口；保留当前上联查询作为汇总表达，GPU 与交换机端口身份不变。
 - 请求样例中的注释和尾逗号实际发送时须去掉；GPU 上联文档里的端口组模板说明不作为样例未提供分组字段的证据。
@@ -373,16 +375,16 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 
 ### 12.1 统一身份和同步属性
 
-设备节点统一使用 `device_sn` 作为最终身份，`device_view.uuid` 不保存。网络设备的 `device_uuid` 只作为端口归属别名。其他 CMDB 资源节点继续使用各自已确认的稳定资源 UUID；网络端口使用 `port_uuid`，端口视图顶层 `uuid` 仅作来源记录身份。GPU 上联不是节点，使用 `gpu_uplink.uuid` 标识来源关系记录。
+设备节点统一使用 `device_sn` 作为最终身份，`device_view.uuid` 不保存。网络设备的 `device_uuid` 只作为端口归属别名。GPU 使用实际 SN `parts_sn`，卡 `server_gpu.uuid` 不保存；其他 CMDB 资源节点按各自权威实体文档使用稳定身份。网络端口使用 `port_uuid`，端口视图顶层 `uuid` 仅作来源记录身份。GPU 上联不是节点，使用 `gpu_uplink.uuid` 标识来源关系记录。
 
-实体完整逻辑身份统一由 `source_id + 实体类型 + 稳定身份` 组成。VID 按运行时契约对 `["vertex", source_id, entity_type, stable_id]` 的规范 JSON 计算 SHA-256，NebulaGraph Space 使用 `FIXED_STRING(64)`；设备的稳定身份为 `device_sn`，其他节点按节点清单使用稳定 UUID。
+实体完整逻辑身份统一由 `source_id + 实体类型 + 稳定身份` 组成。VID 按运行时契约对 `["vertex", source_id, entity_type, stable_id]` 的规范 JSON 计算 SHA-256，NebulaGraph Space 使用 `FIXED_STRING(64)`；设备的稳定身份为 `device_sn`，GPU 为 `parts_sn`，其他节点按各自权威实体文档使用稳定身份。
 
 所有节点统一保留：
 
 | 属性 | 语义 |
 |---|---|
 | `source_id` | CMDB 来源配置标识，也是完整逻辑身份的来源边界 |
-| 稳定身份字段 | 按节点类型保存：设备为 `device_sn`，其他节点按节点清单使用稳定 UUID |
+| 稳定身份字段 | 按节点类型保存：设备为 `device_sn`，GPU 为非空 `parts_sn`，其他节点按各自权威实体文档使用稳定身份 |
 | `created_at` | 本项目首次入图时间，只在首次创建时写入 |
 | `synced_at` | 本项目最后见到时间，每轮统一刷新为 `T`，用于成功轮次后的清理 |
 
@@ -396,7 +398,7 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 |---|---|---|---|
 | `device` | `device_view` | `device_sn` | 统一承载服务器、网络设备及其他设备；不保存会变化的顶层 `uuid`，网络设备 `device_uuid` 仅作端口归属别名；地址作为内嵌属性 |
 | `interface` | `port_view` | `port_uuid` | 网络设备端口；详细字段、关系解析及同步约定见 [interface.md](../model/entities/interface.md) |
-| `gpu` | `server_gpu`、`gpu_uplink` | `server_gpu.uuid` | GPU 卡实例；查询顺序、字段、上联解析和同步约定见 [gpu.md](../model/entities/gpu.md) |
+| `gpu` | `server_gpu`、`gpu_uplink` | 实际 GPU SN `server_gpu.parts_sn` | GPU 卡实例；忽略缺失/空白 SN，不保存卡 UUID；查询顺序、字段、上联解析和同步约定见 [gpu.md](../model/entities/gpu.md) |
 | `data_center` | `idc` | `uuid` | 机柜顶层物理归属与同步范围；只承载身份、中文名称、短编码和展示位置 |
 | `pod` | `pod` | `uuid` | 设备逻辑归属节点；字段、数字 ID、设备关系和同步约定见 [pod.md](../model/entities/pod.md) |
 | `cabinet` | `cabinet` | `uuid` | 设备位置与 A/B 路供电链路的连接节点 |
@@ -428,8 +430,8 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 
 GPU 字段、两阶段查询顺序、上联匹配、交叉校验及同步约定统一以 [gpu.md](../model/entities/gpu.md) 为准。本文件只保留跨实体摘要：
 
-- GPU 节点身份使用 `server_gpu.uuid`，`parts_sn` 仅作为资产属性和 `gpu_uplink.gpu_sn` 匹配键。
-- 先按 GPU 服务器 `device_sn` 查询 `server_gpu`，再按同一 `device_sn` 查询 `gpu_uplink`。
+- GPU 唯一身份使用实际 SN `server_gpu.parts_sn`，`parts_sn STRING NOT NULL`；忽略缺失/空白 SN，不保存卡 UUID，不做 UUID/`inst_id` 回退或双写。
+- 先按 GPU 服务器 `device_sn` 查询 `server_gpu`，再对有效卡按 `gpu_sn=parts_sn` 完整分页查询 `gpu_uplink`。
 - `gpu_uplink` 通过 `gpu_sn → parts_sn` 定位 GPU，通过 `tor_sn + tor_port` 查询 `interface.port_uuid`。
 - `gpu_port` 是 GPU 关联网卡端口名称，只保存在上联关系中，不创建网卡或 GPU 侧接口节点。
 - `gpu_ip` 当前样例均为空，不进入 GPU 节点；仅作为上联关系可选来源属性。
@@ -520,7 +522,7 @@ UPS 字段、关系身份及同步约定统一以 [ups.md](../model/entities/ups
 | `owns_interface` | `device → interface` | 优先使用 `local_device_sn → device.device_sn`；缺少 SN 时按 `local_device_uuid` 查询设备 API，取得 `device_sn` 后关联 `port_uuid` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`；当前不为服务器生成该关系 |
 | `server_uplink` | `device → interface` | 以服务器 `server_tor_ports[].sn + ports[]` 查询或匹配 `port_view.local_device_sn + port_name`，取得 `port_uuid`；按服务器 SN 与 ToR 端口 UUID 确定性生成 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`；补充样例已闭环两组 `SN + 25GE1/0/26`，其他组合按实际结果解析 |
 | `links_to` | `interface → interface` | 本端 `port_uuid` 与 `remote_interface_uuid`；按两个端口 UUID 规范化排序后确定唯一逻辑关系，不使用双端各自不同的 `port_view.uuid` | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`；LLDP 补充样例已验证双端互指并合并为一条逻辑连接；查询按双向处理，不解释为实时可达 |
-| `contains_gpu` | `device → gpu` | `server_gpu.device_sn = device.device_sn`；关系 ID 由关系类型、设备 SN 和 GPU UUID 确定性生成 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` |
+| `contains_gpu` | `device → gpu` | `server_gpu.device_sn = device.device_sn`；关系 ID 由关系类型、设备 SN 与 GPU SN `parts_sn` 的完整逻辑身份确定性生成 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at` |
 | `gpu_uplink` | `gpu → interface` | `gpu_uplink.uuid` 是来源关系身份，图中使用 `source_id:network_relation:gpu_uplink:uuid` 作为关系 ID；先由 `device_sn + gpu_sn` 解析 GPU，再由 `tor_sn + tor_port` 查询网络端口 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`，以及 `gpu_port`、`gpu_port_speed`、`gpu_ip`、`gpu_slot`、`server_port_speed`、`bond_name`、`tor_port`、`tor_port_speed`、`tor_role`、`source` |
 | `member_of` | `device → pod` | 管理面：`pod_uuid → pod.uuid`；计算面：逐项解析 `compute_plane[].pod_id → pod.inst_id`；关系 ID 由两端完整逻辑身份和解析后的 `pod.plane` 确定性生成 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`、`plane` |
 | `located_in` | `device → cabinet` | `device.cabinet_uuid → cabinet.uuid`，按设备 SN 与机柜 UUID 建立关系 | `relation_id`、`relation_kind`、`source_id`、`created_at`、`synced_at`；当前不保存 U 位 |

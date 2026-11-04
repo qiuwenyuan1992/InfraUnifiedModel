@@ -27,8 +27,8 @@ import (
 var inventoryID = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 func syncFiltered(ctx context.Context, conf *viper.Viper, logger *log.Logger, sourceID string, entity model.EntityType, output io.Writer) (string, error) {
-	if !inventoryID.MatchString(sourceID) || (entity != model.EntityDevice && entity != model.EntityDataCenter && entity != model.EntityCabinet && entity != model.EntityInterface && entity != model.EntityTransformer) {
-		return "", errors.New("filtered sync requires a valid source ID and device, data_center, cabinet, interface, or transformer")
+	if !inventoryID.MatchString(sourceID) || (entity != model.EntityDevice && entity != model.EntityDataCenter && entity != model.EntityCabinet && entity != model.EntityInterface && entity != model.EntityTransformer && entity != model.EntityUPSGroup && entity != model.EntityUPS && entity != model.EntityRPP && entity != model.EntityPod) {
+		return "", errors.New("filtered sync requires a valid source ID and device, data_center, cabinet, interface, transformer, ups_group, ups, or rpp")
 	}
 	if conf.GetString("data.db.main.driver") != "mysql" {
 		return "", errors.New("filtered sync requires the configured MySQL control database")
@@ -65,10 +65,16 @@ func syncFiltered(ctx context.Context, conf *viper.Viper, logger *log.Logger, so
 	filterKey := "idc_id"
 	if entity == model.EntityDataCenter {
 		filterKey = "inst_id"
-	} else if entity == model.EntityTransformer {
+	} else if entity == model.EntityTransformer || entity == model.EntityUPSGroup || entity == model.EntityUPS || entity == model.EntityRPP {
 		filterKey = "idc"
 	}
-	if conf.GetInt("inventory.cmdb.sources."+source.ConfigRef+"."+string(entity)+"_condition."+filterKey) <= 0 {
+	if entity == model.EntityPod {
+		prefix := "inventory.cmdb.sources." + source.ConfigRef + "."
+		idc := conf.GetInt(prefix + "device_condition.idc_id")
+		if idc <= 0 || idc != conf.GetInt(prefix+"cabinet_condition.idc_id") {
+			return "", errors.New("POD scope requires equal positive device and cabinet IDC selections")
+		}
+	} else if conf.GetInt("inventory.cmdb.sources."+source.ConfigRef+"."+string(entity)+"_condition."+filterKey) <= 0 {
 		return "", errors.New("filtered sync requires an explicit positive IDC selection")
 	}
 	var active int64

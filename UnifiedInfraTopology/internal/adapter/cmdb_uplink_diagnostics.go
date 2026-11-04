@@ -215,7 +215,7 @@ func (c *CMDB) collectDiagnosticToR(ctx context.Context, cfg cmdbConfig, tor str
 	total := -1
 	var last int64
 	for start := 0; ; {
-		raw, err := c.collectUplinkMapPage(ctx, cfg, "/pub/api/v3/find/instance/object/port_view", map[string]any{"sn": tor, "port_type": "physics"}, start, []string{"inst_id", "port_uuid", "port_name", "port_type", "local_device_sn"})
+		raw, err := c.collectUplinkMapPage(ctx, cfg, "/pub/api/v3/find/instance/object/port_view", map[string]any{"sn": tor}, start, []string{"inst_id", "port_uuid", "port_name", "port_type", "local_device_sn"})
 		if err != nil {
 			return result, err
 		}
@@ -242,16 +242,12 @@ func (c *CMDB) collectDiagnosticToR(ctx context.Context, cfg cmdbConfig, tor str
 			if err != nil {
 				return result, err
 			}
-			kind, err := uplinkText(item, "port_type")
-			if err != nil {
-				return result, err
-			}
 			owner, err := uplinkText(item, "local_device_sn")
 			if err != nil {
 				return result, err
 			}
-			if kind != "physics" || owner != "" && owner != tor {
-				return result, fmt.Errorf("%w: port violates physical ToR condition", ErrCMDBRecord)
+			if owner != "" && owner != tor {
+				return result, fmt.Errorf("%w: port violates ToR ownership condition", ErrCMDBRecord)
 			}
 			if seenNames[name] {
 				result.ports[name] = ""

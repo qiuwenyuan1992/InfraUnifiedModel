@@ -14,21 +14,23 @@
 |---|---|---|
 | `device` | `device_sn` | `device_view.device_sn` |
 | `interface` | `port_uuid` | `port_view.port_uuid` |
-| `gpu` | `uuid` | `server_gpu.uuid` |
+| `gpu` | `parts_sn` | 实际 GPU SN `server_gpu.parts_sn` |
 | `pod` | `uuid` | `pod.uuid` |
 | `cabinet` | `uuid` | `cabinet.uuid` |
 | `data_center` | `uuid` | `idc.uuid` |
-| `rpp` | `uuid` | `idc_RPP.uuid` |
-| `ups_group` | `uuid` | `idc_ups_group.uuid` |
-| `ups` | `uuid` | `idc_ups.uuid` |
-| `transformer` | `uuid` | `idc_transformer.uuid` |
+| `rpp` | `inst_id` | `idc_RPP.inst_id` |
+| `ups_group` | `inst_id` | `idc_ups_group.inst_id` |
+| `ups` | `inst_id` | `idc_ups.inst_id` |
+| `transformer` | `inst_id` | `idc_transformer.inst_id` |
 
 每个节点都必须保存：
 
 - `source_id STRING NOT NULL`
-- 对应稳定身份字段 `STRING NOT NULL`
+- 对应稳定身份字段：四类电力实体使用 `inst_id INT NOT NULL`；其他实体使用表中指定的 `STRING NOT NULL` 字段
 - `created_at DATETIME NOT NULL`
 - `synced_at DATETIME NOT NULL`
+
+GPU 唯一身份为 `source_id + gpu + parts_sn`。`parts_sn` 仅 trim 首尾空白；缺失、空字符串或纯空白 SN 的卡记录直接忽略，不创建 GPU 或对应关系。`server_gpu.uuid` 不参与身份，也不保存到 GPU 节点；禁止 UUID/`inst_id` 回退、旧身份映射或双写。上联请求条件使用 `gpu_sn=parts_sn`；`gpu_uplink.uuid` 仍是来源关系标识，不是卡身份。
 
 实体文档列出的其他属性按以下类型映射：
 
@@ -51,7 +53,7 @@ NebulaGraph 的复合 list、set、map 不能作为节点或边属性，因此�
 
 1. `source_id`
 2. 实体类型
-3. 稳定身份原值
+3. 规范稳定身份字符串（`StableID`）
 
 序列化格式固定为 UTF-8 JSON 数组，不转义斜杠、不添加额外空白：
 
@@ -59,7 +61,17 @@ NebulaGraph 的复合 list、set、map 不能作为节点或边属性，因此�
 ["cmdb-primary","device","SN123456"]
 ```
 
-禁止对稳定身份做大小写折叠、数字转换或路径拼接。来源文档明确要求的 trim、空值拒绝和字段归一化应在进入身份函数前完成。
+除四类电力实体外，禁止对稳定身份做大小写折叠、数字转换或路径拼接。来源文档明确要求的 trim、空值拒绝和字段归一化应在进入身份函数前完成。
+
+`transformer`、`ups_group`、`ups`、`rpp` 的 `StableID` 使用来源正整数 `inst_id` 的规范十进制字符串，必须匹配 `[1-9][0-9]*` 且值不超过有符号 64 位整数上限；不得含正负号、前导零、空白、小数或指数。图中保存整数 `inst_id`，逻辑身份和哈希输入仍保存字符串，例如：
+
+```json
+["cmdb-primary","transformer","1588"]
+```
+
+这些 `inst_id` 只在 `source_id + 实体类型` 作用域内唯一；变化表示不同实体身份。缺失或非法值阻塞对应实体范围，不以 UUID、编码、标签或名称回退，不生成电力实体 UUID。其他实体的既定 UUID 或序列号身份不变。
+
+指向四类电力实体的数字引用直接匹配同一来源、同一目标类型的 `inst_id`；确认目标存在且唯一后，以其规范 `StableID` 构造完整逻辑身份并生成端点 VID，不建立 `inst_id → UUID` 映射。数字引用本身不能绕过目标校验成为关系身份；其他实体仍按各自文档解析到既定稳定身份。
 
 ### 3.2 VID
 
@@ -84,7 +96,7 @@ func (i EntityIdentity) CanonicalJSON() ([]byte, error)
 func (i EntityIdentity) VID() (string, error)
 ```
 
-空 `source_id`、未知实体类型或空稳定身份必须返回错误。
+空 `source_id`、未知实体类型或空稳定身份必须返回错误；四类电力实体的 `StableID` 非规范正十进制字符串或超出有符号 64 位整数范围时也必须返回错误。
 
 ## 4. Edge Type 与合法端点
 

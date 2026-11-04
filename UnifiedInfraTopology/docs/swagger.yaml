@@ -1,5 +1,12 @@
 basePath: /v1
 definitions:
+  v1.EnqueueInventoryRoundRequest:
+    properties:
+      mode:
+        type: string
+      source_id:
+        type: string
+    type: object
   v1.GetProfileResponse:
     properties:
       code:
@@ -15,6 +22,103 @@ definitions:
         example: alan
         type: string
       userId:
+        type: string
+    type: object
+  v1.InventoryDiagnosticDTO:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      field_path:
+        type: string
+      id:
+        type: string
+      object_ref:
+        type: string
+      resource:
+        type: string
+      run_id:
+        type: string
+      severity:
+        type: string
+      source_id:
+        type: string
+    type: object
+  v1.InventoryDiagnosticPageDTO:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/v1.InventoryDiagnosticDTO'
+        type: array
+      next_cursor:
+        type: string
+    type: object
+  v1.InventoryRoundDTO:
+    properties:
+      cancel_requested_at:
+        type: string
+      completed_phases:
+        type: integer
+      created_at:
+        type: string
+      error_code:
+        type: string
+      finished_at:
+        type: string
+      id:
+        type: string
+      mode:
+        type: string
+      phases:
+        items:
+          $ref: '#/definitions/v1.InventoryRoundPhaseDTO'
+        type: array
+      snapshot_at:
+        type: string
+      source_id:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      total_phases:
+        type: integer
+    type: object
+  v1.InventoryRoundPageDTO:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/v1.InventoryRoundDTO'
+        type: array
+      next_cursor:
+        type: string
+    type: object
+  v1.InventoryRoundPhaseDTO:
+    properties:
+      edges:
+        type: integer
+      error_code:
+        type: string
+      finished_at:
+        type: string
+      missing_endpoints:
+        type: integer
+      name:
+        type: string
+      nodes:
+        type: integer
+      objects:
+        type: integer
+      position:
+        type: integer
+      run_id:
+        type: string
+      skipped:
+        type: integer
+      started_at:
+        type: string
+      status:
         type: string
     type: object
   v1.LoginRequest:
@@ -83,6 +187,335 @@ info:
   title: UnifiedInfraTopology API
   version: 1.0.0
 paths:
+  /inventory/sync-rounds:
+    get:
+      parameters:
+      - description: Page size, 1–200
+        in: query
+        name: limit
+        type: integer
+      - description: Authenticated opaque cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Current configured source ID
+        in: query
+        name: source_id
+        type: string
+      - description: Round status
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/v1.InventoryRoundPageDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: List durable synchronization rounds
+      tags:
+      - inventory
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Printable ASCII key, 1–128 characters
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Current configured source; mode must be full
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.EnqueueInventoryRoundRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          headers:
+            Location:
+              description: Round resource URL
+              type: string
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/v1.InventoryRoundDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: Enqueue a durable full synchronization round
+      tags:
+      - inventory
+  /inventory/sync-rounds/{id}:
+    get:
+      parameters:
+      - description: 32 lowercase hexadecimal round ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/v1.InventoryRoundDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: Get round state and fixed fifteen-phase progress
+      tags:
+      - inventory
+  /inventory/sync-rounds/{id}/cancel:
+    post:
+      parameters:
+      - description: Round ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/v1.InventoryRoundDTO'
+              type: object
+        "202":
+          description: Accepted
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/v1.InventoryRoundDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: Cancel queued or cooperatively cancel running round without graph rollback
+      tags:
+      - inventory
+  /inventory/sync-rounds/{id}/diagnostics:
+    get:
+      parameters:
+      - description: Round ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page size, 1–200
+        in: query
+        name: limit
+        type: integer
+      - description: User, parent and filter-bound cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Source filter
+        in: query
+        name: source_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/v1.InventoryDiagnosticPageDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: List safe diagnostics across a round's child runs
+      tags:
+      - inventory
+  /inventory/sync-runs/{run_id}/diagnostics:
+    get:
+      parameters:
+      - description: Run ID
+        in: path
+        name: run_id
+        required: true
+        type: string
+      - description: Page size, 1–200
+        in: query
+        name: limit
+        type: integer
+      - description: User, parent and filter-bound cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Source filter
+        in: query
+        name: source_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/v1.InventoryDiagnosticPageDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: List safe single-run diagnostics
+      tags:
+      - inventory
   /login:
     post:
       consumes:

@@ -45,7 +45,7 @@ source_id:interface:port_uuid
 | `source_id` | 同步配置 | 避免不同 CMDB 来源之间发生身份碰撞 |
 | `port_uuid` | `port_view.port_uuid` | 接口稳定身份 |
 | `port_name` | `port_view.port_name` | 展示及按设备范围匹配端口 |
-| `port_type` | `port_view.port_type` | 按 CMDB 原值保存：`physics` 或 `virtual` |
+| `port_type` | `port_view.port_type` | 按 CMDB 原值保存，包括 `physics`、`virtual`；默认采集不按类型过滤，聚合口同样使用 `port_uuid` 身份 |
 | `port_speed` | `port_view.port_speed` | 保存来源原值，不自行换算单位 |
 | `port_operation_status` | `port_view.port_operation_status` | 保存来源原值，不自行解释枚举 |
 | `group_uuid` | `port_view.group_uuid` | 端口组链路稳定 UUID |

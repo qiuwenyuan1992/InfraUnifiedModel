@@ -24,7 +24,7 @@ contains_gpu
 | `relation_kind` | 起点 | 终点 | 来源解析 | 适用对象 |
 |---|---|---|---|---|
 | `owns_interface` | `device(device_sn)` | `interface(port_uuid)` | 优先使用 `port_view.local_device_sn`；缺失时按 `local_device_uuid` 查询设备并取得 `device_sn` | 网络设备 |
-| `contains_gpu` | `device(device_sn)` | `gpu(uuid)` | `server_gpu.device_sn → device.device_sn` | GPU 服务器 |
+| `contains_gpu` | `device(device_sn)` | `gpu(parts_sn)` | `server_gpu.device_sn → device.device_sn`；`server_gpu.parts_sn → gpu.parts_sn` | GPU 服务器 |
 
 ## 3. 关系表达
 
@@ -52,7 +52,7 @@ gpu
 ### 4.2 服务器包含 GPU
 
 1. 使用 `server_gpu.device_sn = device.device_sn` 关联。
-2. GPU 最终身份使用 `server_gpu.uuid`，不使用 GPU 序列号替代 UUID。
+2. GPU 唯一身份使用实际 SN `server_gpu.parts_sn`，完整逻辑身份为 `source_id + gpu + parts_sn`；缺失或空白 SN 的卡记录直接忽略，不创建节点和关系。卡 UUID 不参与身份也不保存，不以 `inst_id` 或其他字段回退。
 3. 同一设备与 GPU 只保存一条组成关系。
 4. GPU 更换服务器不改变 GPU 身份；完整同步成功后更新所属关系。
 5. `contains_gpu` 不表示 GPU 网络上联；网络连接由 `network_relation` 表达。

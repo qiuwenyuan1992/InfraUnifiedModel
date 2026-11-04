@@ -63,6 +63,32 @@ func TestParsePlanePreservesUnknownValue(t *testing.T) {
 	require.False(t, canonical)
 }
 
+func TestPowerEntityIdentityRequiresCanonicalPositiveInt64(t *testing.T) {
+	for _, entity := range []EntityType{EntityTransformer, EntityUPSGroup, EntityUPS, EntityRPP} {
+		for _, stableID := range []string{"1", "1588", "9223372036854775807"} {
+			identity := EntityIdentity{SourceID: "cmdb-primary", EntityType: entity, StableID: stableID}
+			canonical, err := identity.CanonicalJSON()
+			require.NoError(t, err)
+			require.Contains(t, string(canonical), `"`+stableID+`"`)
+			_, err = identity.VID()
+			require.NoError(t, err)
+		}
+		for _, stableID := range []string{"", "uuid", "0", "-1", "001", "+1", " 1", "1 ", "1.0", "1e3", "9223372036854775808"} {
+			t.Run(string(entity)+"/"+stableID, func(t *testing.T) {
+				identity := EntityIdentity{SourceID: "cmdb-primary", EntityType: entity, StableID: stableID}
+				_, err := identity.CanonicalJSON()
+				require.Error(t, err)
+				_, err = identity.VID()
+				require.Error(t, err)
+			})
+		}
+	}
+	for _, entity := range []EntityType{EntityDevice, EntityInterface, EntityGPU, EntityPod, EntityCabinet, EntityDataCenter} {
+		_, err := (EntityIdentity{SourceID: "cmdb-primary", EntityType: entity, StableID: "001"}).VID()
+		require.NoError(t, err)
+	}
+}
+
 func TestEntityIdentityCanonicalJSON(t *testing.T) {
 	identity := EntityIdentity{
 		SourceID:   "cmdb-primary",

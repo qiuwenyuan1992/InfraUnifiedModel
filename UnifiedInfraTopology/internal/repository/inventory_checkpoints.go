@@ -163,7 +163,7 @@ func (r *inventoryRepository) AdvanceCheckpoint(ctx context.Context, sourceID, r
 		previous := checkpoint.Cursor
 		if stored.Complete || previous.RunID != runID || !previous.SnapshotAt.Equal(cursor.SnapshotAt) ||
 			cursor.NextOffset <= previous.NextOffset || cursor.LastPartition < previous.LastPartition ||
-			(resource != "server_uplinks" && cursor.LastPartition == previous.LastPartition && cursor.LastInstanceID <= previous.LastInstanceID) ||
+			(resource != "server_uplinks" && resource != "links_to" && resource != "power_relations" && resource != "pod_membership" && resource != "spatial_relations" && resource != "gpu_sync" && cursor.LastPartition == previous.LastPartition && cursor.LastInstanceID <= previous.LastInstanceID) ||
 			(previous.Total != 0 && cursor.Total != previous.Total) {
 			return ErrInventoryConflict
 		}
@@ -300,7 +300,7 @@ func decodeDeviceSyncCheckpoint(stored model.SyncCheckpoint) (*DeviceSyncCheckpo
 
 // 上联关系检查点记录边偏移，没有对应的来源实体 inst_id；其他实体规则不变。
 func validateInventoryResourceCursor(resource string, cursor DeviceSyncCursor) error {
-	if resource != "server_uplinks" {
+	if resource != "server_uplinks" && resource != "links_to" && resource != "power_relations" && resource != "pod_membership" && resource != "spatial_relations" && resource != "gpu_sync" {
 		return validateDeviceSyncCursor(cursor)
 	}
 	if cursor.Version != DeviceSyncCursorVersion || cursor.RunID == "" || cursor.SnapshotAt.IsZero() || cursor.NextOffset < 0 || cursor.Total < 0 || cursor.NextOffset > cursor.Total || cursor.LastInstanceID != 0 || cursor.LastPartition != 0 {

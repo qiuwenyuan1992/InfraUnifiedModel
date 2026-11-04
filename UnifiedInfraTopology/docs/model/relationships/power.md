@@ -28,11 +28,13 @@ has_standby
 
 | `relation_kind` | 起点 | 终点 | 来源解析 | 业务属性 |
 |---|---|---|---|---|
-| `power_upstream` | `cabinet(uuid)` | `rpp(uuid)` | `row_switch_id_A/B → rpp.inst_id → rpp.uuid` | `power_path=A/B` |
-| `power_upstream` | `rpp(uuid)` | `ups_group(uuid)` | `rpp.ups_group_id → ups_group.inst_id → ups_group.uuid` | 无 |
-| `member_of` | `ups(uuid)` | `ups_group(uuid)` | `ups.ups_group_id → ups_group.inst_id → ups_group.uuid` | 无 |
-| `power_upstream` | `ups_group(uuid)` | `transformer(uuid)` | `ups_group.transformer_id_up → transformer.inst_id → transformer.uuid` | 无 |
-| `has_standby` | `transformer(primary_uuid)` | `transformer(standby_uuid)` | `standby_transformer_id → transformer.inst_id → transformer.uuid` | 无 |
+| `power_upstream` | `cabinet(uuid)` | `rpp(inst_id)` | `row_switch_id_A/B → rpp.inst_id` | `power_path=A/B` |
+| `power_upstream` | `rpp(inst_id)` | `ups_group(inst_id)` | `rpp.ups_group_id → ups_group.inst_id` | 无 |
+| `member_of` | `ups(inst_id)` | `ups_group(inst_id)` | `ups.ups_group_id → ups_group.inst_id` | 无 |
+| `power_upstream` | `ups_group(inst_id)` | `transformer(inst_id)` | `ups_group.transformer_id_up → transformer.inst_id` | 无 |
+| `has_standby` | `transformer(primary_inst_id)` | `transformer(standby_inst_id)` | `standby_transformer_id → transformer.inst_id` | 无 |
+
+四类电力实体的权威身份为 `inst_id`，图属性为 `INT NOT NULL`。同一 `source_id`、同一目标实体类型下，数字引用直接匹配目标 `inst_id`；不建立 `inst_id → UUID` 映射，不生成或要求电力实体 UUID，也不以编码、标签或名称作为身份。目标存在且唯一后，使用其正整数 `inst_id` 的规范十进制字符串作为 `StableID`，结合来源和类型生成哈希 VID；机柜端点仍使用自身 UUID。
 
 ## 3. 关系表达
 
@@ -76,7 +78,7 @@ transformer(standby)
 3. `power_path` 是 `relation_id` 的业务区分字段，用于区分 A/B 路的逻辑关系身份。
 4. A/B 路连接不同 RPP 时，两条边的终点不同，均可使用默认 `rank=0`。
 5. A/B 路连接同一 RPP 时，两条边的起点、Edge Type 和终点相同，必须根据各自 `relation_id` 使用稳定且不同的 Rank，避免物理边互相覆盖。
-6. 数字引用必须唯一解析到 RPP UUID。
+6. 数字引用必须在同一 `source_id` 下唯一匹配 RPP `inst_id`。
 7. 当前 A 路样例已闭环；B 路目标未提供时只记录诊断，不创建占位关系。
 
 ### 4.2 RPP 连接 UPS 组
@@ -94,15 +96,15 @@ transformer(standby)
 
 ### 4.4 UPS 组连接变压器
 
-1. 使用 `ups_group.transformer_id_up → transformer.inst_id` 解析目标 UUID。
+1. 使用 `ups_group.transformer_id_up → transformer.inst_id` 直接匹配同一 `source_id` 下的目标稳定身份。
 2. 这是当前主供电链的最上游关系。
 3. 关系表示 CMDB 配置的供电上游，不证明实时供电状态、电流方向或负载分配。
 
 ### 4.5 备用变压器
 
 1. 关系方向与来源字段一致：主变压器指向备用变压器。
-2. 目标必须唯一解析，并通过自引用和有向环检查。
-3. 自引用、目标不唯一或形成循环时不发布关系，并记录同步诊断。
+2. 目标必须唯一解析；允许两台及多台变压器构成备用组或循环引用，按来源保存所有方向的 `has_standby`，不合并或任选方向。
+3. 自引用、目标缺失或不唯一时不发布关系，并记录同步诊断。备用循环仅为配置特征，不因数量或成环拒绝；验收仍检查每条边的身份、rank、端点与来源，不把备用配置当作主供电流向。
 4. `has_standby` 不属于默认供电主链。
 5. 该关系只表示候选备用配置，不表示备用对象当前可用、可切换或已经供电。
 
@@ -133,6 +135,8 @@ power_relation + relation_kind + 两端完整逻辑身份 + 必要业务区分�
 ```
 
 `cabinet → rpp` 必须将 `power_path` 纳入关系身份。
+
+两端完整逻辑身份使用 `[source_id, entity_type, stable_id]`；电力实体的 `stable_id` 为规范正十进制 `inst_id` 字符串，例如 `["cmdb-primary","rpp","6204"]`，机柜的 `stable_id` 仍为 UUID。不得将裸数字引用或名称直接作为关系身份；VID 按 `SHA-256(["vertex", source_id, entity_type, stable_id])` 确定性生成。
 
 ## 7. 查询语义
 

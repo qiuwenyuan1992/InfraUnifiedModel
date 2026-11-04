@@ -29,6 +29,9 @@ type cmdbInterfacePass struct {
 }
 
 func (c *CMDB) OpenEntityPass(ctx context.Context, source model.Source, entity model.EntityType) (EntityPageStream, error) {
+	if entity == model.EntityPod {
+		return c.openPodPass(ctx, source)
+	}
 	if entity != model.EntityInterface {
 		return nil, fmt.Errorf("%w: entity passes require interface", ErrCMDBConfig)
 	}
@@ -51,9 +54,7 @@ func (c *CMDB) OpenEntityPass(ctx context.Context, source model.Source, entity m
 	if err != nil || idc <= 0 {
 		return nil, fmt.Errorf("%w: interface passes require a positive idc_id", ErrCMDBConfig)
 	}
-	if _, exists := condition["port_type"]; !exists {
-		condition["port_type"] = "physics"
-	}
+
 	discoveryCfg := cfg
 	discoveryCfg.DeviceCondition = map[string]any{"idc_id": condition["idc_id"], "parent_type_id": 54}
 	var selectedSN string

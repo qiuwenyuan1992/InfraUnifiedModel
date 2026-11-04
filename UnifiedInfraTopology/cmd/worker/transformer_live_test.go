@@ -39,9 +39,12 @@ func TestLiveRetainedTransformersMatchCMDB(t *testing.T) {
 		if index == 5 {
 			break
 		}
-		vid, err := (model.EntityIdentity{SourceID: "00000000000000000000000000001030", EntityType: model.EntityTransformer, StableID: record.Identity}).VID()
+		instID, err := strconv.ParseInt(record.Identity, 10, 64)
 		require.NoError(t, err)
-		statement := "FETCH PROP ON transformer \"" + vid + "\" YIELD properties(vertex).uuid AS uuid"
+		identity := strconv.FormatInt(instID, 10)
+		vid, err := (model.EntityIdentity{SourceID: "00000000000000000000000000001030", EntityType: model.EntityTransformer, StableID: identity}).VID()
+		require.NoError(t, err)
+		statement := "FETCH PROP ON transformer \"" + vid + "\" YIELD properties(vertex).inst_id AS identity"
 		for _, field := range fields {
 			statement += ", properties(vertex)." + field + " AS " + field
 		}
@@ -51,7 +54,7 @@ func TestLiveRetainedTransformersMatchCMDB(t *testing.T) {
 		table, err := persistenceTable(result)
 		require.NoError(t, err)
 		row := table[1]
-		require.Equal(t, record.Identity, persistenceString(row[0]))
+		require.Equal(t, identity, persistenceString(row[0]))
 		for fieldIndex, field := range fields {
 			encoded := row[fieldIndex+1]
 			if record.Properties[field] == nil {
@@ -66,6 +69,6 @@ func TestLiveRetainedTransformersMatchCMDB(t *testing.T) {
 				require.Equal(t, record.Properties[field], value, field)
 			}
 		}
-		t.Log(fmt.Sprintf("matched uuid=%s code=%v brand=%v model=%v capacity=%v", record.Identity, record.Properties["code"], record.Properties["brand"], record.Properties["model"], record.Properties["rated_capacity"]))
+		t.Log(fmt.Sprintf("matched inst_id=%s code=%v brand=%v model=%v capacity=%v", identity, record.Properties["code"], record.Properties["brand"], record.Properties["model"], record.Properties["rated_capacity"]))
 	}
 }

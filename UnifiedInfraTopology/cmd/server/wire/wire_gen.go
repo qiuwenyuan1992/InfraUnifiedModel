@@ -37,12 +37,16 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 	inventoryRepository := repository.NewInventoryRepository(repositoryRepository)
 	inventoryService := service.NewInventoryService(inventoryRepository, viperViper)
 	inventoryHandler := handler.NewInventoryHandler(handlerHandler, inventoryService)
+	inventoryRoundRepository := repository.NewInventoryRoundRepository(repositoryRepository)
+	inventoryRoundService := service.NewInventoryRoundService(inventoryRoundRepository, viperViper)
+	inventoryRoundHandler := handler.NewInventoryRoundHandler(handlerHandler, inventoryRoundService)
 	routerDeps := router.RouterDeps{
-		Logger:           logger,
-		Config:           viperViper,
-		JWT:              jwtJWT,
-		UserHandler:      userHandler,
-		InventoryHandler: inventoryHandler,
+		Logger:                logger,
+		Config:                viperViper,
+		JWT:                   jwtJWT,
+		UserHandler:           userHandler,
+		InventoryHandler:      inventoryHandler,
+		InventoryRoundHandler: inventoryRoundHandler,
 	}
 	httpServer := server.NewHTTPServer(routerDeps)
 	appApp := newApp(httpServer)
@@ -52,11 +56,11 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 
 // wire.go:
 
-var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewInventoryRepository)
+var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewInventoryRepository, repository.NewInventoryRoundRepository)
 
-var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewInventoryService)
+var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewInventoryService, service.NewInventoryRoundService)
 
-var handlerSet = wire.NewSet(handler.NewHandler, handler.NewUserHandler, handler.NewInventoryHandler)
+var handlerSet = wire.NewSet(handler.NewHandler, handler.NewUserHandler, handler.NewInventoryHandler, handler.NewInventoryRoundHandler)
 
 var serverSet = wire.NewSet(server.NewHTTPServer)
 

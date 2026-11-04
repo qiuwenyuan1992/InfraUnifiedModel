@@ -1,0 +1,40 @@
+{
+  "after": {
+    "cabinet": 0,
+    "composition_relation": 0,
+    "data_center": 0,
+    "device": 0,
+    "gpu": 0,
+    "interface": 0,
+    "network_relation": 0,
+    "pod": 0,
+    "power_relation": 0,
+    "rpp": 0,
+    "spatial_relation": 0,
+    "transformer": 0,
+    "ups": 0,
+    "ups_group": 0
+  },
+  "before": {
+    "cabinet": 2573,
+    "composition_relation": 36523,
+    "data_center": 1,
+    "device": 2408,
+    "gpu": 1289,
+    "interface": 35234,
+    "network_relation": 5142,
+    "pod": 12,
+    "power_relation": 5438,
+    "rpp": 182,
+    "spatial_relation": 7081,
+    "transformer": 24,
+    "ups": 67,
+    "ups_group": 37
+  },
+  "cleared_at": "2026-11-03T05:50:58.525826Z",
+  "deleted_vertices": 41827,
+  "mysql_history_preserved": true,
+  "schema_and_indexes_preserved": true,
+  "source_id": "00000000000000000000000000000238",
+  "space": "unified_infra_topology"
+}

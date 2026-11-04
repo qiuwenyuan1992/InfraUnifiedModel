@@ -32,4 +32,11 @@ func InitInventoryRouter(deps RouterDeps, r *gin.RouterGroup) {
 	g.POST("/sync-runs", h.Enqueue)
 	g.GET("/sync-runs/:run_id", h.GetRun)
 	g.POST("/sync-runs/:run_id/cancel", h.CancelRun)
+	rounds := deps.InventoryRoundHandler
+	g.POST("/sync-rounds", rounds.Enqueue)
+	g.GET("/sync-rounds", rounds.List)
+	g.GET("/sync-rounds/:id", rounds.Get)
+	g.POST("/sync-rounds/:id/cancel", rounds.Cancel)
+	g.GET("/sync-rounds/:id/diagnostics", rounds.Diagnostics(true))
+	g.GET("/sync-runs/:run_id/diagnostics", rounds.Diagnostics(false))
 }

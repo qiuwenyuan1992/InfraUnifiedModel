@@ -46,6 +46,10 @@ func NewHTTPServer(
 
 	s.Use(
 		middleware.CORSMiddleware(),
+		func(ctx *gin.Context) {
+			ctx.Header("Access-Control-Expose-Headers", "Location, X-Request-ID")
+			ctx.Next()
+		},
 		middleware.ResponseLogMiddleware(deps.Logger),
 		middleware.RequestLogMiddleware(deps.Logger),
 		//middleware.SignMiddleware(log),
