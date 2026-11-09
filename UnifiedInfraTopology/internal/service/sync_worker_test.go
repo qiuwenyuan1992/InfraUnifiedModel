@@ -571,6 +571,77 @@ func devicePage(offset, nextOffset, total int, done bool, records ...adapter.Dev
 	return fakeDevicePage{offset: offset, page: adapter.DevicePage{Records: records, NextOffset: nextOffset, Total: total, Done: done}}
 }
 
+type singlePassEntitySource struct {
+	*fakeDeviceSource
+	pagesRead map[int]bool
+}
+
+func (s *singlePassEntitySource) checkPage(offset int) {
+	if s.pagesRead[offset] {
+		panic("entity source page read a second time")
+	}
+	s.pagesRead[offset] = true
+}
+
+func (s *singlePassEntitySource) CollectDevicePage(ctx context.Context, source model.Source, offset int) (adapter.DevicePage, error) {
+	s.checkPage(offset)
+	return s.fakeDeviceSource.CollectDevicePage(ctx, source, offset)
+}
+
+func (s *singlePassEntitySource) CollectEntityPage(ctx context.Context, source model.Source, entity model.EntityType, offset int) (adapter.EntityPage, error) {
+	s.checkPage(offset)
+	return s.fakeDeviceSource.CollectEntityPage(ctx, source, entity, offset)
+}
+
+func (s *singlePassEntitySource) OpenEntityPass(ctx context.Context, source model.Source, entity model.EntityType) (adapter.EntityPageStream, error) {
+	if s.passOpenCalls != 0 {
+		panic("entity source pass opened a second time")
+	}
+	pass, err := s.fakeDeviceSource.OpenEntityPass(ctx, source, entity)
+	return &singlePassEntityStream{source: s, pass: pass}, err
+}
+
+type singlePassEntityStream struct {
+	source *singlePassEntitySource
+	pass   adapter.EntityPageStream
+}
+
+func (s *singlePassEntityStream) Page(ctx context.Context, offset int) (adapter.EntityPage, error) {
+	s.source.checkPage(offset)
+	return s.pass.Page(ctx, offset)
+}
+
+func TestSyncWorkerEntitySourceIsReadOnlyOnce(t *testing.T) {
+	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityDataCenter, model.EntityCabinet, model.EntityPod, model.EntityInterface} {
+		t.Run(string(entity), func(t *testing.T) {
+			runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-single-pass", SourceID: "source-1", Status: model.SyncRunStatusQueued}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}
+			first := adapter.EntityRecord{SourceInstanceID: 1, Identity: "identity-1"}
+			last := adapter.EntityRecord{SourceInstanceID: 2, Identity: "identity-2"}
+			if entity == model.EntityInterface {
+				first.Partition, last.Partition = 10, 10
+				first.OwnerDeviceSN, last.OwnerDeviceSN = "owner-1", "owner-1"
+			}
+			source := &singlePassEntitySource{fakeDeviceSource: &fakeDeviceSource{selected: entity, filtered: true,
+				entityPages: []adapter.EntityPage{{Records: []adapter.EntityRecord{first}, NextOffset: 1, Total: 2}, {Records: []adapter.EntityRecord{last}, NextOffset: 2, Total: 2, Done: true}},
+				pages:       []fakeDevicePage{devicePage(0, 1, 2, false, adapter.DeviceRecord{SourceInstanceID: 1, DeviceSN: "identity-1"}), devicePage(1, 2, 2, true, adapter.DeviceRecord{SourceInstanceID: 2, DeviceSN: "identity-2"})},
+			}, pagesRead: map[int]bool{}}
+			graph := &fakeDeviceGraph{}
+			worker := NewSyncWorker(nil, runs, graph, source, nil)
+			_, err := worker.ProcessNext(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, model.SyncRunStatusSucceeded, runs.run.Status)
+			require.True(t, runs.completeCalled)
+			require.Equal(t, []int{0, 1}, source.offsets)
+			require.Len(t, graph.vertices, 2)
+			if entity == model.EntityInterface || entity == model.EntityPod {
+				require.Equal(t, 1, source.passOpenCalls)
+			} else {
+				require.Zero(t, source.passOpenCalls)
+			}
+		})
+	}
+}
+
 func TestSyncWorkerPodPasses(t *testing.T) {
 	first := adapter.EntityPage{Records: []adapter.EntityRecord{{SourceInstanceID: 101, Identity: "POD-101", Properties: map[string]any{"basic_code": "POD-A"}}}, NextOffset: 1, Total: 2}
 	last := adapter.EntityPage{Records: []adapter.EntityRecord{{SourceInstanceID: 102, Identity: "POD-102", Properties: map[string]any{"basic_code": "POD-B"}}}, NextOffset: 2, Total: 2, Done: true}
@@ -600,7 +671,7 @@ func TestSyncWorkerPodPasses(t *testing.T) {
 			require.False(t, graph.cleanup)
 			require.Empty(t, graph.ownerLookups)
 			require.Empty(t, graph.relations)
-			if scenario != "success" && scenario != "empty" {
+			if scenario == "partition invalid" || scenario == "first open error" {
 				require.Error(t, err)
 				require.Equal(t, model.SyncRunStatusFailed, runs.run.Status)
 				require.Equal(t, "entity_collection_failed", runs.run.ErrorCode)
@@ -609,13 +680,13 @@ func TestSyncWorkerPodPasses(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, model.SyncRunStatusSucceeded, runs.run.Status)
-			require.Equal(t, 2, source.passOpenCalls)
+			require.Equal(t, 1, source.passOpenCalls)
 			if scenario == "empty" {
 				require.Empty(t, graph.vertices)
-				require.Equal(t, []int{0, 0}, source.offsets)
+				require.Equal(t, []int{0}, source.offsets)
 				return
 			}
-			require.Equal(t, []int{0, 1, 0, 1}, source.offsets)
+			require.Equal(t, []int{0, 1}, source.offsets)
 			require.Len(t, graph.vertices, 2)
 			for _, vertex := range graph.vertices {
 				require.Equal(t, model.EntityPod, vertex.Identity.EntityType)
@@ -650,7 +721,7 @@ func TestSyncWorkerProcessNextPublishesPagedDeviceSnapshot(t *testing.T) {
 	require.Equal(t, wantAt, runs.claimAt)
 	require.Equal(t, "run-1", runs.beginRunID)
 	require.Equal(t, wantAt, runs.beginAt)
-	require.Equal(t, []int{0, 1, 0, 1}, source.offsets)
+	require.Equal(t, []int{0, 1}, source.offsets)
 	require.Equal(t, []repository.DeviceSyncCursor{
 		{Version: repository.DeviceSyncCursorVersion, RunID: "run-1", NextOffset: 1, LastInstanceID: 11, SnapshotAt: wantAt, Total: 2},
 		{Version: repository.DeviceSyncCursorVersion, RunID: "run-1", NextOffset: 2, LastInstanceID: 12, SnapshotAt: wantAt, Total: 2},
@@ -669,7 +740,7 @@ func TestSyncWorkerProcessNextPublishesPagedDeviceSnapshot(t *testing.T) {
 	require.Equal(t, wantAt, graph.cleanupAt)
 }
 
-func TestSyncWorkerRejectsChangedIdentitySetBeforeCleanup(t *testing.T) {
+func TestSyncWorkerPublishesFirstIdentitySetWithoutSourceReread(t *testing.T) {
 	now := time.Date(2026, 9, 23, 1, 2, 3, 0, time.UTC)
 	runs := &fakeWorkerRuns{
 		run:    &model.SyncRun{ID: "run-1", SourceID: "source-1", Status: model.SyncRunStatusQueued},
@@ -686,13 +757,18 @@ func TestSyncWorkerRejectsChangedIdentitySetBeforeCleanup(t *testing.T) {
 	graph := &fakeDeviceGraph{}
 
 	processed, err := newWorkerForTest(runs, graph, source, now).ProcessNext(context.Background())
-	require.EqualError(t, err, syncErrorDeviceCollection)
+	require.NoError(t, err)
 	require.True(t, processed)
-	require.False(t, graph.cleanup)
-	require.False(t, runs.completeCalled)
+	require.True(t, graph.cleanup)
+	require.True(t, runs.completeCalled)
+	require.Equal(t, model.SyncRunStatusSucceeded, runs.run.Status)
+	require.Empty(t, runs.run.ErrorCode)
+	require.Equal(t, []int{0}, source.offsets)
+	require.Len(t, graph.vertices, 2)
+	require.ElementsMatch(t, []string{"sn-1", "sn-2"}, []string{graph.vertices[0].Identity.StableID, graph.vertices[1].Identity.StableID})
 	require.Equal(t, []workerTransition{
 		{from: model.SyncRunStatusRunning, to: model.SyncRunStatusValidating, at: now},
-		{from: model.SyncRunStatusValidating, to: model.SyncRunStatusFailed, at: now, errorCode: syncErrorDeviceCollection},
+		{from: model.SyncRunStatusValidating, to: model.SyncRunStatusPublishing, at: now},
 	}, runs.transitions)
 }
 
@@ -854,7 +930,7 @@ func TestSyncWorkerRestartsIncompleteCheckpointFromBeginning(t *testing.T) {
 	processed, err := newWorkerForTest(runs, graph, source, startedAt).ProcessNext(context.Background())
 	require.NoError(t, err)
 	require.True(t, processed)
-	require.Equal(t, []int{0, 0}, source.offsets)
+	require.Equal(t, []int{0}, source.offsets)
 	require.Equal(t, startedAt, graph.vertices[0].SyncedAt)
 	require.Equal(t, startedAt, graph.cleanupAt)
 	require.Equal(t, startedAt, runs.advances[0].cursor.SnapshotAt)
@@ -1114,9 +1190,9 @@ func TestSyncWorkerSelectedEntityVerticalFlow(t *testing.T) {
 				require.NoError(t, err)
 				require.True(t, processed)
 				if entity == model.EntityInterface {
-					require.Equal(t, 6, requests)
-				} else {
 					require.Equal(t, 2, requests)
+				} else {
+					require.Equal(t, 1, requests)
 				}
 				stored, err := control.Run(context.Background(), run.ID)
 				require.NoError(t, err)
@@ -1280,6 +1356,19 @@ func TestSyncWorkerInterfacePassCancellationAndLeaseLoss(t *testing.T) {
 					}
 					graph := &fakeDeviceGraph{}
 					_, err := newWorkerForTest(runs, graph, source, time.Now()).ProcessNext(ctx)
+					require.Equal(t, 1, source.passOpenCalls)
+					if phase == 2 {
+						require.NoError(t, err)
+						require.Equal(t, model.SyncRunStatusSucceeded, runs.run.Status)
+						require.True(t, runs.completeCalled)
+						require.True(t, graph.cleanup)
+						require.Len(t, graph.vertices, 1)
+						require.Len(t, graph.relations, 1)
+						require.Len(t, runs.advances, 1)
+						require.Equal(t, []int{0}, source.offsets)
+						require.NoError(t, ctx.Err())
+						return
+					}
 					if leaseLost {
 						require.ErrorIs(t, err, errSyncLeaseLost)
 						require.NotEqual(t, model.SyncRunStatusFailed, runs.run.Status)
@@ -1329,7 +1418,7 @@ func TestSyncWorkerInterfaceOwnerRelations(t *testing.T) {
 		{name: "owner changes across pages of same partition", pages: []adapter.EntityPage{page(1, 2, record(10, 1, "SN-A")), page(2, 2, record(10, 2, "SN-B"))}, wantError: syncErrorGraphWrite, wantVertices: 1, wantRelations: 1, wantLookups: 1, wantAdvances: 1},
 		{name: "vertex failure never writes relation", pages: []adapter.EntityPage{page(1, 1, record(10, 1, "SN-A"))}, graph: &fakeDeviceGraph{upsertErrAt: 1}, wantError: syncErrorGraphWrite, wantLookups: 1},
 		{name: "relation failure leaves vertex but no checkpoint", pages: []adapter.EntityPage{page(1, 1, record(10, 1, "SN-A"))}, graph: &fakeDeviceGraph{relationErrAt: 1}, wantError: syncErrorGraphWrite, wantVertices: 1, wantLookups: 1},
-		{name: "validation owner change fails digest without new writes", pages: []adapter.EntityPage{page(1, 2, record(10, 1, "SN-A")), page(2, 2, record(20, 1, "SN-B"))}, replay: []adapter.EntityPage{page(1, 2, record(10, 1, "SN-A")), page(2, 2, record(20, 1, "SN-C"))}, wantError: "entity_collection_failed", wantVertices: 2, wantRelations: 2, wantLookups: 2, wantAdvances: 2},
+		{name: "later owner changes are not reread", pages: []adapter.EntityPage{page(1, 2, record(10, 1, "SN-A")), page(2, 2, record(20, 1, "SN-B"))}, replay: []adapter.EntityPage{page(1, 2, record(10, 1, "SN-A")), page(2, 2, record(20, 1, "SN-C"))}, wantVertices: 2, wantRelations: 2, wantLookups: 2, wantAdvances: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			runs := &fakeWorkerRuns{run: &model.SyncRun{ID: "run-1"}, source: &model.Source{ID: "source-1", AdapterKind: "cmdb"}}
@@ -1348,6 +1437,12 @@ func TestSyncWorkerInterfaceOwnerRelations(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, model.SyncRunStatusSucceeded, runs.run.Status)
 				require.True(t, runs.completeCalled)
+				require.Equal(t, 1, source.passOpenCalls)
+				expectedOffsets := []int{0}
+				for _, page := range tc.pages[:len(tc.pages)-1] {
+					expectedOffsets = append(expectedOffsets, page.NextOffset)
+				}
+				require.Equal(t, expectedOffsets, source.offsets)
 			} else {
 				require.EqualError(t, err, tc.wantError)
 				require.Equal(t, model.SyncRunStatusFailed, runs.run.Status)
@@ -1453,10 +1548,10 @@ func TestSyncWorkerInterfacePartitionPasses(t *testing.T) {
 	}{
 		{name: "actual IDs descend across devices", pages: valid, wantSuccess: true},
 		{name: "duplicate UUID across devices", pages: []adapter.EntityPage{page(1, 2, false, record(10, 901, "same")), page(2, 2, true, record(20, 1, "same"))}},
-		{name: "changed validation partition", pages: valid, replay: []adapter.EntityPage{valid[0], valid[1], page(3, 3, true, record(21, 1, "PORT-1"))}},
-		{name: "changed validation identity", pages: valid, replay: []adapter.EntityPage{valid[0], valid[1], page(3, 3, true, record(20, 1, "different"))}},
-		{name: "changed validation actual ID", pages: valid, replay: []adapter.EntityPage{valid[0], valid[1], page(3, 3, true, record(20, 2, "PORT-1"))}},
-		{name: "changed validation count", pages: valid, replay: []adapter.EntityPage{page(1, 4, false, record(10, 901, "PORT-901"))}},
+		{name: "later partition changes are not reread", pages: valid, replay: []adapter.EntityPage{valid[0], valid[1], page(3, 3, true, record(21, 1, "PORT-1"))}, wantSuccess: true},
+		{name: "later identity changes are not reread", pages: valid, replay: []adapter.EntityPage{valid[0], valid[1], page(3, 3, true, record(20, 1, "different"))}, wantSuccess: true},
+		{name: "later actual ID changes are not reread", pages: valid, replay: []adapter.EntityPage{valid[0], valid[1], page(3, 3, true, record(20, 2, "PORT-1"))}, wantSuccess: true},
+		{name: "later count changes are not reread", pages: valid, replay: []adapter.EntityPage{page(1, 4, false, record(10, 901, "PORT-901"))}, wantSuccess: true},
 		{name: "missing partition", pages: []adapter.EntityPage{page(1, 1, true, record(0, 1, "PORT-1"))}},
 		{name: "negative partition", pages: []adapter.EntityPage{page(1, 1, true, record(-1, 1, "PORT-1"))}},
 		{name: "partition regresses", pages: []adapter.EntityPage{page(1, 2, false, record(20, 1, "PORT-1")), page(2, 2, true, record(10, 2, "PORT-2"))}},
@@ -1465,7 +1560,7 @@ func TestSyncWorkerInterfacePartitionPasses(t *testing.T) {
 		{name: "same page IDs decrease", pages: []adapter.EntityPage{page(2, 2, true, record(10, 2, "PORT-2"), record(10, 1, "PORT-1"))}},
 		{name: "nonpositive actual ID", pages: []adapter.EntityPage{page(1, 1, true, record(10, 0, "PORT-1"))}},
 		{name: "manifest open fails", pages: valid, openErrAt: 1},
-		{name: "validation manifest open fails", pages: valid, openErrAt: 2},
+		{name: "second manifest is never opened", pages: valid, openErrAt: 2, wantSuccess: true},
 		{name: "empty manifest", pages: []adapter.EntityPage{page(0, 0, true)}, wantSuccess: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1492,7 +1587,7 @@ func TestSyncWorkerInterfacePartitionPasses(t *testing.T) {
 			require.Equal(t, model.SyncRunStatusSucceeded, runs.run.Status)
 			require.True(t, graph.cleanup)
 			require.True(t, runs.completeCalled)
-			require.Equal(t, 2, source.passOpenCalls)
+			require.Equal(t, 1, source.passOpenCalls)
 			if len(tc.pages[0].Records) == 0 {
 				require.Empty(t, graph.vertices)
 				return
@@ -1506,12 +1601,12 @@ func TestSyncWorkerInterfacePartitionPasses(t *testing.T) {
 				identities = append(identities, vertex.Identity.StableID)
 			}
 			require.ElementsMatch(t, []string{"PORT-901", "PORT-902", "PORT-1"}, identities)
-			require.Equal(t, []int{0, 1, 2, 0, 1, 2}, source.offsets)
+			require.Equal(t, []int{0, 1, 2}, source.offsets)
 		})
 	}
 }
 
-func TestSyncWorkerEntityFailuresNeverCleanup(t *testing.T) {
+func TestSyncWorkerEntityCollectionValidationAndSinglePassPublication(t *testing.T) {
 	record := func(id int64, uuid string) adapter.EntityRecord {
 		return adapter.EntityRecord{SourceInstanceID: id, Identity: uuid, Properties: map[string]any{"code": uuid}}
 	}
@@ -1531,8 +1626,8 @@ func TestSyncWorkerEntityFailuresNeverCleanup(t *testing.T) {
 		}{
 			{name: "duplicate identity", pages: []adapter.EntityPage{page(2, 2, true, record(1, "same"), record(2, "same"))}, want: "entity_collection_failed"},
 			{name: "cross page order", pages: []adapter.EntityPage{page(1, 2, false, record(2, "UUID-2")), page(2, 2, true, record(1, "UUID-1"))}, want: "entity_collection_failed"},
-			{name: "changed identity", pages: []adapter.EntityPage{valid}, replay: []adapter.EntityPage{page(1, 1, true, record(2, "UUID-2"))}, want: "entity_collection_failed"},
-			{name: "changed count", pages: []adapter.EntityPage{valid}, replay: []adapter.EntityPage{page(1, 2, false, record(1, "UUID-1"))}, want: "entity_collection_failed"},
+			{name: "later identity changes are not reread", pages: []adapter.EntityPage{valid}, replay: []adapter.EntityPage{page(1, 1, true, record(2, "UUID-2"))}},
+			{name: "later count changes are not reread", pages: []adapter.EntityPage{valid}, replay: []adapter.EntityPage{page(1, 2, false, record(1, "UUID-1"))}},
 			{name: "bad offset", pages: []adapter.EntityPage{page(0, 1, true, record(1, "UUID-1"))}, want: "entity_collection_failed"},
 			{name: "graph error", pages: []adapter.EntityPage{valid}, writeErr: true, want: syncErrorGraphWrite},
 			{name: "checkpoint error", pages: []adapter.EntityPage{valid}, checkpointErr: true, want: syncErrorCheckpoint},
@@ -1552,6 +1647,18 @@ func TestSyncWorkerEntityFailuresNeverCleanup(t *testing.T) {
 					graph.upsertErrAt = 1
 				}
 				_, err := newWorkerForTest(runs, graph, source, time.Now()).ProcessNext(context.Background())
+				if tc.want == "" && !tc.cancel {
+					require.NoError(t, err)
+					require.Equal(t, model.SyncRunStatusSucceeded, runs.run.Status)
+					require.Empty(t, runs.run.ErrorCode)
+					require.True(t, graph.cleanup)
+					require.True(t, runs.completeCalled)
+					require.Equal(t, []int{0}, source.offsets)
+					require.Len(t, graph.vertices, 1)
+					require.Equal(t, "UUID-1", graph.vertices[0].Identity.StableID)
+					require.Len(t, runs.advances, 1)
+					return
+				}
 				if tc.cancel {
 					require.NoError(t, err)
 					require.Equal(t, model.SyncRunStatusCanceled, runs.run.Status)

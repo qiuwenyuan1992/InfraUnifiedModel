@@ -4,10 +4,12 @@
 
 ## 已批准契约
 
+当前用户批准的同步流程：一次完整采集（含分页/目录查询），身份/全局冲突/端点校验→写图→独立查图库验收。写图后不再次读取 CMDB，不以第二遍来源差异产生 `source_changed`；独立只读调试测试可比较两次来源调用，但不属于生产同步流程。
+
 - `server_gpu.parts_sn` 是实际 GPU SN，也是唯一稳定身份；完整逻辑身份为 `source_id + gpu + parts_sn`。仅 trim 首尾空白，不改变大小写。
 - 缺失、空字符串或纯空白 `parts_sn` 的卡记录直接忽略，不创建 GPU 或关系；不使用 `uuid`、`id`、`inst_id`、槽位或型号回退。
 - CMDB 卡记录 `server_gpu.uuid` 不参与身份，也不保存到 GPU 图节点；没有兼容字段、双写或旧身份映射。
-- 先以服务器 `device_sn` 完整分页查询 `server_gpu`，再对有效 GPU 使用 `condition.gpu_sn = parts_sn` 完整分页查询上联；`device_sn` 用于归属校验，不作为上联请求替代条件。
+- 2026-11-06 查询契约更正：先以服务器 `condition.device_sn` 完整分页查询 `server_gpu`，完成有效卡及全量冲突识别后，再对有有效卡的服务器使用 `condition.device_sn` 完整分页查询 `gpu_uplink`，不逐卡请求。返回的 `gpu_sn` 仅用于解析同一服务器所属的有效 `parts_sn`；缺失、未知 SN 或归属/属性冲突的记录跳过，没有有效卡的服务器不请求上联。
 - `contains_gpu` 两端身份为服务器 SN 与 GPU `parts_sn`；`gpu_uplink.uuid` 仍是来源关系标识，关系 ID 和 Rank 规则不变。ToR 接口仍由 `tor_sn + tor_port` 解析到 `port_uuid`。
 
 ## Schema 与执行边界
@@ -19,4 +21,4 @@
 
 ## 验收
 
-Schema 测试先修改并运行失败，再修改基线和迁移并运行成功；文档中 GPU 卡 UUID 身份和按服务器请求上联的旧契约全部替换。适配器、服务、repository 与 CLI 由父任务实施，不属于本子任务文件范围。
+历史验收记录：Schema 测试先修改并运行失败，再修改基线和迁移并运行成功；文档中的 GPU 卡 UUID 身份已替换。2026-11-06 更正后，上联查询遵循上述按服务器 `condition.device_sn` 完整分页的契约，不再将按服务器请求视为旧契约；本次仅更正文档，未重新执行历史测试或 live 验证。适配器、服务、repository 与 CLI 由父任务实施，不属于本子任务文件范围。

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"UnifiedInfraTopology/internal/service"
 	"bytes"
+	"fmt"
 	"testing"
 	"time"
 
@@ -33,4 +35,14 @@ func TestQueueRoundModesRejectOtherActions(t *testing.T) {
 	require.False(t, validQueuedRoundModes(true, false, []bool{true}, "", "", "", ""))
 	require.False(t, validQueuedRoundModes(true, false, nil, "source", "", "", ""))
 	require.False(t, validQueuedRoundModes(true, false, nil, "", "", "", "time"))
+}
+
+func TestFailedGPUPhasePreservesKnownCounts(t *testing.T) {
+	err := fmt.Errorf("execution: %w", &service.GPUSyncError{Code: "gpu_uplink_write_failed", Stage: "uplink_write", Details: map[string]any{"run_id": "abcdefabcdefabcdefabcdefabcdefab", "nodes": 20197, "edges": 25538, "objects": 28738, "skipped": 3200, "missing_endpoints": 2588}})
+	result := failedGPUPhaseResult(err)
+	require.Equal(t, "abcdefabcdefabcdefabcdefabcdefab", result.RunID)
+	require.Equal(t, "gpu_uplink_write_failed", result.ErrorCode)
+	require.EqualValues(t, 20197, result.Nodes)
+	require.EqualValues(t, 25538, result.Edges)
+	require.Empty(t, failedGPUPhaseResult(fmt.Errorf("untyped failure")).RunID)
 }

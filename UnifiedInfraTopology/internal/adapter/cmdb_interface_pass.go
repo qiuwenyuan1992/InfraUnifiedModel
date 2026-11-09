@@ -6,18 +6,24 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"UnifiedInfraTopology/internal/model"
 )
+
+const cmdbInterfacePageSize = 1000
 
 var _ EntityPassCollector = (*CMDB)(nil)
 var _ EntityPageStream = (*cmdbInterfacePass)(nil)
 
 type cmdbInterfacePartition struct {
-	deviceInstID int64
-	sn           string
-	total        int
-	baseOffset   int
+	deviceInstID   int64
+	sn             string
+	total          int
+	baseOffset     int
+	firstPage      []EntityRecord
+	lastPageEnd    int
+	lastInstanceID int64
 }
 
 type cmdbInterfacePass struct {
@@ -103,28 +109,79 @@ func (c *CMDB) OpenEntityPass(ctx context.Context, source model.Source, entity m
 			if selectedSN != "" && selectedSN != sn {
 				continue
 			}
-			portCondition := pass.conditionForSN(sn)
-			countCfg := cfg
-			countCfg.PageSize = 1
-			ports, err := c.collectEntityPage(ctx, countCfg, portCondition, model.EntityInterface, 0)
-			if err != nil {
-				return nil, err
-			}
-			if len(ports.Records) != min(1, ports.Total) {
-				return nil, fmt.Errorf("%w: incomplete interface count page", ErrCMDBResponse)
-			}
-			if ports.Total > int(^uint(0)>>1)-pass.total {
-				return nil, fmt.Errorf("%w: interface total exceeds supported offset", ErrCMDBResponse)
-			}
-			pass.devices = append(pass.devices, cmdbInterfacePartition{deviceInstID: device.InstID, sn: sn, total: ports.Total, baseOffset: pass.total})
-			pass.total += ports.Total
+			pass.devices = append(pass.devices, cmdbInterfacePartition{deviceInstID: device.InstID, sn: sn})
 		}
 		start += len(items)
 		if start >= total {
 			break
 		}
 	}
+	// 设备发现仍使用配置分页，端口按设备固定每页 1000 条，避免计数后重复读取。
+	pass.cfg.PageSize = cmdbInterfacePageSize
+	if err := pass.prefetchFirstPages(ctx); err != nil {
+		return nil, err
+	}
+	for i := range pass.devices {
+		device := &pass.devices[i]
+		if device.total > int(^uint(0)>>1)-pass.total {
+			return nil, fmt.Errorf("%w: interface total exceeds supported offset", ErrCMDBResponse)
+		}
+		device.baseOffset = pass.total
+		pass.total += device.total
+	}
 	return pass, nil
+}
+
+func (p *cmdbInterfacePass) prefetchFirstPages(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	var firstError sync.Once
+	var fetchErr error
+	for worker := 0; worker < min(p.cfg.Concurrency, len(p.devices)); worker++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				device := &p.devices[index]
+				page, err := p.collector.collectEntityPage(ctx, p.cfg, p.conditionForSN(device.sn), model.EntityInterface, 0)
+				if err == nil && len(page.Records) != min(p.cfg.PageSize, page.Total) {
+					err = fmt.Errorf("%w: incomplete interface first page", ErrCMDBResponse)
+				}
+				if err != nil {
+					firstError.Do(func() {
+						fetchErr = err
+						cancel()
+					})
+					return
+				}
+				device.total = page.Total
+				device.firstPage = page.Records
+				device.lastPageEnd = len(page.Records)
+				if len(page.Records) > 0 {
+					device.lastInstanceID = page.Records[len(page.Records)-1].SourceInstanceID
+				}
+			}
+		}()
+	}
+dispatch:
+	for index := range p.devices {
+		select {
+		case jobs <- index:
+		case <-ctx.Done():
+			break dispatch
+		}
+	}
+	close(jobs)
+	workers.Wait()
+	if fetchErr != nil {
+		return fetchErr
+	}
+	return ctx.Err()
 }
 
 func (p *cmdbInterfacePass) conditionForSN(sn string) map[string]any {
@@ -149,20 +206,29 @@ func (p *cmdbInterfacePass) Page(ctx context.Context, start int) (EntityPage, er
 	index := sort.Search(len(p.devices), func(i int) bool {
 		return p.devices[i].baseOffset+p.devices[i].total > start
 	})
-	device := p.devices[index]
+	device := &p.devices[index]
 	localStart := start - device.baseOffset
-	cfg := p.cfg
-	cfg.PageSize = min(cfg.PageSize, device.total-localStart)
-	page, err := p.collector.collectEntityPage(ctx, cfg, p.conditionForSN(device.sn), model.EntityInterface, localStart)
-	if err != nil {
-		return EntityPage{}, err
+	var page EntityPage
+	if localStart == 0 {
+		page = EntityPage{Records: append([]EntityRecord(nil), device.firstPage...), Total: device.total}
+	} else {
+		var err error
+		page, err = p.collector.collectEntityPage(ctx, p.cfg, p.conditionForSN(device.sn), model.EntityInterface, localStart)
+		if err != nil {
+			return EntityPage{}, err
+		}
 	}
 	if page.Total != device.total {
 		return EntityPage{}, fmt.Errorf("%w: interface count changed during pass", ErrCMDBResponse)
 	}
-	if len(page.Records) != cfg.PageSize {
+	if len(page.Records) != min(p.cfg.PageSize, device.total-localStart) {
 		return EntityPage{}, fmt.Errorf("%w: incomplete interface partition page", ErrCMDBResponse)
 	}
+	if localStart == device.lastPageEnd && page.Records[0].SourceInstanceID <= device.lastInstanceID {
+		return EntityPage{}, fmt.Errorf("%w: interface inst_id is not strictly increasing across pages", ErrCMDBResponse)
+	}
+	device.lastPageEnd = localStart + len(page.Records)
+	device.lastInstanceID = page.Records[len(page.Records)-1].SourceInstanceID
 	for i := range page.Records {
 		page.Records[i].Partition = device.deviceInstID
 		page.Records[i].OwnerDeviceSN = device.sn

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -354,11 +355,57 @@ func verifyServerUplinkGraph(ctx context.Context, client graphclient.Client, sou
 
 func serverUplinkNow() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
 
-func executeServerUplink(ctx context.Context, control repository.InventoryRepository, worker serverUplinkRunner, run *model.SyncRun, source model.Source, heartbeat time.Duration, validate func(context.Context, time.Time, int64) error) (result service.ServerUplinkResult, err error) {
-	if run == nil || run.SourceID != source.ID || run.Status != model.SyncRunStatusRunning || run.StartedAt == nil || run.LeaseExpiresAt == nil || !run.LeaseExpiresAt.After(serverUplinkNow()) {
-		return result, errors.New("server uplink claimed run invalid")
+type syncExecutionError struct {
+	code  string
+	cause error
+}
+
+func (e *syncExecutionError) Error() string { return e.code }
+func (e *syncExecutionError) Unwrap() error { return e.cause }
+
+var syncExecutionCode = regexp.MustCompile(`^[a-z][a-z0-9_]{0,95}$`)
+
+func executionFailureDetails(err error, result service.ServerUplinkResult) (string, string) {
+	code := ""
+	details := map[string]any{"error_category": service.SyncFailureCategory(err), "checkpoint_records": result.Edges, "objects": result.Servers, "skipped": result.Skipped, "missing_endpoints": result.MissingEndpoints}
+	var failure *service.GPUSyncError
+	if errors.As(err, &failure) {
+		if syncExecutionCode.MatchString(failure.Code) {
+			code = failure.Code
+		}
+		if syncExecutionCode.MatchString(failure.Stage) {
+			details["stage"] = failure.Stage
+		}
+		for _, key := range []string{"nodes", "edges", "objects", "skipped", "missing_endpoints", "original_objects", "reread_objects", "original_cards", "reread_cards", "original_uplinks", "reread_uplinks"} {
+			if value, ok := failure.Details[key].(int); ok {
+				details[key] = value
+			}
+		}
+		for _, key := range []string{"original_digest", "reread_digest"} {
+			if value, ok := failure.Details[key].(string); ok && len(value) == 64 {
+				if _, err := hex.DecodeString(value); err == nil {
+					details[key] = value
+				}
+			}
+		}
 	}
-	leaseCtx, cancel := context.WithCancelCause(ctx)
+	encoded, _ := json.Marshal(details)
+	return code, string(encoded)
+}
+
+func executeServerUplink(ctx context.Context, control repository.InventoryRepository, worker serverUplinkRunner, run *model.SyncRun, source model.Source, heartbeat time.Duration, validate func(context.Context, time.Time, int64) error) (result service.ServerUplinkResult, err error) {
+	resource := serverUplinkResource
+	if scoped, ok := control.(interface{ ExecutionResource() string }); ok {
+		resource = scoped.ExecutionResource()
+	}
+	if !syncExecutionCode.MatchString(resource) {
+		return result, errors.New("sync execution resource invalid")
+	}
+	failureCode := resource + "_failed"
+	if run == nil || run.SourceID != source.ID || run.Status != model.SyncRunStatusRunning || run.StartedAt == nil || run.LeaseExpiresAt == nil || !run.LeaseExpiresAt.After(serverUplinkNow()) {
+		return result, errors.New(resource + "_claimed_run_invalid")
+	}
+	leaseCtx, cancel := context.WithCancelCause(service.WithSyncRunID(ctx, run.ID))
 	defer cancel(nil)
 	stop := make(chan struct{})
 	done := make(chan struct{})
@@ -379,13 +426,13 @@ func executeServerUplink(ctx context.Context, control repository.InventoryReposi
 				canceled, checkErr := control.RunCancellationRequested(renewCtx, run.ID)
 				if checkErr != nil || canceled {
 					renewCancel()
-					cancel(errors.New("server uplink cancellation requested or control unavailable"))
+					if checkErr != nil { cancel(&syncExecutionError{code: resource + "_cancellation_check_failed", cause: checkErr}) } else { cancel(&syncExecutionError{code: resource + "_cancellation_requested", cause: context.Canceled}) }
 					return
 				}
 				leaseErr = control.RenewRunLease(renewCtx, run.ID, serverUplinkNow())
 				renewCancel()
 				if leaseErr != nil {
-					cancel(errors.New("server uplink lease lost"))
+					cancel(&syncExecutionError{code: resource + "_lease_lost", cause: leaseErr})
 					return
 				}
 			}
@@ -399,7 +446,14 @@ func executeServerUplink(ctx context.Context, control repository.InventoryReposi
 			return
 		}
 		stopHeartbeat()
-		terminal, code := model.SyncRunStatusFailed, "server_uplink_failed"
+		terminal, code := model.SyncRunStatusFailed, failureCode
+		if specific, _ := executionFailureDetails(err, result); specific != "" {
+			code = specific
+		}
+		var executionError *syncExecutionError
+		if errors.As(err, &executionError) {
+			code = executionError.code
+		}
 		if ctx.Err() != nil {
 			terminal, code = model.SyncRunStatusCanceled, ""
 		}
@@ -408,20 +462,34 @@ func executeServerUplink(ctx context.Context, control repository.InventoryReposi
 		if canceled, checkErr := control.RunCancellationRequested(finishCtx, run.ID); checkErr == nil && canceled {
 			terminal, code = model.SyncRunStatusCanceled, ""
 		}
+		if terminal == model.SyncRunStatusFailed {
+			if recorder, ok := control.(interface {
+				RecordSyncExecutionDiagnostic(context.Context, *model.SyncDiagnostic) error
+			}); ok {
+				_, detail := executionFailureDetails(err, result)
+				diagnostic := &model.SyncDiagnostic{RunID: run.ID, SourceID: source.ID, Resource: resource, Severity: "error", Code: code, Detail: detail, CreatedAt: serverUplinkNow()}
+				if recordErr := recorder.RecordSyncExecutionDiagnostic(finishCtx, diagnostic); recordErr != nil {
+					err = &syncExecutionError{code: resource + "_diagnostic_persistence_failed", cause: errors.Join(err, recordErr)}
+				}
+			}
+		}
 		if _, transitionErr := control.TransitionRun(finishCtx, run.ID, status, terminal, serverUplinkNow(), code); transitionErr != nil {
-			err = errors.New("server uplink failed; terminal status update failed")
+			err = &syncExecutionError{code: resource + "_terminal_update_failed", cause: errors.Join(err, transitionErr)}
 		}
 	}()
 	checkCancel := func() error {
 		if err := leaseCtx.Err(); err != nil {
-			return errors.New("server uplink execution canceled or lease lost")
+			cause := context.Cause(leaseCtx)
+			var failure *syncExecutionError
+			if errors.As(cause, &failure) { return failure }
+			return &syncExecutionError{code: resource + "_execution_canceled", cause: cause}
 		}
 		canceled, err := control.RunCancellationRequested(leaseCtx, run.ID)
 		if err != nil {
-			return errors.New("server uplink cancellation check failed")
+			return &syncExecutionError{code: resource + "_cancellation_check_failed", cause: err}
 		}
 		if canceled {
-			return errors.New("server uplink cancellation requested")
+			return &syncExecutionError{code: resource + "_cancellation_requested", cause: context.Canceled}
 		}
 		return nil
 	}
@@ -431,10 +499,14 @@ func executeServerUplink(ctx context.Context, control repository.InventoryReposi
 	snapshot := service.SyncSnapshot(ctx, *run.StartedAt)
 	checkpoint, beginErr := control.BeginCheckpoint(leaseCtx, source.ID, serverUplinkResource, run.ID, snapshot, serverUplinkNow())
 	if beginErr != nil || checkpoint == nil || !checkpoint.Cursor.SnapshotAt.Equal(snapshot) {
-		return result, errors.New("server uplink checkpoint begin failed")
+		return result, &syncExecutionError{code: resource + "_checkpoint_begin_failed", cause: beginErr}
 	}
 	if result, err = worker.Run(leaseCtx, source, snapshot); err != nil {
-		return result, errors.New("server uplink collection or graph write failed")
+		code, _ := executionFailureDetails(err, result)
+		if code == "" {
+			code = failureCode
+		}
+		return result, &syncExecutionError{code: code, cause: err}
 	}
 	if err = checkCancel(); err != nil {
 		return result, err
@@ -442,33 +514,33 @@ func executeServerUplink(ctx context.Context, control repository.InventoryReposi
 	cursor := repository.DeviceSyncCursor{Version: repository.DeviceSyncCursorVersion, RunID: run.ID, SnapshotAt: snapshot, NextOffset: result.Edges, Total: result.Edges}
 	if result.Edges > 0 {
 		if _, err = control.AdvanceCheckpoint(leaseCtx, source.ID, serverUplinkResource, run.ID, cursor, serverUplinkNow()); err != nil {
-			return result, errors.New("server uplink checkpoint advance failed")
+			return result, &syncExecutionError{code: resource + "_checkpoint_advance_failed", cause: err}
 		}
 	}
 	if _, err = control.TransitionRun(leaseCtx, run.ID, status, model.SyncRunStatusValidating, serverUplinkNow(), ""); err != nil {
-		return result, errors.New("server uplink validating transition failed")
+		return result, &syncExecutionError{code: resource + "_validating_transition_failed", cause: err}
 	}
 	status = model.SyncRunStatusValidating
 	if err = validate(leaseCtx, snapshot, int64(result.Edges)); err != nil {
-		return result, errors.New("server uplink graph validation failed")
+		return result, &syncExecutionError{code: resource + "_graph_validation_failed", cause: err}
 	}
 	if err = checkCancel(); err != nil {
 		return result, err
 	}
 	if _, err = control.TransitionRun(leaseCtx, run.ID, status, model.SyncRunStatusPublishing, serverUplinkNow(), ""); err != nil {
-		return result, errors.New("server uplink publishing transition failed")
+		return result, &syncExecutionError{code: resource + "_publishing_transition_failed", cause: err}
 	}
 	status = model.SyncRunStatusPublishing
 	// 等待在途续租结束后再提交成功，避免终态被心跳误判为失租。
 	stopHeartbeat()
 	if leaseErr != nil {
-		return result, errors.New("server uplink lease lost")
+		return result, &syncExecutionError{code: resource + "_lease_lost", cause: leaseErr}
 	}
 	if err = checkCancel(); err != nil {
 		return result, err
 	}
 	if _, err = control.CompleteCheckpointAndRun(leaseCtx, source.ID, serverUplinkResource, run.ID, status, serverUplinkNow()); err != nil {
-		return result, errors.New("server uplink atomic completion failed")
+		return result, &syncExecutionError{code: resource + "_atomic_completion_failed", cause: err}
 	}
 	return result, nil
 }

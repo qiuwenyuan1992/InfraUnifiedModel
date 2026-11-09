@@ -49,14 +49,15 @@ type inventoryGrant struct {
 }
 
 type inventoryService struct {
-	repo      repository.InventoryRepository
-	cursorKey []byte
-	grants    []inventoryGrant
-	now       func() time.Time
+	repo         repository.InventoryRepository
+	cursorKey    []byte
+	grants       []inventoryGrant
+	authDisabled bool
+	now          func() time.Time
 }
 
 func NewInventoryService(repo repository.InventoryRepository, conf *viper.Viper) InventoryService {
-	service := &inventoryService{repo: repo, now: time.Now}
+	service := &inventoryService{repo: repo, now: time.Now, authDisabled: InventoryAuthDisabled(conf)}
 	if conf != nil {
 		service.cursorKey = []byte(conf.GetString("inventory.cursor_key"))
 		// 不通过 GetStringMap 读取授权主体，避免用户标识被转成小写。
@@ -99,6 +100,12 @@ func (s *inventoryService) allowed(userID, permission string) bool {
 }
 
 func (s *inventoryService) authorize(userID, resource string) error {
+	if s.authDisabled {
+		if userID == InventoryAnonymousUser && (resource == "sources" || resource == "sync-runs" || resource == "write") {
+			return nil
+		}
+		return ErrInventoryForbidden
+	}
 	allowed := false
 	switch resource {
 	case "sources", "sync-runs":

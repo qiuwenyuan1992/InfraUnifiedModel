@@ -42,6 +42,23 @@ func TestLiveGPUIdentitySchema(t *testing.T) {
 		t.Logf("%s %v", query, rows)
 		return rows
 	}
+	if snapshot := os.Getenv("GPU_PROGRESS_SNAPSHOT"); snapshot != "" {
+		require.Empty(t, apply)
+		at, err := time.Parse(time.RFC3339Nano, snapshot)
+		require.NoError(t, err)
+		for _, query := range []string{
+			"LOOKUP ON gpu WHERE gpu.source_id == $source AND gpu.synced_at == datetime($snapshot) YIELD id(vertex) AS vid | YIELD count(*) AS total;",
+			"LOOKUP ON composition_relation WHERE composition_relation.relation_kind == \"contains_gpu\" AND composition_relation.synced_at == datetime($snapshot) YIELD src(edge) AS src | YIELD count(*) AS total;",
+			"LOOKUP ON network_relation WHERE network_relation.relation_kind == \"gpu_uplink\" AND network_relation.synced_at == datetime($snapshot) YIELD src(edge) AS src | YIELD count(*) AS total;",
+		} {
+			result, err := client.ExecuteParameter(ctx, query, map[string]interface{}{"snapshot": at.UTC().Format("2006-01-02T15:04:05.000000+00:00"), "source": "00000000000000000000000000000238"})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.True(t, result.IsSucceed(), "%s", result.GetErrorMsg())
+			t.Logf("current GPU snapshot: %s %v", query, result.AsStringTable())
+		}
+		return
+	}
 	before := read("SHOW CREATE TAG gpu;")
 	read("SHOW TAG INDEXES;")
 	read("SHOW CREATE EDGE network_relation;")

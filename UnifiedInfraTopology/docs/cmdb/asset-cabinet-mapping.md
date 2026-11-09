@@ -342,7 +342,7 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 
 - GPU 服务器已有 `device_view` 样例：`parent_type="服务器"`、`device_type="GPU服务器"`、`device_type_id=58`。大类单独不能区分 GPU；以类型 ID 识别，名称用于展示和校验，不再要求补设备资产接口。
 - GPU 卡以实际 SN `server_gpu.parts_sn` 作为唯一稳定身份；缺失、空字符串或纯空白 SN 的卡直接忽略。卡 `uuid` 不参与身份也不保存，不以 `id`、`inst_id` 或槽位回退，不做兼容双写。保留型号、显存、槽位、PCI 地址、驱动等来源属性；未明确的单位保持原值。
-- API 关联先用来源字段匹配，再取得目标实体的稳定身份；设备稳定身份为 `device_sn`，GPU 卡稳定身份为 `parts_sn`，完整逻辑身份为 `source_id + gpu + parts_sn`。GPU 上联请求必须使用 `gpu_sn=parts_sn`。
+- API 关联先用来源字段匹配，再取得目标实体的稳定身份；设备稳定身份为 `device_sn`，GPU 卡稳定身份为 `parts_sn`，完整逻辑身份为 `source_id + gpu + parts_sn`。2026-11-06 更正：GPU 上联按服务器以 `condition.device_sn` 完整分页查询，不按卡使用 `condition.gpu_sn`；返回的 `gpu_sn` 仅用于解析同一服务器所属的有效 `parts_sn`。缺失、未知 SN 或归属/属性冲突的记录跳过；服务器没有有效卡时不请求上联。
 
 | 来源匹配 | 解析结果 |
 |---|---|
@@ -431,8 +431,8 @@ UPS设备 3255、3280、3370 ─来源字段校验→ 变压器 1588（不建直
 GPU 字段、两阶段查询顺序、上联匹配、交叉校验及同步约定统一以 [gpu.md](../model/entities/gpu.md) 为准。本文件只保留跨实体摘要：
 
 - GPU 唯一身份使用实际 SN `server_gpu.parts_sn`，`parts_sn STRING NOT NULL`；忽略缺失/空白 SN，不保存卡 UUID，不做 UUID/`inst_id` 回退或双写。
-- 先按 GPU 服务器 `device_sn` 查询 `server_gpu`，再对有效卡按 `gpu_sn=parts_sn` 完整分页查询 `gpu_uplink`。
-- `gpu_uplink` 通过 `gpu_sn → parts_sn` 定位 GPU，通过 `tor_sn + tor_port` 查询 `interface.port_uuid`。
+- 先按 GPU 服务器 `condition.device_sn` 完整分页查询 `server_gpu`，完成有效卡及冲突识别后，再对有有效卡的服务器按 `condition.device_sn` 完整分页查询 `gpu_uplink`；没有有效卡的服务器不请求上联。
+- `gpu_uplink` 返回的 `gpu_sn → parts_sn` 仅定位同一服务器所属的有效 GPU；缺失、未知 SN 或归属/属性冲突的记录跳过，通过 `tor_sn + tor_port` 查询 `interface.port_uuid`。
 - `gpu_port` 是 GPU 关联网卡端口名称，只保存在上联关系中，不创建网卡或 GPU 侧接口节点。
 - `gpu_ip` 当前样例均为空，不进入 GPU 节点；仅作为上联关系可选来源属性。
 

@@ -35,7 +35,7 @@ func (w *LinksToWorker) Run(ctx context.Context, source model.Source, at time.Ti
 	if !ok {
 		return result, fmt.Errorf("links_to endpoint reader unavailable")
 	}
-	digest, candidates, count, skipped, reasons, err := w.collect(ctx, source)
+	_, candidates, count, skipped, reasons, err := w.collect(ctx, source)
 	result.Devices = count
 	result.Skipped = skipped
 	result.Reasons = reasons
@@ -81,13 +81,6 @@ func (w *LinksToWorker) Run(ctx context.Context, source model.Source, at time.Ti
 	}
 	if err != nil {
 		return result, err
-	}
-	second, _, secondCount, secondSkipped, _, err := w.collect(ctx, source)
-	if err != nil {
-		return result, err
-	}
-	if second != digest || secondCount != count || secondSkipped != skipped {
-		return result, fmt.Errorf("links_to source changed during verification")
 	}
 	return result, nil
 }

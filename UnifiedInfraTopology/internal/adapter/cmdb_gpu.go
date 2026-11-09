@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"UnifiedInfraTopology/internal/model"
@@ -104,6 +105,96 @@ func cmdbGPUCard(item map[string]json.RawMessage, sourceID, server string) (GPUC
 	return GPUCard{Identity: model.EntityIdentity{SourceID: sourceID, EntityType: model.EntityGPU, StableID: partsSN}, ServerSN: server, Properties: properties}, nil
 }
 
+const gpuDevicePageSize = 1000
+
+type gpuRawCollection struct {
+	records []map[string]json.RawMessage
+	digest  []byte
+}
+
+func (c *CMDB) collectGPUObject(ctx context.Context, cfg cmdbConfig, object string, condition map[string]any) (gpuRawCollection, error) {
+	out := gpuRawCollection{records: []map[string]json.RawMessage{}}
+	total := -1
+	var last int64
+	for start := 0; ; {
+		// 全字段仅用于摘要；每台设备按 inst_id 顺序完整分页读取。
+		page, err := c.collectUplinkMapPage(ctx, cfg, "/pub/api/v3/find/instance/object/"+object, condition, start, []string{})
+		if err != nil {
+			return gpuRawCollection{}, err
+		}
+		if total < 0 {
+			total = *page.Count
+		}
+		if total != *page.Count {
+			return gpuRawCollection{}, fmt.Errorf("%w: GPU %s count changed", ErrCMDBResponse, object)
+		}
+		encoded, _ := json.Marshal([]any{object, condition, start, total, *page.Info})
+		out.digest = append(out.digest, encoded...)
+		for _, record := range *page.Info {
+			inst, err := uplinkInteger(record, "inst_id")
+			if err != nil {
+				return gpuRawCollection{}, err
+			}
+			if inst <= last {
+				return gpuRawCollection{}, fmt.Errorf("%w: GPU %s inst_id must increase strictly", ErrCMDBResponse, object)
+			}
+			last = inst
+			out.records = append(out.records, record)
+		}
+		start += len(*page.Info)
+		if start == total {
+			return out, nil
+		}
+	}
+}
+
+func (c *CMDB) collectGPUByServer(ctx context.Context, cfg cmdbConfig, object string, servers []string) ([]gpuRawCollection, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	// 每台设备的页大小独立于发现接口和命令行分页覆盖。
+	cfg.PageSize = gpuDevicePageSize
+	results := make([]gpuRawCollection, len(servers))
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	var firstError sync.Once
+	var collectErr error
+	for worker := 0; worker < min(cfg.Concurrency, len(servers)); worker++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				result, err := c.collectGPUObject(ctx, cfg, object, map[string]any{"device_sn": servers[index]})
+				if err != nil {
+					firstError.Do(func() { collectErr = err; cancel() })
+					return
+				}
+				// 每个索引只有一个写入者；摘要和身份表在全部完成后串行合并。
+				results[index] = result
+			}
+		}()
+	}
+queue:
+	for index := range servers {
+		select {
+		case jobs <- index:
+		case <-ctx.Done():
+			break queue
+		}
+	}
+	close(jobs)
+	workers.Wait()
+	if collectErr != nil {
+		return nil, collectErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // CollectGPU 完整采集候选后才返回；原始元数据和解析身份共同参与复读摘要。
 func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollection, error) {
 	out := GPUCollection{Cards: []GPUCard{}, Uplinks: []GPUUplink{}, Servers: []string{}, Reasons: map[string]int{}}
@@ -122,46 +213,11 @@ func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollecti
 		return out, fmt.Errorf("%w: GPU requires positive device_condition.idc_id", ErrCMDBConfig)
 	}
 	digest := sha256.New()
-	collect := func(object string, condition map[string]any) ([]map[string]json.RawMessage, error) {
-		records := []map[string]json.RawMessage{}
-		total := -1
-		var last int64
-		for start := 0; ; {
-			// 全字段保留仅用于摘要，禁止将来源元数据复制进图。
-			page, err := c.collectUplinkMapPage(ctx, cfg, "/pub/api/v3/find/instance/object/"+object, condition, start, []string{})
-			if err != nil {
-				return nil, err
-			}
-			if total < 0 {
-				total = *page.Count
-			}
-			if total != *page.Count {
-				return nil, fmt.Errorf("%w: GPU %s count changed", ErrCMDBResponse, object)
-			}
-			encoded, _ := json.Marshal([]any{object, condition, start, total, *page.Info})
-			digest.Write(encoded)
-			for _, record := range *page.Info {
-				inst, err := uplinkInteger(record, "inst_id")
-				if err != nil {
-					return nil, err
-				}
-				if inst <= last {
-					return nil, fmt.Errorf("%w: GPU %s inst_id must increase strictly", ErrCMDBResponse, object)
-				}
-				last = inst
-				records = append(records, record)
-			}
-			start += len(*page.Info)
-			if start == total {
-				break
-			}
-		}
-		return records, nil
-	}
-	servers, err := collect("device_view", map[string]any{"idc_id": idc, "parent_type_id": 52, "device_type_id": 58})
+	servers, err := c.collectGPUObject(ctx, cfg, "device_view", map[string]any{"idc_id": idc, "parent_type_id": 52, "device_type_id": 58})
 	if err != nil {
 		return out, err
 	}
+	digest.Write(servers.digest)
 	serverSeen := map[string]bool{}
 	cardSeen := map[string]GPUCard{}
 	cardCounts := map[string]int{}
@@ -169,7 +225,7 @@ func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollecti
 	linkSeen := map[string]string{}
 	portOwners := map[string]string{}
 	skip := func(reason string) { out.Skipped++; out.Reasons[reason]++ }
-	for _, server := range servers {
+	for _, server := range servers.records {
 		sn, err := uplinkText(server, "device_sn")
 		if err != nil {
 			return out, err
@@ -187,12 +243,16 @@ func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollecti
 		}
 		serverSeen[sn] = true
 		out.Servers = append(out.Servers, sn)
-		rawCards, err := collect("server_gpu", map[string]any{"device_sn": sn})
-		if err != nil {
-			return out, err
-		}
-		out.Objects += len(rawCards)
-		for _, raw := range rawCards {
+	}
+	rawCardsByServer, err := c.collectGPUByServer(ctx, cfg, "server_gpu", out.Servers)
+	if err != nil {
+		return out, err
+	}
+	for index, sn := range out.Servers {
+		rawCards := rawCardsByServer[index]
+		digest.Write(rawCards.digest)
+		out.Objects += len(rawCards.records)
+		for _, raw := range rawCards.records {
 			partsSN, err := uplinkText(raw, "parts_sn")
 			if err != nil {
 				return out, err
@@ -231,15 +291,30 @@ func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollecti
 		cards = append(cards, card)
 	}
 	out.Cards = cards
-	torPorts := map[string]map[string]string{}
+	validCardsByServer := map[string]map[string]GPUCard{}
 	for _, card := range out.Cards {
-		sn := card.ServerSN
-		rawLinks, err := collect("gpu_uplink", map[string]any{"gpu_sn": card.Identity.StableID})
-		if err != nil {
-			return out, err
+		if validCardsByServer[card.ServerSN] == nil {
+			validCardsByServer[card.ServerSN] = map[string]GPUCard{}
 		}
-		out.Objects += len(rawLinks)
-		for _, raw := range rawLinks {
+		validCardsByServer[card.ServerSN][card.Identity.StableID] = card
+	}
+	validServers := []string{}
+	for _, sn := range out.Servers {
+		if len(validCardsByServer[sn]) > 0 {
+			validServers = append(validServers, sn)
+		}
+	}
+	rawLinksByServer, err := c.collectGPUByServer(ctx, cfg, "gpu_uplink", validServers)
+	if err != nil {
+		return out, err
+	}
+	torPorts := map[string]map[string]string{}
+	for index, sn := range validServers {
+		validCards := validCardsByServer[sn]
+		rawLinks := rawLinksByServer[index]
+		digest.Write(rawLinks.digest)
+		out.Objects += len(rawLinks.records)
+		for _, raw := range rawLinks.records {
 			uuid, err := uplinkText(raw, "uuid")
 			if err != nil {
 				return out, err
@@ -250,13 +325,6 @@ func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollecti
 			}
 			if uuid == "" || owner != sn {
 				return out, fmt.Errorf("%w: GPU uplink requires UUID and exact server SN", ErrCMDBRecord)
-			}
-			gpuSN, err := uplinkText(raw, "gpu_sn")
-			if err != nil {
-				return out, err
-			}
-			if gpuSN != card.Identity.StableID {
-				return out, fmt.Errorf("%w: GPU uplink does not match queried parts_sn", ErrCMDBRecord)
 			}
 			comparable := make(map[string]json.RawMessage, len(raw))
 			for field, value := range raw {
@@ -273,6 +341,23 @@ func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollecti
 				continue
 			}
 			linkSeen[uuid] = signature
+			gpuSN, err := uplinkText(raw, "gpu_sn")
+			if err != nil {
+				return out, err
+			}
+			if gpuSN == "" {
+				skip("gpu_uplink_missing_gpu_sn")
+				continue
+			}
+			if conflictingSNs[gpuSN] {
+				skip("gpu_uplink_conflicting_gpu_sn")
+				continue
+			}
+			card, ok := validCards[gpuSN]
+			if !ok {
+				skip("gpu_uplink_unknown_gpu_sn")
+				continue
+			}
 			values := map[string]string{}
 			for _, field := range append(append([]string{}, gpuUplinkFields...), "gpu_sn", "gpu_model", "gpu_vram", "tor_sn") {
 				value, err := uplinkText(raw, field)

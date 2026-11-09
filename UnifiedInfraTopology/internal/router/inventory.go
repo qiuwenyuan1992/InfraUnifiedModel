@@ -5,11 +5,17 @@ import (
 	"time"
 
 	v1 "UnifiedInfraTopology/api/v1"
+	"UnifiedInfraTopology/internal/service"
+	"UnifiedInfraTopology/pkg/jwt"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
 func InitInventoryRouter(deps RouterDeps, r *gin.RouterGroup) {
+	authDisabled := service.InventoryAuthDisabled(deps.Config)
+	if authDisabled {
+		deps.Logger.Warn("同步管理API鉴权已关闭，仅可用于受控本地或内网环境")
+	}
 	g := r.Group("/inventory")
 	g.Use(func(c *gin.Context) {
 		if c.Writer.Header().Get("X-Request-ID") == "" {
@@ -18,6 +24,11 @@ func InitInventoryRouter(deps RouterDeps, r *gin.RouterGroup) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 		defer cancel()
 		c.Request = c.Request.WithContext(ctx)
+		if authDisabled {
+			c.Set("claims", &jwt.MyCustomClaims{UserId: service.InventoryAnonymousUser})
+			c.Next()
+			return
+		}
 		claims, err := deps.JWT.ParseToken(c.GetHeader("Authorization"))
 		if err != nil || claims == nil || claims.UserId == "" {
 			c.AbortWithStatusJSON(401, v1.Response{Code: 40101, Message: "unauthenticated", Data: gin.H{}})
@@ -39,4 +50,11 @@ func InitInventoryRouter(deps RouterDeps, r *gin.RouterGroup) {
 	g.POST("/sync-rounds/:id/cancel", rounds.Cancel)
 	g.GET("/sync-rounds/:id/diagnostics", rounds.Diagnostics(true))
 	g.GET("/sync-runs/:run_id/diagnostics", rounds.Diagnostics(false))
+	if topology := deps.TopologyBrowseHandler; topology != nil {
+		g.GET("/topology/node", topology.Node)
+		g.GET("/topology/neighbors", topology.Neighbors)
+		g.GET("/topology/roots", topology.Roots)
+		g.GET("/topology/children", topology.Children)
+		g.GET("/topology/device-context", topology.DeviceContext)
+	}
 }

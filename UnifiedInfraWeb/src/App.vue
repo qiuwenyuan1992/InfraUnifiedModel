@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineAsyncComponent, watch } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { Connection, DataLine, Refresh, Plus, CircleCheck, Warning, Clock } from '@element-plus/icons-vue'
 import { useManagement } from './composables/useManagement'
@@ -7,6 +7,7 @@ import { formatTime, isActive, statuses, statusType } from './services/display'
 import CreateRoundDialog from './components/CreateRoundDialog.vue'
 import DetailDrawer from './components/DetailDrawer.vue'
 import DiagnosticDrawer from './components/DiagnosticDrawer.vue'
+const TopologyBrowser = defineAsyncComponent(() => import('./components/TopologyBrowser.vue'))
 
 const {
   items, loading, error, nextCursor, history, load, next, previous, section,
@@ -14,6 +15,11 @@ const {
   selectedId, selected, detailLoading, detailError, cancelLoading, createOpen, diagnostic,
   loadSources, loadDetail, openDetail, closeDetail, cancel, created, showDiagnostics, sourceName,
 } = useManagement()
+watch(section, value => {
+  if (value === 'topology') { closeDetail(); diagnostic.value = null; createOpen.value = false }
+})
+const sectionTitle = computed(() => ({ rounds: '同步任务', sources: '数据来源', topology: '业务关联拓扑' })[section.value as 'rounds' | 'sources' | 'topology'])
+const sectionDescription = computed(() => ({ rounds: '以完整同步轮次为单位，跟踪采集进度、阶段结果与诊断。', sources: '读取后端真实来源清单；一期不提供来源增删改。', topology: '从数据中心或 POD 浏览设备，自动展示真实供电、GPU 与网络关联。' })[section.value as 'rounds' | 'sources' | 'topology'])
 const summary = computed(() => [
   { label: '本页任务', value: items.value.length, note: '当前筛选 · 非全量统计', icon: DataLine, tone: 'blue' },
   { label: '本页活动任务', value: items.value.filter(item => isActive(item.status)).length, note: '排队 / 执行 / 校验 / 发布', icon: Clock, tone: 'amber' },
@@ -31,13 +37,14 @@ const summary = computed(() => [
       <nav aria-label="主导航">
         <button :class="{ active: section === 'rounds' }" @click="section = 'rounds'"><el-icon><DataLine /></el-icon>同步任务<span class="nav-indicator" /></button>
         <button :class="{ active: section === 'sources' }" @click="section = 'sources'"><el-icon><Connection /></el-icon>数据来源</button>
+        <button :class="{ active: section === 'topology' }" @click="section = 'topology'"><el-icon><Connection /></el-icon>拓扑浏览</button>
       </nav>
       <div class="sidebar-foot"><span class="local-dot" />本地开发控制台<p>一期 · 来源同步管理<br />仅手动创建，无自动调度</p></div>
     </aside>
     <div class="main-shell">
-      <header class="topbar"><div><span class="muted">控制中心</span><span class="breadcrumb-separator">/</span><strong>{{ section === 'rounds' ? '同步任务' : '数据来源' }}</strong></div><el-tag effect="plain" type="info">本地环境 · 无登录</el-tag></header>
+      <header class="topbar"><div><span class="muted">控制中心</span><span class="breadcrumb-separator">/</span><strong>{{ sectionTitle }}</strong></div><el-tag effect="plain" type="info">本地环境 · 无登录</el-tag></header>
       <main>
-        <div class="page-heading"><div><div class="eyebrow">INVENTORY MANAGEMENT</div><h1>{{ section === 'rounds' ? '同步任务' : '数据来源' }}</h1><p>{{ section === 'rounds' ? '以完整同步轮次为单位，跟踪采集进度、阶段结果与诊断。' : '读取后端真实来源清单；一期不提供来源增删改。' }}</p></div><el-button v-if="section === 'rounds'" type="primary" :icon="Plus" :disabled="sourcesLoading || !sourcesLoaded || !!sourcesError || !sources.some(source => source.enabled)" @click="createOpen = true">创建同步任务</el-button></div>
+        <div class="page-heading"><div><div class="eyebrow">INVENTORY MANAGEMENT</div><h1>{{ sectionTitle }}</h1><p>{{ sectionDescription }}</p></div><el-button v-if="section === 'rounds'" type="primary" :icon="Plus" :disabled="sourcesLoading || !sourcesLoaded || !!sourcesError || !sources.some(source => source.enabled)" @click="createOpen = true">创建同步任务</el-button></div>
         <el-alert v-if="sourcesError" :title="sourcesError" type="error" :closable="false" show-icon class="spaced"><template #default><el-button link type="primary" @click="loadSources">重新读取来源</el-button></template></el-alert>
         <template v-if="section === 'rounds'">
           <section class="summary-grid" aria-label="本页任务统计">
@@ -65,10 +72,11 @@ const summary = computed(() => [
           </section>
           <p class="page-footnote">完整同步执行来源配置内的固定 15 阶段；成功阶段数不等于对象采集比例，失败或取消不会回滚已写入图数据。</p>
         </template>
-        <section v-else class="panel">
+        <section v-else-if="section === 'sources'" class="panel">
           <div class="panel-title"><div><h2>来源清单</h2><span class="muted">{{ sourcesLoaded && !sourcesError ? `已读取 ${sources.length} 个真实来源` : '从后端分页读取完整来源清单' }}</span></div><el-button :icon="Refresh" :loading="sourcesLoading" @click="loadSources">刷新来源</el-button></div>
           <el-table v-loading="sourcesLoading" :data="sources" row-key="id"><el-table-column prop="name" label="来源名称" min-width="160" /><el-table-column prop="id" label="来源 ID" min-width="250" /><el-table-column prop="adapter_kind" label="适配器" min-width="120" /><el-table-column label="状态" width="120"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '已启用' : '已停用' }}</el-tag></template></el-table-column><template #empty><el-empty :description="sourcesError ? '来源加载失败，请重试' : sourcesLoading ? '正在读取来源清单' : '后端尚未配置来源'" :image-size="96" /></template></el-table>
         </section>
+        <TopologyBrowser v-else-if="section === 'topology'" :sources="sources" :sources-loading="sourcesLoading" :sources-loaded="sourcesLoaded" :sources-error="sourcesError" />
       </main>
     </div>
     <CreateRoundDialog v-model="createOpen" :sources="sources" @created="created" />

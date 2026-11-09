@@ -30,7 +30,7 @@
 - `created_at DATETIME NOT NULL`
 - `synced_at DATETIME NOT NULL`
 
-GPU 唯一身份为 `source_id + gpu + parts_sn`。`parts_sn` 仅 trim 首尾空白；缺失、空字符串或纯空白 SN 的卡记录直接忽略，不创建 GPU 或对应关系。`server_gpu.uuid` 不参与身份，也不保存到 GPU 节点；禁止 UUID/`inst_id` 回退、旧身份映射或双写。上联请求条件使用 `gpu_sn=parts_sn`；`gpu_uplink.uuid` 仍是来源关系标识，不是卡身份。
+GPU 唯一身份为 `source_id + gpu + parts_sn`。`parts_sn` 仅 trim 首尾空白；缺失、空字符串或纯空白 SN 的卡记录直接忽略，不创建 GPU 或对应关系。`server_gpu.uuid` 不参与身份，也不保存到 GPU 节点；禁止 UUID/`inst_id` 回退、旧身份映射或双写。2026-11-06 更正：先按服务器 `condition.device_sn` 完整分页采集卡并识别有效/冲突 SN，再对有有效卡的服务器以 `condition.device_sn` 完整分页查询上联，不逐卡查询。返回的 `gpu_sn` 仅用于解析同一服务器所属的有效 `parts_sn`；缺失、未知 SN 或归属/属性冲突的记录跳过，服务器没有有效卡时不请求上联。`gpu_uplink.uuid` 仍是来源关系标识，不是卡身份。
 
 实体文档列出的其他属性按以下类型映射：
 
@@ -218,6 +218,8 @@ func (i RelationIdentity) Rank() (int64, error)
 - `0000-00-00`、Unix epoch 占位、明显超出业务范围或解析失败的来源时间写为 NULL，并产生 warning。
 
 ## 10. 同步、清理与发布
+
+当前用户批准的同步流程：一次完整采集（含分页/目录查询），身份/全局冲突/端点校验→写图→独立查图库验收。一次完整采集可以包含多个分页、目录及引用解析请求；各阶段完成采集和校验后写图，写图后不再次读取 CMDB，不以第二遍来源差异产生 `source_changed`。独立查图库验收仍为成功条件；独立只读调试测试可比较两次来源调用，不属于生产同步流程。该流程及共享时间均不承诺 CMDB 原子快照或图写入原子可见性。
 
 同步按以下依赖顺序采集和解析：
 

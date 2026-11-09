@@ -14,4 +14,5 @@ type RouterDeps struct {
 	UserHandler           *handler.UserHandler
 	InventoryHandler      *handler.InventoryHandler
 	InventoryRoundHandler handler.InventoryRoundHandler
+	TopologyBrowseHandler handler.TopologyBrowseHandler
 }

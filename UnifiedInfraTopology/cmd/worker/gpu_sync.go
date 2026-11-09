@@ -43,7 +43,7 @@ func executeGPUSync(c context.Context, control repository.InventoryRepository, r
 func runGPUSync(ctx context.Context, conf *viper.Viper, logger *log.Logger, source string, out io.Writer) error {
 	var runner *gpuSyncRunnerAdapter
 	return runStandaloneRelation(ctx, conf, logger, source, gpuSyncResource, out, func(collector *adapter.CMDB, graph repository.TopologyGraphRepository) serverUplinkRunner {
-		runner = &gpuSyncRunnerAdapter{runner: service.NewGPUSyncWorker(collector, graph)}
+		runner = &gpuSyncRunnerAdapter{runner: service.NewGPUSyncWorker(collector, graph).WithLogger(logger)}
 		return runner
 	}, func(c context.Context, client graphclient.Client, t time.Time, n int64) error {
 		r, e := verifyGPUGraph(c, client, source, t, n)

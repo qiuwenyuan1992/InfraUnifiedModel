@@ -81,14 +81,6 @@ func (w *SpatialSyncWorker) Run(ctx context.Context, source model.Source, snapsh
 		}
 		result.Edges++
 	}
-	// 独立来源复读必须包含未生成边的目录与引用，不能只比较输出边数。
-	verified, err := w.source.CollectSpatial(ctx, source)
-	if err != nil {
-		return result, fmt.Errorf("spatial sync verification failed (written edges persist): %w", err)
-	}
-	if verified.SourceDigest != collection.SourceDigest {
-		return result, fmt.Errorf("spatial sync source changed between passes (written edges persist)")
-	}
 	return result, ctx.Err()
 }
 

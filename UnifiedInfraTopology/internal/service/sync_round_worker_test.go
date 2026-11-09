@@ -125,6 +125,34 @@ func TestQueuedRoundWorkerNoRunAndCanceledParent(t *testing.T) {
 	require.False(t, processed)
 }
 
+func TestQueuedRoundPreservesGPUFailureCode(t *testing.T) {
+	at := time.Now()
+	control := &roundWorkerControl{round: &model.SyncRound{ID: "round", SourceID: "source", SnapshotAt: &at, StartedAt: &at}}
+	worker := NewSyncRoundWorker(control, func(context.Context, model.Source, string) (repository.PhaseResult, error) {
+		return repository.PhaseResult{}, fmt.Errorf("stage failed: %w", &GPUSyncError{Stage: "uplink_write", Code: "gpu_uplink_write_failed"})
+	})
+	_, err := worker.ProcessNext(context.Background())
+	require.Error(t, err)
+	require.Equal(t, "gpu_uplink_write_failed", control.finishError)
+}
+
+func TestQueuedRoundPersistsGPUFailurePartialCounts(t *testing.T) {
+	at := time.Now()
+	control := &roundWorkerControl{round: &model.SyncRound{ID: "round", SourceID: "source", SnapshotAt: &at, StartedAt: &at}}
+	worker := NewSyncRoundWorker(control, func(_ context.Context, _ model.Source, phase string) (repository.PhaseResult, error) {
+		if phase == "gpu_sync" {
+			return repository.PhaseResult{RunID: "abcdefabcdefabcdefabcdefabcdefab", ErrorCode: "gpu_uplink_write_failed", Nodes: 20197, Edges: 25538}, &GPUSyncError{Code: "gpu_uplink_write_failed"}
+		}
+		return repository.PhaseResult{RunID: "run"}, nil
+	})
+	_, err := worker.ProcessNext(context.Background())
+	require.Error(t, err)
+	require.Len(t, control.results, 13)
+	require.EqualValues(t, 20197, control.results[12].Nodes)
+	require.Equal(t, "gpu_uplink_write_failed", control.results[12].ErrorCode)
+	require.Equal(t, "failed", control.finishStatus)
+}
+
 type recoveringRoundControl struct {
 	roundWorkerControl
 	claims   int

@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"UnifiedInfraTopology/pkg/log"
+	"go.uber.org/zap"
 
 	"UnifiedInfraTopology/internal/adapter"
 	"UnifiedInfraTopology/internal/model"
@@ -16,9 +20,53 @@ type GPUSyncResult struct {
 	ByKind                                           map[string]int
 }
 
+type syncRunIDKey struct{}
+
+func WithSyncRunID(ctx context.Context, runID string) context.Context {
+	return context.WithValue(ctx, syncRunIDKey{}, runID)
+}
+
+// GPUSyncError 保留内部错误链，公开消息只包含固定阶段与错误码。
+type GPUSyncError struct {
+	Stage   string
+	Code    string
+	Details map[string]any
+	cause   error
+}
+
+func (e *GPUSyncError) Error() string {
+	return e.Code + " (stage=" + e.Stage + "; partial graph writes may persist)"
+}
+func (e *GPUSyncError) Unwrap() error { return e.cause }
+
+func SyncFailureCategory(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case errors.Is(err, adapter.ErrCMDBConfig):
+		return "cmdb_configuration"
+	case errors.Is(err, adapter.ErrCMDBResponse):
+		return "cmdb_response"
+	case errors.Is(err, adapter.ErrCMDBRecord):
+		return "cmdb_record"
+	case errors.Is(err, errSyncSnapshotChanged):
+		return "source_changed"
+	default:
+		return "dependency_or_validation"
+	}
+}
+
 type GPUSyncWorker struct {
 	source *adapter.CMDB
 	graph  repository.TopologyGraphRepository
+	logger *log.Logger
+}
+
+func (w *GPUSyncWorker) WithLogger(logger *log.Logger) *GPUSyncWorker {
+	w.logger = logger
+	return w
 }
 
 func NewGPUSyncWorker(source *adapter.CMDB, graph repository.TopologyGraphRepository) *GPUSyncWorker {
@@ -31,13 +79,55 @@ type gpuParentReader interface {
 }
 
 // Run 不清理 IDC 子集，旧 contains_gpu 在 GPU 移动后可能保留，明确记录该限制。
-func (w *GPUSyncWorker) Run(ctx context.Context, source model.Source, snapshot time.Time) (GPUSyncResult, error) {
-	result := GPUSyncResult{Reasons: map[string]int{}, ByKind: map[string]int{}}
+func (w *GPUSyncWorker) Run(ctx context.Context, source model.Source, snapshot time.Time) (result GPUSyncResult, runErr error) {
+	result = GPUSyncResult{Reasons: map[string]int{}, ByKind: map[string]int{}}
+	started, stageStarted := time.Now(), time.Now()
+	stage := "source_collect"
+	runID, _ := ctx.Value(syncRunIDKey{}).(string)
+	logStage := func(name string, since time.Time) {
+		if w == nil || w.logger == nil {
+			return
+		}
+		fields := []zap.Field{zap.String("run_id", runID), zap.String("source_id", source.ID), zap.String("resource", "gpu_sync"), zap.String("stage", name), zap.Float64("duration_ms", float64(time.Since(since))/float64(time.Millisecond)), zap.Int("objects", result.Objects), zap.Int("nodes", result.Nodes), zap.Int("edges", result.Edges), zap.Int("skipped", result.Skipped)}
+		if runErr != nil {
+			fields = append(fields, zap.String("error_category", SyncFailureCategory(runErr)))
+		}
+		w.logger.Info("GPU sync stage", fields...)
+	}
+	nextStage := func(next string) { logStage(stage, stageStarted); stage, stageStarted = next, time.Now() }
+	defer func() {
+		if runErr != nil {
+			var failure *GPUSyncError
+			if !errors.As(runErr, &failure) {
+				runErr = &GPUSyncError{Stage: stage, Code: "gpu_" + stage + "_failed", cause: runErr}
+			}
+			errors.As(runErr, &failure)
+			if failure.Details == nil {
+				failure.Details = map[string]any{}
+			}
+			failure.Details["run_id"] = runID
+			failure.Details["nodes"], failure.Details["edges"] = result.Nodes, result.Edges
+			failure.Details["objects"], failure.Details["skipped"], failure.Details["missing_endpoints"] = result.Objects, result.Skipped, result.MissingEndpoints
+			if w != nil && w.logger != nil {
+				w.logger.Error("GPU sync failed", zap.String("run_id", runID), zap.String("source_id", source.ID), zap.String("resource", "gpu_sync"), zap.String("stage", failure.Stage), zap.String("error_code", failure.Code), zap.String("error_category", SyncFailureCategory(runErr)), zap.Any("details", failure.Details), zap.Float64("duration_ms", float64(time.Since(stageStarted))/float64(time.Millisecond)))
+			}
+		}
+		logStage(stage, stageStarted)
+		logStage("complete", started)
+	}()
+	progress := func() {
+		if w != nil && w.logger != nil && (result.Nodes+result.Edges)%1000 == 0 {
+			w.logger.Info("GPU graph write progress", zap.String("run_id", runID), zap.String("source_id", source.ID), zap.String("resource", "gpu_sync"), zap.String("stage", stage), zap.Int("graph_records", result.Nodes+result.Edges), zap.Int("nodes", result.Nodes), zap.Int("edges", result.Edges), zap.Float64("duration_ms", float64(time.Since(stageStarted))/float64(time.Millisecond)))
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
 	if w == nil || w.source == nil || w.graph == nil || snapshot.IsZero() {
 		return result, fmt.Errorf("GPU sync requires collector, graph and nonzero snapshot")
+	}
+	if w.logger != nil {
+		w.logger.Info("GPU sync starting", zap.String("run_id", runID), zap.String("source_id", source.ID), zap.String("resource", "gpu_sync"), zap.String("stage", "source_collect"), zap.Float64("duration_ms", 0))
 	}
 	collected, err := w.source.CollectGPU(ctx, source)
 	result.Objects = collected.Objects
@@ -48,6 +138,7 @@ func (w *GPUSyncWorker) Run(ctx context.Context, source model.Source, snapshot t
 	if err != nil {
 		return result, err
 	}
+	nextStage("endpoint_check")
 	result.Reasons["scoped_cleanup_disabled"] = 1
 	result.MissingEndpoints = collected.Reasons["gpu_endpoint_not_unique"] + collected.Reasons["tor_reference_missing"] + collected.Reasons["tor_port_not_unique"]
 	if len(collected.Cards) == 0 && len(collected.Servers) > 0 {
@@ -129,6 +220,7 @@ func (w *GPUSyncWorker) Run(ctx context.Context, source model.Source, snapshot t
 		links = append(links, relation)
 	}
 	// 所有来源、分类、接口归属和关系校验完成后才允许首笔图写入。
+	nextStage("node_write")
 	for _, card := range cards {
 		if err := ctx.Err(); err != nil {
 			return result, err
@@ -138,9 +230,15 @@ func (w *GPUSyncWorker) Run(ctx context.Context, source model.Source, snapshot t
 			return result, fmt.Errorf("GPU node write failed (earlier writes may persist): %w", err)
 		}
 		result.Nodes++
+		progress()
 	}
 	// contains_gpu 必须先成功写入，随后才允许发布该卡上联。
-	for _, relations := range [][]model.Relation{contains, links} {
+	for index, relations := range [][]model.Relation{contains, links} {
+		if index == 0 {
+			nextStage("containment_write")
+		} else {
+			nextStage("uplink_write")
+		}
 		for _, relation := range relations {
 			if err := ctx.Err(); err != nil {
 				return result, err
@@ -150,14 +248,8 @@ func (w *GPUSyncWorker) Run(ctx context.Context, source model.Source, snapshot t
 			}
 			result.Edges++
 			result.ByKind[string(relation.Identity.Kind)]++
+			progress()
 		}
-	}
-	verified, err := w.source.CollectGPU(ctx, source)
-	if err != nil {
-		return result, fmt.Errorf("GPU verification failed (written graph persists): %w", err)
-	}
-	if verified.SourceDigest != collected.SourceDigest {
-		return result, fmt.Errorf("GPU source changed between independent passes (written graph persists)")
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err

@@ -1,5 +1,96 @@
 basePath: /v1
 definitions:
+  repository.TopologyDirectoryPage:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/repository.TopologyNode'
+        type: array
+      next_after:
+        type: string
+    type: object
+  repository.TopologyEdge:
+    properties:
+      created_at:
+        type: string
+      edge_type:
+        type: string
+      from:
+        type: string
+      id:
+        type: string
+      properties:
+        additionalProperties: {}
+        type: object
+      rank:
+        type: string
+      relation_kind:
+        type: string
+      source_id:
+        type: string
+      synced_at:
+        type: string
+      to:
+        type: string
+    type: object
+  repository.TopologyNeighborhood:
+    properties:
+      edges:
+        items:
+          $ref: '#/definitions/repository.TopologyEdge'
+        type: array
+      limit:
+        type: integer
+      nodes:
+        items:
+          $ref: '#/definitions/repository.TopologyNode'
+        type: array
+      root:
+        $ref: '#/definitions/repository.TopologyNode'
+      truncated:
+        type: boolean
+    type: object
+  repository.TopologyNode:
+    properties:
+      created_at:
+        type: string
+      entity_type:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+      properties:
+        additionalProperties: {}
+        type: object
+      source_id:
+        type: string
+      stable_id:
+        type: string
+      synced_at:
+        type: string
+    type: object
+  service.TopologyDeviceContext:
+    properties:
+      edges:
+        items:
+          $ref: '#/definitions/repository.TopologyEdge'
+        type: array
+      limit:
+        type: integer
+      nodes:
+        items:
+          $ref: '#/definitions/repository.TopologyNode'
+        type: array
+      root:
+        $ref: '#/definitions/repository.TopologyNode'
+      truncated:
+        type: boolean
+      warnings:
+        items:
+          type: string
+        type: array
+    type: object
   v1.EnqueueInventoryRoundRequest:
     properties:
       mode:
@@ -516,6 +607,390 @@ paths:
       summary: List safe single-run diagnostics
       tags:
       - inventory
+  /inventory/topology/children:
+    get:
+      parameters:
+      - description: 32 lowercase hexadecimal source ID
+        in: query
+        name: source_id
+        required: true
+        type: string
+      - description: Parent directory type
+        enum:
+        - data_center
+        - pod
+        - cabinet
+        in: query
+        name: entity_type
+        required: true
+        type: string
+      - description: Exact stable parent ID, up to 256 bytes
+        in: query
+        name: stable_id
+        required: true
+        type: string
+      - default: 50
+        description: Maximum returned nodes
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Opaque signed directory cursor, up to 4096 bytes
+        in: query
+        name: after
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/repository.TopologyDirectoryPage'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: List explicit directory children with a parent-bound opaque cursor
+      tags:
+      - topology
+  /inventory/topology/device-context:
+    get:
+      parameters:
+      - description: 32 lowercase hexadecimal source ID
+        in: query
+        name: source_id
+        required: true
+        type: string
+      - description: Exact device stable ID, up to 256 bytes
+        in: query
+        name: stable_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.TopologyDeviceContext'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: Read fixed device dependencies without recursively expanding remote
+        devices or power leaves
+      tags:
+      - topology
+  /inventory/topology/neighbors:
+    get:
+      parameters:
+      - description: 32 lowercase hexadecimal source ID
+        in: query
+        name: source_id
+        required: true
+        type: string
+      - description: Entity type
+        enum:
+        - device
+        - interface
+        - gpu
+        - pod
+        - cabinet
+        - data_center
+        - rpp
+        - ups_group
+        - ups
+        - transformer
+        in: query
+        name: entity_type
+        required: true
+        type: string
+      - description: Stable ID, up to 256 bytes; power entities require canonical
+          positive int64 inst_id
+        in: query
+        name: stable_id
+        required: true
+        type: string
+      - default: 100
+        description: Maximum returned edges
+        in: query
+        maximum: 200
+        minimum: 1
+        name: limit
+        type: integer
+      - default: both
+        description: Stored edge direction
+        enum:
+        - in
+        - out
+        - both
+        in: query
+        name: direction
+        type: string
+      - description: Optional edge family
+        enum:
+        - spatial_relation
+        - composition_relation
+        - network_relation
+        - power_relation
+        in: query
+        name: edge_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/repository.TopologyNeighborhood'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: Read a bounded, directed one-hop topology neighborhood
+      tags:
+      - topology
+  /inventory/topology/node:
+    get:
+      parameters:
+      - description: 32 lowercase hexadecimal source ID
+        in: query
+        name: source_id
+        required: true
+        type: string
+      - description: Entity type
+        enum:
+        - device
+        - interface
+        - gpu
+        - pod
+        - cabinet
+        - data_center
+        - rpp
+        - ups_group
+        - ups
+        - transformer
+        in: query
+        name: entity_type
+        required: true
+        type: string
+      - description: Stable ID, up to 256 bytes; power entities require canonical
+          positive int64 inst_id
+        in: query
+        name: stable_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/repository.TopologyNode'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: Locate a topology node by its exact stable identity
+      tags:
+      - topology
+  /inventory/topology/roots:
+    get:
+      parameters:
+      - description: 32 lowercase hexadecimal source ID
+        in: query
+        name: source_id
+        required: true
+        type: string
+      - description: Directory root type
+        enum:
+        - data_center
+        - pod
+        in: query
+        name: entity_type
+        required: true
+        type: string
+      - default: 50
+        description: Maximum returned nodes
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - description: Opaque signed directory cursor, up to 4096 bytes
+        in: query
+        name: after
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/repository.TopologyDirectoryPage'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: List data center or POD topology roots with an opaque cursor
+      tags:
+      - topology
   /login:
     post:
       consumes:

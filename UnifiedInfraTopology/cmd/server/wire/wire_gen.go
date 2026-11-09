@@ -40,6 +40,12 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 	inventoryRoundRepository := repository.NewInventoryRoundRepository(repositoryRepository)
 	inventoryRoundService := service.NewInventoryRoundService(inventoryRoundRepository, viperViper)
 	inventoryRoundHandler := handler.NewInventoryRoundHandler(handlerHandler, inventoryRoundService)
+	topologyReadRepository, cleanup, err := repository.NewTopologyReadRepository(viperViper)
+	if err != nil {
+		return nil, nil, err
+	}
+	topologyBrowseService := service.NewTopologyBrowseService(topologyReadRepository, viperViper)
+	topologyBrowseHandler := handler.NewTopologyBrowseHandler(handlerHandler, topologyBrowseService)
 	routerDeps := router.RouterDeps{
 		Logger:                logger,
 		Config:                viperViper,
@@ -47,20 +53,22 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 		UserHandler:           userHandler,
 		InventoryHandler:      inventoryHandler,
 		InventoryRoundHandler: inventoryRoundHandler,
+		TopologyBrowseHandler: topologyBrowseHandler,
 	}
 	httpServer := server.NewHTTPServer(routerDeps)
 	appApp := newApp(httpServer)
 	return appApp, func() {
+		cleanup()
 	}, nil
 }
 
 // wire.go:
 
-var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewInventoryRepository, repository.NewInventoryRoundRepository)
+var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewInventoryRepository, repository.NewInventoryRoundRepository, repository.NewTopologyReadRepository)
 
-var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewInventoryService, service.NewInventoryRoundService)
+var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewInventoryService, service.NewInventoryRoundService, service.NewTopologyBrowseService)
 
-var handlerSet = wire.NewSet(handler.NewHandler, handler.NewUserHandler, handler.NewInventoryHandler, handler.NewInventoryRoundHandler)
+var handlerSet = wire.NewSet(handler.NewHandler, handler.NewUserHandler, handler.NewInventoryHandler, handler.NewInventoryRoundHandler, handler.NewTopologyBrowseHandler)
 
 var serverSet = wire.NewSet(server.NewHTTPServer)
 

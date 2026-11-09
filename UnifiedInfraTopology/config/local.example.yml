@@ -21,6 +21,9 @@ log:
   max_size: 100
   compress: true
 inventory:
+  # 缺省开启鉴权；仅受控本地开发可显式设为false，关闭后任何访问者都可操作同步任务。
+  auth:
+    enabled: true
   # 独立随机生成至少 32 字节的密钥，不与 JWT 共用；默认不授予任何权限。
   cursor_key: ""
   grants: []
@@ -61,7 +64,9 @@ inventory:
           idc: 1030
         # POD 由设备/机柜 IDC 引用限定；不支持直接 idc_id 条件，不执行整源清理。
         # UUID 引用需要读取全 POD 目录后筛选，但只发布引用匹配的节点。
+        # 常规实体发现页大小；单设备端口/GPU卡/上联固定1000，超过时完整分页。
         page_size: 20000
+        # 控制有界并行设备采集及既有并发写图，按CMDB容量调整。
         concurrency: 5
         timeout_seconds: 30
         max_response_bytes: 67108864

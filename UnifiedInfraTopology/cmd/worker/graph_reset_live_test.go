@@ -39,6 +39,8 @@ func TestLiveResetIDC238Graph(t *testing.T) {
 	var active int
 	require.NoError(t, db.QueryRowContext(ctx, "SELECT count(*) FROM sync_runs WHERE source_id = ? AND status IN (\x27queued\x27,\x27running\x27,\x27validating\x27,\x27publishing\x27)", source).Scan(&active))
 	require.Zero(t, active, "活动同步期间不能清空")
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT count(*) FROM sync_rounds WHERE source_id = ? AND status IN ('queued','running')", source).Scan(&active))
+	require.Zero(t, active, "排队或执行中的整轮任务存在时不能清空")
 	client, err := graphclient.New(cfg)
 	require.NoError(t, err)
 	defer client.Close()

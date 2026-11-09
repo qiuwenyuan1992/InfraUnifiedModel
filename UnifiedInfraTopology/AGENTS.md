@@ -31,7 +31,9 @@
 - 当前权威模型固定为 10 个实体 Tag、4 个 Edge Type 和 14 种合法关系端点组合。
 - 不创建 Address、NetworkNode、TerminationPoint、占位节点或按同步批次复制的资产节点。
 - transformer、ups_group、ups、rpp 的 CMDB 权威身份是正整数 `inst_id`，以规范十进制字符串组成 `source_id + entity_type + stable_id`，图中身份字段为 INT；不要求或伪造 UUID。其他实体的数字引用 ID 仅用于采集期解析，不替代各自稳定身份。
-- GPU 的唯一稳定身份是实际 SN `server_gpu.parts_sn`，完整逻辑身份为 `source_id + gpu + parts_sn`；忽略缺失/空白 SN 的卡，不使用卡 `uuid`、`inst_id` 或槽位回退，不持久化卡 UUID，不兼容双写。GPU 上联请求必须使用 `gpu_sn=parts_sn`；`gpu_uplink.uuid` 仅保留来源关系身份语义。
+- GPU 的唯一稳定身份是实际 SN `server_gpu.parts_sn`，完整逻辑身份为 `source_id + gpu + parts_sn`；忽略缺失/空白 SN 的卡，不使用卡 `uuid`、`inst_id` 或槽位回退，不持久化卡 UUID，不兼容双写。GPU 上联按有有效卡的服务器 `device_sn` 完整分页查询，返回的 `gpu_sn` 匹配 `parts_sn`，不逐卡请求；`gpu_uplink.uuid` 仅保留来源关系身份语义。
+
+- 当前同步契约：一次完整采集（含分页/目录查询），身份/全局冲突/端点校验→写图→独立查图库验收。生产同步不在写图后再次读取 CMDB，不以第二遍来源差异产生 `source_changed`；独立只读调试测试可以比较两次来源调用，但不属于生产同步流程。
 
 ## 4. 存储职责
 

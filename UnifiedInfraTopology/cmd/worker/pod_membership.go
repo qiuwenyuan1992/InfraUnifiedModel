@@ -47,6 +47,16 @@ type standaloneRelationControl struct {
 	resource string
 }
 
+func (a standaloneRelationControl) ExecutionResource() string { return a.resource }
+func (a standaloneRelationControl) RecordSyncExecutionDiagnostic(ctx context.Context, diagnostic *model.SyncDiagnostic) error {
+	if recorder, ok := a.InventoryRepository.(interface {
+		RecordSyncExecutionDiagnostic(context.Context, *model.SyncDiagnostic) error
+	}); ok {
+		return recorder.RecordSyncExecutionDiagnostic(ctx, diagnostic)
+	}
+	return nil
+}
+
 func (a standaloneRelationControl) BeginCheckpoint(c context.Context, s, _, r string, t, n time.Time) (*repository.DeviceSyncCheckpoint, error) {
 	return a.InventoryRepository.BeginCheckpoint(c, s, a.resource, r, t, n)
 }

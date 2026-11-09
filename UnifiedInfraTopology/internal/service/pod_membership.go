@@ -36,7 +36,7 @@ func (w *PODMembershipWorker) Run(ctx context.Context, source model.Source, snap
 	if w == nil || w.source == nil || w.graph == nil || source.ID == "" || snapshot.IsZero() {
 		return result, fmt.Errorf("POD membership requires collector, graph, source and nonzero snapshot")
 	}
-	digest, relations, collected, err := w.collect(ctx, source, snapshot, true)
+	_, relations, collected, err := w.collect(ctx, source, snapshot, true)
 	result.Objects, result.Skipped, result.Reasons = collected.Objects, collected.Skipped, collected.Reasons
 	if err != nil {
 		return result, err
@@ -77,13 +77,6 @@ func (w *PODMembershipWorker) Run(ctx context.Context, source model.Source, snap
 			return result, fmt.Errorf("POD membership edge write failed (earlier edges may persist): %w", err)
 		}
 		result.Edges++
-	}
-	verified, _, _, err := w.collect(ctx, source, snapshot, false)
-	if err != nil {
-		return result, fmt.Errorf("POD membership verification failed (written edges persist): %w", err)
-	}
-	if digest != verified {
-		return result, fmt.Errorf("POD membership source changed between passes (written edges persist)")
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err

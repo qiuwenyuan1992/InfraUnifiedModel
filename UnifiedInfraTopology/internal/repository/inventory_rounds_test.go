@@ -191,7 +191,7 @@ func TestInventoryRoundEnqueueReplayCancelAndList(t *testing.T) {
 	require.ErrorIs(t, err, ErrInventoryIdempotency)
 	round, accepted, err := rounds.Cancel(ctx, first.ID)
 	require.NoError(t, err)
-	require.True(t, accepted)
+	require.False(t, accepted, "排队任务已立即取消，不是等待worker处理的异步请求")
 	require.Equal(t, "canceled", round.Status)
 	_, accepted, err = rounds.Cancel(ctx, first.ID)
 	require.NoError(t, err)

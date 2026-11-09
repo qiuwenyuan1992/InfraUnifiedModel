@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,25 @@ func TestGPUSyncExecutionCheckpointCountsNodesNotEdges(t *testing.T) {
 	require.Equal(t, 5, result.Edges)
 	require.Equal(t, 2, c.cursor.Total)
 	require.Equal(t, []string{gpuSyncResource, gpuSyncResource, gpuSyncResource}, c.seen)
+}
+
+func TestSingleSourceGPUExecutionStillRequiresGraphVerification(t *testing.T) {
+	at := serverUplinkNow()
+	lease := at.Add(time.Minute)
+	run := &model.SyncRun{ID: "run", SourceID: "source", Status: model.SyncRunStatusRunning, StartedAt: &at, LeaseExpiresAt: &lease}
+	control := &relationResourceControlTest{uplinkControlTest: &uplinkControlTest{status: model.SyncRunStatusRunning, renewed: make(chan string, 16)}}
+	reads, checks := 0, 0
+	_, err := executeGPUSync(context.Background(), control, gpuRunnerTest(func(context.Context, model.Source, time.Time) (service.GPUSyncResult, error) {
+		reads++
+		return service.GPUSyncResult{Nodes: 2, Edges: 3}, nil
+	}), run, model.Source{ID: "source"}, time.Hour, func(context.Context, time.Time, int64) error {
+		checks++
+		return errors.New("graph verification failed")
+	})
+	require.Error(t, err)
+	require.Equal(t, 1, reads)
+	require.Equal(t, 1, checks)
+	require.Equal(t, model.SyncRunStatusFailed, control.status)
 }
 func TestGPUGraphRequiresUniqueTypedOwnerForEveryNode(t *testing.T) {
 	at := serverUplinkNow()

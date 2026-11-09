@@ -43,7 +43,7 @@ func (w *ServerUplinkWorker) Run(ctx context.Context, source model.Source, snaps
 	if w == nil || w.source == nil || w.graph == nil || snapshot.IsZero() {
 		return result, fmt.Errorf("server uplink requires collector, graph and nonzero snapshot")
 	}
-	digest, candidates, servers, skipped, err := w.collect(ctx, source, true)
+	_, candidates, servers, skipped, err := w.collect(ctx, source, true)
 	result.Servers = servers
 	result.Skipped = skipped
 	if err != nil {
@@ -100,13 +100,6 @@ func (w *ServerUplinkWorker) Run(ctx context.Context, source model.Source, snaps
 			return result, fmt.Errorf("server uplink edge write failed (earlier edges may persist): %w", err)
 		}
 		result.Edges++
-	}
-	verified, _, secondServers, secondSkipped, err := w.collect(ctx, source, false)
-	if err != nil {
-		return result, fmt.Errorf("server uplink verification failed (written edges persist): %w", err)
-	}
-	if verified != digest || secondServers != servers || secondSkipped != skipped {
-		return result, fmt.Errorf("server uplink source changed between passes (written edges persist)")
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err

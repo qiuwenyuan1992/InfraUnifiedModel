@@ -7,7 +7,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function inventoryRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`/v1/inventory${path}`, {
     ...init, credentials: 'omit', headers: { 'Content-Type': 'application/json', ...init.headers },
   })
@@ -33,14 +33,14 @@ function query(values: PageQuery | RoundQuery): string {
 }
 
 export const inventoryApi = {
-  sources: (q: PageQuery = {}, signal?: AbortSignal) => request<Page<Source>>(`/sources${query(q)}`, { signal }),
-  rounds: (q: RoundQuery = {}, signal?: AbortSignal) => request<Page<Round>>(`/sync-rounds${query(q)}`, { signal }),
-  detail: (id: string, signal?: AbortSignal) => request<Round>(`/sync-rounds/${encodeURIComponent(id)}`, { signal }),
-  create: (sourceId: string, idempotencyKey: string) => request<Round>('/sync-rounds', {
+  sources: (q: PageQuery = {}, signal?: AbortSignal) => inventoryRequest<Page<Source>>(`/sources${query(q)}`, { signal }),
+  rounds: (q: RoundQuery = {}, signal?: AbortSignal) => inventoryRequest<Page<Round>>(`/sync-rounds${query(q)}`, { signal }),
+  detail: (id: string, signal?: AbortSignal) => inventoryRequest<Round>(`/sync-rounds/${encodeURIComponent(id)}`, { signal }),
+  create: (sourceId: string, idempotencyKey: string) => inventoryRequest<Round>('/sync-rounds', {
     method: 'POST', headers: { 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify({ source_id: sourceId, mode: 'full' }),
   }),
-  cancel: (id: string) => request<Round>(`/sync-rounds/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+  cancel: (id: string) => inventoryRequest<Round>(`/sync-rounds/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
   diagnostics: (id: string, q: DiagnosticQuery = {}, isRound = true, signal?: AbortSignal) =>
-    request<Page<Diagnostic>>(`/${isRound ? 'sync-rounds' : 'sync-runs'}/${encodeURIComponent(id)}/diagnostics${query(q)}`, { signal }),
+    inventoryRequest<Page<Diagnostic>>(`/${isRound ? 'sync-rounds' : 'sync-runs'}/${encodeURIComponent(id)}/diagnostics${query(q)}`, { signal }),
 }

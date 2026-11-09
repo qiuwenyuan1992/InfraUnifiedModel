@@ -90,16 +90,21 @@ func TestPODMembershipWorkerRejectsDuplicatesBeforeAnyGraphAccess(t *testing.T) 
 	require.Empty(t, graph.checks)
 }
 
-func TestPODMembershipWorkerDetectsSecondPassSourceChanges(t *testing.T) {
+func TestPODMembershipWorkerUsesSingleCompleteCollection(t *testing.T) {
 	graph := &uplinkGraph{}
+	reads := 0
 	worker := podMembershipFixture(t, graph, func(pass int, items []map[string]any) {
+		reads = pass
 		if pass > 1 {
 			items[0]["pod_id"] = 20
 		}
 	})
 	result, err := worker.Run(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, time.Now())
-	require.ErrorContains(t, err, "source changed")
+	require.NoError(t, err)
+	require.Equal(t, 1, reads)
+	require.Equal(t, 3, result.Objects)
 	require.Equal(t, 3, result.Edges)
+	require.Len(t, graph.writes, 3)
 }
 
 func TestPODMembershipWorkerReadsAllEndpointsBeforeWrites(t *testing.T) {

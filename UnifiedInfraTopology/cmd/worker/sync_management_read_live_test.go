@@ -48,6 +48,7 @@ func TestLiveSyncManagementReadOnly(t *testing.T) {
 		require.True(t, db.Migrator().HasTable(name))
 	}
 	// 测试调用内部只读服务，覆盖权限仅存在于本测试配置，不修改线上用户或授权。
+	conf.Set("inventory.auth.enabled", true)
 	conf.Set("inventory.cursor_key", strings.Repeat("read-only-test-key", 3))
 	conf.Set("inventory.grants", []map[string]any{{"user_id": "schema_verification_reader", "permissions": []string{"sync:read"}}})
 	management := service.NewInventoryRoundService(repository.NewInventoryRoundRepository(repository.NewRepository(nil, db)), conf)

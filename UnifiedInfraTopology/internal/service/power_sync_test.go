@@ -259,14 +259,23 @@ func TestPowerSyncMutualStandbyPreservesBothDirectionsAndIDs(t *testing.T) {
 	}
 }
 
-func TestPowerSyncSourceChangeAfterWrites(t *testing.T) {
-	result, err := runPower(powerFixture(t, powerRows(), &powerGraph{}, func(kind string, pass int, items []map[string]any) {
-		if kind == "idc_ups" && pass == 2 {
+func TestPowerSyncUsesSingleCompleteCollection(t *testing.T) {
+	reads := map[string]int{}
+	graph := &powerGraph{}
+	rows := powerRows()
+	result, err := runPower(powerFixture(t, rows, graph, func(kind string, pass int, items []map[string]any) {
+		reads[kind] = pass
+		if kind == "idc_ups" && pass > 1 {
 			items[0]["transformer_id_up"] = 999
 		}
 	}, 1))
-	if err == nil || !strings.Contains(err.Error(), "source changed") || result.Edges != 6 {
+	if err != nil || result.Edges != 6 || len(graph.writes) != 6 {
 		t.Fatalf("%+v %v", result, err)
+	}
+	for kind := range rows {
+		if reads[kind] != 1 {
+			t.Errorf("%s collected %d times, want 1", kind, reads[kind])
+		}
 	}
 }
 func TestPowerSyncDigestIgnoresPagination(t *testing.T) {

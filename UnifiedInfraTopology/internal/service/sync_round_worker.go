@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
 	"UnifiedInfraTopology/internal/model"
 	"UnifiedInfraTopology/internal/repository"
 )
+
+var safeSyncErrorCode = regexp.MustCompile(`^[a-z][a-z0-9_]{0,127}$`)
 
 type recordedRoundFailure struct{ message string }
 
@@ -87,6 +91,10 @@ func (w *SyncRoundWorker) ProcessNext(ctx context.Context) (bool, error) {
 	}
 	failed := func(phase string, cause error) (bool, error) {
 		status, code := "failed", "round_stage_failed"
+		var gpuFailure *GPUSyncError
+		if errors.As(cause, &gpuFailure) && strings.HasPrefix(gpuFailure.Code, "gpu_") && safeSyncErrorCode.MatchString(gpuFailure.Code) {
+			code = gpuFailure.Code
+		}
 		checkCtx, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		requested, e := w.repo.CancellationRequested(checkCtx, round.ID)
 		done()
@@ -128,6 +136,12 @@ func (w *SyncRoundWorker) ProcessNext(ctx context.Context) (bool, error) {
 		phaseCtx := repository.WithRoundStage(execution, round.ID, phase)
 		result, e := w.execute(phaseCtx, *source, phase)
 		if e != nil {
+			var gpuFailure *GPUSyncError
+			if phase == "gpu_sync" && execution.Err() == nil && errors.As(e, &gpuFailure) && result.RunID != "" && result.ErrorCode == gpuFailure.Code {
+				if persistErr := w.repo.CompletePhase(execution, round.ID, phase, result, w.now().UTC().Truncate(time.Microsecond)); persistErr != nil {
+					return failed(phase, fmt.Errorf("failure statistics persistence: %w", e))
+				}
+			}
 			return failed(phase, e)
 		}
 		if e = execution.Err(); e != nil {

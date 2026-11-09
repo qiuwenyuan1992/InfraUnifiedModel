@@ -22,12 +22,14 @@ import (
 type inventoryStub struct {
 	service.InventoryService
 	called   bool
+	user     string
 	err      error
 	accepted bool
 }
 
 func (s *inventoryStub) List(ctx context.Context, user, resource, parent string, q service.InventoryQuery) (*service.InventoryPage, error) {
 	s.called = true
+	s.user = user
 	if s.err != nil {
 		return nil, s.err
 	}

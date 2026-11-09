@@ -7,6 +7,12 @@
 **Tech Stack:** Go, Viper, GORM/MySQL, NebulaGraph.
 **Spec:** `docs/superpowers/specs/2026-11-02-spatial-sync-round-design.md`, approved by user.
 
+## Current Approved Sync Contract
+
+一次完整采集（含分页/目录查询），身份/全局冲突/端点校验→写图→独立查图库验收。
+
+Production stages do not reread CMDB after graph writes or emit `source_changed` from a second collection. Independent read-only debugging tests may deliberately compare two source calls; they are not production synchronization. Independent graph verification remains mandatory.
+
 ## Global Constraints
 - Existing identities, 10 Tags, 4 edge types; no DDL, inferred relations, placeholder nodes or automatic cleanup.
 - No numeric cabinet identity fallback, singular cabinet pod_id fallback or guessed pod_ids encodings.
@@ -16,9 +22,11 @@
 ## Review Focus
 - Missing directory entries and duplicate UUID/ID mappings must be diagnosed, never arbitrarily resolved.
 - Scope conditions must remain compatible and must not silently widen collection.
-- Directory/ref changes between independent passes must prevent success.
+- Validate complete pagination, directory/reference identities, global conflicts and graph endpoints within the single collection before writing; independently verify the graph afterward.
 - Shared timestamp must not leak into lease renewal or mutate StartedAt.
 - Failed stages must stop the round and report not-executed stages, preserving earlier writes.
+
+> Completed tasks and the execution ledger below are historical implementation records. Their separate reread/double-pass steps describe the old execution, superseded by the current single-collection contract above; they are not current production requirements. This docs-only alignment reruns no historical tests or live operations.
 
 ## Task 1: Spatial adapter and edge worker
 Files: new `internal/adapter/cmdb_spatial.go`, `cmdb_spatial_test.go`; new `internal/service/spatial_sync.go`, `spatial_sync_test.go`.
@@ -56,7 +64,7 @@ Files: new `cmd/worker/sync_round.go/tests`; modify `cmd/worker/main.go`, `docs/
 - [x] Explicitly approved unified round, per-stage checks and final graph counts; report exclusions and partial-write semantics.
 - [x] Update design/plan and evidence; no commit.
 
-## Execution Ledger
+## Historical Execution Ledger
 
 - Task1 RED: missing collector/worker APIs; targeted and race GREEN. Review found unchecked device response filters; four cross-IDC/category regression tests reproduced RED, then requested authoritative idc_id and enforced configured filters, GREEN including live double reread.
 - Task2 RED: missing snapshot helpers and resumed checkpoint mismatches. GREEN covers old T with real StartedAt/lease renewals and strict standalone/explicit verification; checkpoints reject wrong T before writes.
@@ -64,5 +72,5 @@ Files: new `cmd/worker/sync_round.go/tests`; modify `cmd/worker/main.go`, `docs/
 - Task4 RED→GREEN: ordered 15 phases, config isolation, failure stop and not-run report; failed stage without emitted JSON retains only safe run ID from sanitized error, never full error text.
 - Independent task and final reviews PASS. Full tests, affected-package race, vet, three entrypoint builds and diff checks PASS after final code changes.
 - Approved spatial publish `64b6cb148c7f9fe29791b64a8465f0eb` produced 5636 verified edges: device→cabinet2407, cabinet→IDC2573, cabinet→POD656; missing endpoints0. Empty references1994 diagnosed.
-- Approved unified round completed15stages with T=`2026-11-03T03:00:24.269220Z`, saved to `reports/idc238-sync-round-2026-11-03.json`; separate read-only process verified all15runIDs/checkpoints/paths/sharedT and released leases. Public `-verify-spatial -snapshot-at` CLI also PASS.
+- Approved unified round completed15stages with T=`2026-11-03T03:00:24.269220Z`, saved to （历史开发报告已清理）; separate read-only process verified all15runIDs/checkpoints/paths/sharedT and released leases. Public `-verify-spatial -snapshot-at` CLI also PASS.
 - Current counts: devicePOD1445, GPU1289/contains1289/uplink455, serveruplink1661, power5438, physicallinks3026. Physicallinks retains60endpoint-mismatch candidates; missing-SN/conflicting-SN/PODplane/invalidpower references remain explicit diagnostics. No cleanup, DDL, rollback, commits or inferred relationships introduced.

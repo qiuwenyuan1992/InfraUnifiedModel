@@ -163,6 +163,7 @@ func (r *inventoryRoundRepository) Cancel(ctx context.Context, id string) (*mode
 		}
 		if round.CancelRequestedAt != nil {
 			result = &round
+			accepted = round.Status == "running"
 			return nil
 		}
 		now := time.Now().UTC().Truncate(time.Microsecond)
@@ -185,7 +186,7 @@ func (r *inventoryRoundRepository) Cancel(ctx context.Context, id string) (*mode
 			return err
 		}
 		result = &round
-		accepted = true
+		accepted = round.Status == "running"
 		return nil
 	})
 	if err != nil {

@@ -1,12 +1,8 @@
 package service
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"errors"
-	"hash"
 	"strings"
 	"sync"
 	"time"
@@ -94,6 +90,9 @@ func NewSyncWorker(conf *viper.Viper, runs SyncRunRepository, graph DeviceGraphR
 	}
 	if deviceWriteConcurrency > maximumDeviceWriteConcurrency {
 		deviceWriteConcurrency = maximumDeviceWriteConcurrency
+	}
+	if logger == nil {
+		logger = &log.Logger{Logger: zap.NewNop()}
 	}
 	return &SyncWorker{
 		runs:                   runs,
@@ -199,7 +198,13 @@ func (w *SyncWorker) executeWithLease(ctx context.Context, run *model.SyncRun, s
 	return err
 }
 
-func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, source model.Source, startedAt time.Time) error {
+func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, source model.Source, startedAt time.Time) (executionErr error) {
+	executionStarted := time.Now()
+	succeeded := false
+	resource := deviceCheckpointResource
+	defer func() {
+		w.logger.Info("sync execution complete", zap.String("run_id", run.ID), zap.String("source_id", source.ID), zap.String("stage", "complete"), zap.String("resource", resource), zap.Float64("duration_ms", float64(time.Since(executionStarted))/float64(time.Millisecond)), zap.Bool("succeeded", succeeded))
+	}()
 	status := model.SyncRunStatusRunning
 	canceled, err := w.cancellationRequested(ctx, run.ID)
 	if err != nil {
@@ -219,7 +224,6 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 	if err != nil {
 		return w.failOrCancel(ctx, run.ID, status, syncErrorSourceValidation)
 	}
-	resource := deviceCheckpointResource
 	collectionErrorCode := syncErrorDeviceCollection
 	switch entity {
 	case model.EntityDevice:
@@ -255,6 +259,10 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 		return w.failOrCancel(ctx, run.ID, status, syncErrorSourceValidation)
 	}
 	w.logger.Info("sync entity selected", zap.String("run_id", run.ID), zap.String("source_id", source.ID), zap.String("entity_type", string(entity)), zap.String("resource", resource))
+	logTiming := func(stage string, started time.Time, fields ...zap.Field) {
+		base := []zap.Field{zap.String("run_id", run.ID), zap.String("source_id", source.ID), zap.String("entity_type", string(entity)), zap.String("resource", resource), zap.String("stage", stage), zap.Float64("duration_ms", float64(time.Since(started))/float64(time.Millisecond)), zap.Int("write_concurrency", w.deviceWriteConcurrency)}
+		w.logger.Info("sync stage timing", append(base, fields...)...)
+	}
 
 	checkpoint, err := w.runs.BeginCheckpoint(ctx, source.ID, resource, run.ID, SyncSnapshot(ctx, startedAt), w.currentTime())
 	if err != nil || checkpoint == nil {
@@ -265,13 +273,15 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 		return w.failOrCancel(ctx, run.ID, status, syncErrorCheckpoint)
 	}
 	snapshotAt := cursor.SnapshotAt
-	identityDigest := sha256.New()
 	seenDeviceSN := make(map[string]struct{})
 	verifiedOwners := make(map[model.EntityIdentity]struct{})
 	partitionOwners := make(map[int64]string)
 	var pass adapter.EntityPageStream
 	if entity == model.EntityInterface || entity == model.EntityPod {
+		passStarted := time.Now()
+		w.logger.Info("sync source pass opening", zap.String("run_id", run.ID), zap.String("source_id", source.ID), zap.String("resource", resource), zap.String("stage", "source_collect"), zap.String("pass", "first"), zap.Float64("duration_ms", 0), zap.Int("write_concurrency", w.deviceWriteConcurrency))
 		pass, err = w.source.OpenEntityPass(ctx, source, entity)
+		logTiming("source_collect", passStarted, zap.String("pass", "first"), zap.Bool("succeeded", err == nil))
 		if err != nil {
 			return w.failOrCancel(ctx, run.ID, status, collectionErrorCode)
 		}
@@ -289,6 +299,7 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 			return w.cancelRun(ctx, run.ID, status, startedAt)
 		}
 
+		collectStarted := time.Now()
 		var page adapter.EntityPage
 		var collectErr error
 		if entity == model.EntityInterface || entity == model.EntityPod {
@@ -296,6 +307,7 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 		} else {
 			page, collectErr = w.collectEntityPage(ctx, source, entity, cursor.NextOffset)
 		}
+		logTiming("page_collect", collectStarted, zap.Int("offset", cursor.NextOffset), zap.Int("page_records", len(page.Records)), zap.Int("total", page.Total), zap.Bool("succeeded", collectErr == nil))
 		if collectErr != nil {
 			return w.failOrCancel(ctx, run.ID, status, collectionErrorCode)
 		}
@@ -308,8 +320,18 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 				return w.failOrCancel(ctx, run.ID, status, syncErrorGraphWrite)
 			}
 		}
-		writeEntityIdentityDigest(identityDigest, page.Records)
-		if err := w.writeEntityPage(ctx, source.ID, entity, page.Records, snapshotAt); err != nil {
+		writeStarted := time.Now()
+		writeErr := w.writeEntityPage(ctx, source.ID, entity, page.Records, snapshotAt)
+		confirmedRecords := cursor.NextOffset
+		if writeErr == nil {
+			confirmedRecords = page.NextOffset
+		}
+		graphRecords := confirmedRecords
+		if entity == model.EntityInterface {
+			graphRecords *= 2
+		}
+		logTiming("page_write", writeStarted, zap.Int("page_records", len(page.Records)), zap.Int("cumulative_records", confirmedRecords), zap.Int("cumulative_graph_records", graphRecords), zap.Bool("succeeded", writeErr == nil))
+		if err := writeErr; err != nil {
 			if errors.Is(err, errSyncLeaseLost) {
 				return err
 			}
@@ -357,16 +379,6 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 	}
 	status = model.SyncRunStatusValidating
 
-	if err := w.validateEntitySnapshot(ctx, run.ID, source, entity, cursor.Total, identityDigest.Sum(nil), entityPassScopeDigest(pass)); err != nil {
-		if errors.Is(err, errSyncLeaseLost) {
-			return err
-		}
-		if errors.Is(err, errSyncCanceled) {
-			return w.cancelRun(ctx, run.ID, status, w.currentTime())
-		}
-		return w.failOrCancel(ctx, run.ID, status, collectionErrorCode)
-	}
-
 	canceled, err = w.cancellationRequested(ctx, run.ID)
 	if err != nil {
 		return w.failCancellationCheck(ctx, run.ID, status, startedAt, err)
@@ -402,6 +414,7 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 	if _, err := w.runs.CompleteCheckpointAndRun(ctx, source.ID, resource, run.ID, status, w.currentTime()); err != nil {
 		return w.failRun(ctx, run.ID, status, w.currentTime(), syncErrorCheckpoint)
 	}
+	succeeded = true
 	return nil
 }
 
@@ -420,72 +433,6 @@ func (w *SyncWorker) collectEntityPage(ctx context.Context, source model.Source,
 	return adapter.EntityPage{Records: records, NextOffset: page.NextOffset, Total: page.Total, Done: page.Done}, nil
 }
 
-func entityPassScopeDigest(pass adapter.EntityPageStream) string {
-	if scope, ok := pass.(interface{ ScopeDigest() string }); ok {
-		return scope.ScopeDigest()
-	}
-	return ""
-}
-
-func (w *SyncWorker) validateEntitySnapshot(ctx context.Context, runID string, source model.Source, entity model.EntityType, expectedTotal int, expectedDigest []byte, scopeDigest string) error {
-	cursor := repository.DeviceSyncCursor{Version: repository.DeviceSyncCursorVersion, Total: expectedTotal}
-	digest := sha256.New()
-	var pass adapter.EntityPageStream
-	if entity == model.EntityInterface || entity == model.EntityPod {
-		var err error
-		pass, err = w.source.OpenEntityPass(ctx, source, entity)
-		if err != nil {
-			if leaseErr := leaseContextError(ctx); leaseErr != nil {
-				return leaseErr
-			}
-			return err
-		}
-	}
-	if entityPassScopeDigest(pass) != scopeDigest {
-		return errSyncDevicePage
-	}
-	for {
-		canceled, err := w.cancellationRequested(ctx, runID)
-		if err != nil {
-			return err
-		}
-		if canceled {
-			return errSyncCanceled
-		}
-		var page adapter.EntityPage
-		if entity == model.EntityInterface || entity == model.EntityPod {
-			page, err = pass.Page(ctx, cursor.NextOffset)
-		} else {
-			page, err = w.collectEntityPage(ctx, source, entity, cursor.NextOffset)
-		}
-		if err != nil {
-			if leaseErr := leaseContextError(ctx); leaseErr != nil {
-				return leaseErr
-			}
-			return err
-		}
-		if page.Total != expectedTotal {
-			return errSyncSnapshotChanged
-		}
-		lastInstanceID, err := validateEntityPage(cursor, page, entity)
-		if err != nil {
-			return err
-		}
-		writeEntityIdentityDigest(digest, page.Records)
-		cursor.NextOffset = page.NextOffset
-		cursor.LastInstanceID = lastInstanceID
-		if len(page.Records) > 0 {
-			cursor.LastPartition = page.Records[0].Partition
-		}
-		if page.Done {
-			if cursor.NextOffset != expectedTotal || !bytes.Equal(digest.Sum(nil), expectedDigest) {
-				return errSyncSnapshotChanged
-			}
-			return nil
-		}
-	}
-}
-
 func addEntityIdentities(seen map[string]struct{}, records []adapter.EntityRecord) error {
 	for _, record := range records {
 		identity := strings.TrimSpace(record.Identity)
@@ -498,24 +445,6 @@ func addEntityIdentities(seen map[string]struct{}, records []adapter.EntityRecor
 		seen[identity] = struct{}{}
 	}
 	return nil
-}
-
-func writeEntityIdentityDigest(digest hash.Hash, records []adapter.EntityRecord) {
-	var encodedID [8]byte
-	for _, record := range records {
-		if record.Partition > 0 {
-			binary.BigEndian.PutUint64(encodedID[:], uint64(record.Partition))
-			_, _ = digest.Write(encodedID[:])
-		}
-		binary.BigEndian.PutUint64(encodedID[:], uint64(record.SourceInstanceID))
-		_, _ = digest.Write(encodedID[:])
-		_, _ = digest.Write([]byte(record.Identity))
-		_, _ = digest.Write([]byte{0})
-		if record.Partition > 0 {
-			_, _ = digest.Write([]byte(record.OwnerDeviceSN))
-			_, _ = digest.Write([]byte{0})
-		}
-	}
 }
 
 func (w *SyncWorker) validateInterfaceOwners(ctx context.Context, sourceID string, records []adapter.EntityRecord, verified map[model.EntityIdentity]struct{}, partitionOwners map[int64]string) error {

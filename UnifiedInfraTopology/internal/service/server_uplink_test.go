@@ -206,32 +206,36 @@ func TestServerUplinkWorkerWriteFailure(t *testing.T) {
 	}
 }
 
-func TestServerUplinkWorkerSecondPassChangeFails(t *testing.T) {
+func TestServerUplinkWorkerUsesSingleCompleteCollection(t *testing.T) {
 	graph := &uplinkGraph{}
+	reads := 0
 	worker := uplinkWorkerFixture(t, func(pass int, item map[string]any) {
+		reads = pass
 		if pass > 1 {
 			item["server_tor_ports"] = []any{map[string]any{"sn": "tor-a", "ports": []string{"Ethernet2"}}}
 		}
 	}, graph)
-	_, err := worker.Run(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, time.Now())
-	if err == nil || len(graph.writes) != 1 {
-		t.Fatalf("err %v writes %v", err, graph.writes)
+	result, err := worker.Run(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, time.Now())
+	if err != nil || result.Servers != 1 || result.Edges != 1 || reads != 1 || len(graph.writes) != 1 || graph.writes[0].Identity.To.StableID != "port-a" {
+		t.Fatalf("result %+v reads %d err %v writes %v", result, reads, err, graph.writes)
 	}
 }
 
-func TestServerUplinkWorkerEmptyServersStillVerified(t *testing.T) {
+func TestServerUplinkWorkerEmptyServersCollectedOnce(t *testing.T) {
 	reads := 0
 	graph := &uplinkGraph{}
 	worker := uplinkWorkerFixture(t, func(_ int, item map[string]any) { reads++; item["server_tor_ports"] = []any{} }, graph)
 	result, err := worker.Run(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, time.Now())
-	if err != nil || result.Servers != 1 || result.Edges != 0 || reads != 2 || len(graph.checks) != 0 {
+	if err != nil || result.Servers != 1 || result.Edges != 0 || reads != 1 || len(graph.checks) != 0 || len(graph.writes) != 0 {
 		t.Fatalf("result %+v reads %d err %v", result, reads, err)
 	}
 }
 
-func TestServerUplinkWorkerSkippedOnlySourceChangeFails(t *testing.T) {
+func TestServerUplinkWorkerSkippedOnlyCollectedOnce(t *testing.T) {
 	graph := &uplinkGraph{}
+	reads := 0
 	worker := uplinkWorkerFixture(t, func(pass int, item map[string]any) {
+		reads = pass
 		name := "missing-one"
 		if pass > 1 {
 			name = "missing-two"
@@ -239,8 +243,8 @@ func TestServerUplinkWorkerSkippedOnlySourceChangeFails(t *testing.T) {
 		item["server_tor_ports"] = []any{map[string]any{"sn": "tor-a", "ports": []string{name}}}
 	}, graph)
 	result, err := worker.Run(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, time.Now())
-	if err == nil || result.Skipped != 1 || len(graph.writes) != 0 {
-		t.Fatalf("result %+v err %v", result, err)
+	if err != nil || reads != 1 || result.Servers != 1 || result.Skipped != 1 || result.Edges != 0 || len(graph.writes) != 0 {
+		t.Fatalf("result %+v reads %d err %v", result, reads, err)
 	}
 }
 

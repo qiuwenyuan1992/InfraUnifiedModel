@@ -146,6 +146,25 @@ func roundStageResult(output *bytes.Buffer, phase, source string, at time.Time) 
 	return result, nil
 }
 
+func failedGPUPhaseResult(err error) repository.PhaseResult {
+	var failure *service.GPUSyncError
+	if !errors.As(err, &failure) {
+		return repository.PhaseResult{}
+	}
+	id, _ := failure.Details["run_id"].(string)
+	if !inventoryID.MatchString(id) || !syncExecutionCode.MatchString(failure.Code) {
+		return repository.PhaseResult{}
+	}
+	count := func(key string) int64 {
+		value, _ := failure.Details[key].(int)
+		if value < 0 {
+			return 0
+		}
+		return int64(value)
+	}
+	return repository.PhaseResult{RunID: id, ErrorCode: failure.Code, Nodes: count("nodes"), Edges: count("edges"), Objects: count("objects"), Skipped: count("skipped"), MissingEndpoints: count("missing_endpoints")}
+}
+
 func newQueuedRoundWorker(conf *viper.Viper, logger *log.Logger) (*service.SyncRoundWorker, func(), error) {
 	if conf.GetString("data.db.main.driver") != "mysql" {
 		return nil, nil, errors.New("round queue requires MySQL")
@@ -173,7 +192,7 @@ func newQueuedRoundWorker(conf *viper.Viper, logger *log.Logger) (*service.SyncR
 		var output bytes.Buffer
 		err = runSyncRoundStage(ctx, configuration, logger, source.ID, phase, &output)
 		if err != nil {
-			return repository.PhaseResult{}, err
+			return failedGPUPhaseResult(err), err
 		}
 		return roundStageResult(&output, phase, source.ID, service.SyncSnapshot(ctx, time.Time{}))
 	}

@@ -110,11 +110,13 @@ func TestSpatialSyncWorkerWriteFailurePreservesEarlierEdges(t *testing.T) {
 	require.Equal(t, 1, got.Edges)
 	require.Len(t, graph.writes, 1)
 }
-func TestSpatialSyncWorkerIndependentRereadDetectsDirectoryAndReferenceChanges(t *testing.T) {
+func TestSpatialSyncWorkerUsesSingleCompleteCollection(t *testing.T) {
 	for _, object := range []string{"device_view", "cabinet", "idc", "pod"} {
 		t.Run(object, func(t *testing.T) {
 			graph := &uplinkGraph{}
+			reads := map[string]int{}
 			worker := spatialWorkerFixture(t, graph, func(o string, pass int, rows []map[string]any) {
+				reads[o] = pass
 				if o != object || pass < 2 {
 					return
 				}
@@ -130,7 +132,11 @@ func TestSpatialSyncWorkerIndependentRereadDetectsDirectoryAndReferenceChanges(t
 				}
 			})
 			got, err := worker.Run(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, time.Now())
-			require.ErrorContains(t, err, "source changed")
+			require.NoError(t, err)
+			for _, kind := range []string{"device_view", "cabinet", "idc", "pod"} {
+				require.Equal(t, 1, reads[kind], "one complete %s collection", kind)
+			}
+			require.Equal(t, 3, got.Objects)
 			require.Equal(t, 4, got.Edges)
 			require.Len(t, graph.writes, 4)
 		})

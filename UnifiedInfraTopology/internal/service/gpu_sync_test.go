@@ -84,12 +84,10 @@ func gpuWorkerFixture(t *testing.T, graph *gpuGraph, mutate func(string, int, ma
 		default:
 			t.Errorf("unexpected %s", object)
 		}
-		key, value := "device_sn", "server-a"
-		if object == "gpu_uplink" {
-			key, value = "gpu_sn", "parts-a"
-		}
-		if (object == "server_gpu" || object == "gpu_uplink") && (len(req.Condition) != 1 || req.Condition[key] != value) {
-			t.Errorf("wrong card condition %+v", req.Condition)
+		if object == "server_gpu" || object == "gpu_uplink" {
+			if len(req.Condition) != 1 || req.Condition["device_sn"] != "server-a" || req.Page.Limit != 1000 {
+				t.Errorf("wrong GPU request %+v", req)
+			}
 		}
 		if mutate != nil {
 			mutate(object, reads[object], item)
@@ -196,16 +194,23 @@ func TestGPUSyncFirstPassErrorsBeforeWrites(t *testing.T) {
 	}
 }
 
-func TestGPUSyncIndependentVerificationDetectsMetadataChange(t *testing.T) {
+func TestGPUSyncUsesSingleCompleteCollection(t *testing.T) {
 	g := &gpuGraph{}
+	reads := map[string]int{}
 	mutate := func(object string, read int, item map[string]any) {
+		reads[object] = read
 		if object == "gpu_uplink" && read > 1 {
-			item["pod_id"] = 99
+			item["inst_id"] = 0
 		}
 	}
 	result, err := gpuWorkerFixture(t, g, mutate).Run(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, time.Now())
-	if err == nil || result.Nodes != 1 || len(g.nodes) != 1 {
+	if err != nil || result.Nodes != 1 || result.Edges != 2 || result.Objects != 2 || len(g.nodes) != 1 || len(g.edges) != 2 {
 		t.Fatalf("result %+v err %v nodes %v", result, err, g.nodes)
+	}
+	for object, want := range map[string]int{"device_view": 2, "server_gpu": 1, "gpu_uplink": 1, "port_view": 1} {
+		if reads[object] != want {
+			t.Errorf("%s requests = %d, want %d for one collection", object, reads[object], want)
+		}
 	}
 }
 

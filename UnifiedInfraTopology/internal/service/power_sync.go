@@ -66,7 +66,7 @@ func (w *PowerSyncWorker) Run(ctx context.Context, source model.Source, snapshot
 			return result, fmt.Errorf("power sync requires configured %s scope condition", entity)
 		}
 	}
-	digest, records, objects, err := w.collect(ctx, source)
+	_, records, objects, err := w.collect(ctx, source)
 	result.Objects = objects
 	if err != nil {
 		return result, err
@@ -113,13 +113,6 @@ func (w *PowerSyncWorker) Run(ctx context.Context, source model.Source, snapshot
 		}
 		result.Edges++
 		result.ByKind[string(relation.Identity.Kind)]++
-	}
-	verified, _, _, err := w.collect(ctx, source)
-	if err != nil {
-		return result, fmt.Errorf("power sync verification failed (written edges persist): %w", err)
-	}
-	if verified != digest {
-		return result, fmt.Errorf("power sync source changed between passes (written edges persist)")
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err

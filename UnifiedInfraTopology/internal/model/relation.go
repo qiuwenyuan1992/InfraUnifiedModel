@@ -57,6 +57,12 @@ var relationPropertyNames = map[RelationSpec]map[string]struct{}{
 	},
 }
 
+// Valid 仅校验端点矩阵，读取存储关系时不要求重新构造来源身份。
+func (spec RelationSpec) Valid() bool {
+	_, ok := relationSpecs[spec]
+	return ok
+}
+
 func ValidateRelation(relation Relation) error {
 	_, err := NormalizeRelation(relation)
 	return err
@@ -79,7 +85,7 @@ func NormalizeRelation(relation Relation) (Relation, error) {
 		From:     relation.Identity.From.EntityType,
 		To:       relation.Identity.To.EntityType,
 	}
-	if _, ok := relationSpecs[spec]; !ok {
+	if !spec.Valid() {
 		return Relation{}, fmt.Errorf("unsupported relation endpoints: %s/%s %s -> %s", spec.EdgeType, spec.Kind, spec.From, spec.To)
 	}
 

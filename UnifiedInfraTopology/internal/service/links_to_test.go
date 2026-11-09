@@ -62,7 +62,7 @@ type linksGraph struct {
 func (g *linksGraph) LinksToEndpointsValid(context.Context, model.EntityIdentity, model.EntityIdentity, model.EntityIdentity, model.EntityIdentity) (bool, error) {
 	return g.eligible, g.endpointErr
 }
-func linksWorkerFixture(t *testing.T, graph *linksGraph, changed bool) *LinksToWorker {
+func linksWorkerFixture(t *testing.T, graph *linksGraph, changed bool, onPass ...func(int)) *LinksToWorker {
 	pass := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -76,6 +76,9 @@ func linksWorkerFixture(t *testing.T, graph *linksGraph, changed bool) *LinksToW
 				require.Equal(t, float64(54), req.Condition["parent_type_id"])
 				if req.Page.Start == 0 {
 					pass++
+					for _, notify := range onPass {
+						notify(pass)
+					}
 				}
 				items = []map[string]any{{"inst_id": 1, "device_sn": "a", "parent_type_id": 54}, {"inst_id": 2, "device_sn": "b", "parent_type_id": 54}}
 			} else {
@@ -107,6 +110,18 @@ func linksWorkerFixture(t *testing.T, graph *linksGraph, changed bool) *LinksToW
 	conf.Set("inventory.cmdb.sources.test.interface_condition", map[string]any{"idc_id": 1030})
 	return NewLinksToWorker(adapter.NewCMDBWithClient(conf, server.Client()), graph)
 }
+func TestLinksToWorkerUsesSingleCompleteCollection(t *testing.T) {
+	graph := &linksGraph{eligible: true}
+	passes := 0
+	worker := linksWorkerFixture(t, graph, true, func(pass int) { passes = pass })
+	result, err := worker.Run(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, 1, passes)
+	require.Equal(t, 2, result.Devices)
+	require.Equal(t, 1, result.Edges)
+	require.Len(t, graph.writes, 1)
+}
+
 func TestLinksToWorkerCanonicalDedupAndNoVertexWrites(t *testing.T) {
 	graph := &linksGraph{eligible: true}
 	at := time.Now().UTC()
@@ -118,8 +133,8 @@ func TestLinksToWorkerCanonicalDedupAndNoVertexWrites(t *testing.T) {
 	require.Equal(t, "a-port", graph.writes[0].Identity.From.StableID)
 	require.Equal(t, at, graph.writes[0].SyncedAt)
 }
-func TestLinksToWorkerFailsClosedAndDetectsReplayChange(t *testing.T) {
-	for _, failure := range []string{"missing endpoint", "read error", "write error", "changed", "canceled", "no snapshot"} {
+func TestLinksToWorkerFailsClosed(t *testing.T) {
+	for _, failure := range []string{"missing endpoint", "read error", "write error", "canceled", "no snapshot"} {
 		t.Run(failure, func(t *testing.T) {
 			graph := &linksGraph{eligible: true}
 			ctx, cancel := context.WithCancel(context.Background())
@@ -137,7 +152,7 @@ func TestLinksToWorkerFailsClosedAndDetectsReplayChange(t *testing.T) {
 			case "no snapshot":
 				at = time.Time{}
 			}
-			result, err := linksWorkerFixture(t, graph, failure == "changed").Run(ctx, model.Source{ID: "s", ConfigRef: "test"}, at)
+			result, err := linksWorkerFixture(t, graph, false).Run(ctx, model.Source{ID: "s", ConfigRef: "test"}, at)
 			if failure == "missing endpoint" {
 				require.NoError(t, err)
 				require.Zero(t, result.Edges)
@@ -145,7 +160,7 @@ func TestLinksToWorkerFailsClosedAndDetectsReplayChange(t *testing.T) {
 			} else {
 				require.Error(t, err)
 			}
-			if failure != "changed" && failure != "write error" {
+			if failure != "write error" {
 				require.Empty(t, graph.writes)
 			}
 		})
