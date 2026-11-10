@@ -19,6 +19,7 @@ type TopologyBrowseHandler interface {
 	Roots(*gin.Context)
 	Children(*gin.Context)
 	DeviceContext(*gin.Context)
+	Scene(*gin.Context)
 }
 type topologyBrowseHandler struct {
 	*Handler
@@ -230,6 +231,51 @@ func (h *topologyBrowseHandler) DeviceContext(c *gin.Context) {
 		return
 	}
 	result, err := h.service.DeviceContext(c.Request.Context(), GetUserIdFromCtx(c), identity)
+	if err != nil {
+		topologyError(c, err)
+		return
+	}
+	inventorySuccess(c, http.StatusOK, result)
+}
+
+// Scene godoc
+// @Summary Read a compact, bounded spatial scene using only verified topology relations
+// @Tags topology
+// @Security Bearer
+// @Produce json
+// @Param source_id query string true "32 lowercase hexadecimal source ID"
+// @Param entity_type query string true "Scene root type" Enums(data_center,pod)
+// @Param stable_id query string true "Exact stable root ID, up to 256 bytes"
+// @Param limit query int false "Maximum cabinets (data center) or member devices (POD)" minimum(1) maximum(10) default(5)
+// @Param after query string false "Opaque signed root child cursor, up to 4096 bytes"
+// @Success 200 {object} v1.Response{data=service.TopologyScene}
+// @Failure 400,401,403,404,500,503,504 {object} v1.Response
+// @Router /inventory/topology/scene [get]
+func (h *topologyBrowseHandler) Scene(c *gin.Context) {
+	query, err := inventoryQuery(c, "source_id", "entity_type", "stable_id", "limit", "after")
+	if err != nil {
+		topologyError(c, err)
+		return
+	}
+	identity, err := topologyIdentity(query)
+	if err != nil || (identity.EntityType != model.EntityDataCenter && identity.EntityType != model.EntityPod) {
+		topologyError(c, service.ErrInventoryInvalid)
+		return
+	}
+	options := repository.TopologyDirectoryQuery{After: query.Get("after")}
+	if query.Has("limit") {
+		options.Limit, err = strconv.Atoi(query.Get("limit"))
+		if err != nil || options.Limit < 1 {
+			topologyError(c, service.ErrInventoryInvalid)
+			return
+		}
+	}
+	options, err = service.NormalizeTopologySceneQuery(options)
+	if err != nil {
+		topologyError(c, err)
+		return
+	}
+	result, err := h.service.Scene(c.Request.Context(), GetUserIdFromCtx(c), identity, options)
 	if err != nil {
 		topologyError(c, err)
 		return

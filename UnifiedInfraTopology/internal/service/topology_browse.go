@@ -21,6 +21,7 @@ type TopologyBrowseService interface {
 	Roots(context.Context, string, string, model.EntityType, repository.TopologyDirectoryQuery) (*repository.TopologyDirectoryPage, error)
 	Children(context.Context, string, model.EntityIdentity, repository.TopologyDirectoryQuery) (*repository.TopologyDirectoryPage, error)
 	DeviceContext(context.Context, string, model.EntityIdentity) (*TopologyDeviceContext, error)
+	Scene(context.Context, string, model.EntityIdentity, repository.TopologyDirectoryQuery) (*TopologyScene, error)
 }
 
 type topologyBrowseService struct {
@@ -237,6 +238,9 @@ func (s *topologyBrowseService) directory(ctx context.Context, user string, iden
 }
 
 func topologyReadFailure(err error) error {
+	if errors.Is(err, repository.ErrTopologyQueryBudget) {
+		return err
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}

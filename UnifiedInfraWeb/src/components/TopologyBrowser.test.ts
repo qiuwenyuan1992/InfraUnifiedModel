@@ -11,7 +11,7 @@ vi.mock('vue', async importOriginal => {
 })
 vi.mock('../api/topology', () => ({ topologyApi: { node: vi.fn(), neighbors: vi.fn() }, topologyDirectoryApi: { roots: vi.fn(async () => ({ items: [], next_after: null })), children: vi.fn(), deviceContext: vi.fn() } }))
 afterEach(() => vi.clearAllMocks())
-type State = { sourceId: Ref<string>; stableId: Ref<string>; canLocate: Ref<boolean>; graph: Ref<TopologyGraph>; sourceStatus: Ref<string>; showGraph: Ref<boolean>; tab: Ref<TopologyRootType>; items: Ref<TopologyNode[]>; path: Ref<TopologyNode[]>; submit: () => Promise<void>; backToDirectory: () => void; openItem: (item: TopologyNode) => Promise<void> }
+type State = { viewMode: Ref<'device' | 'graph'>; sourceId: Ref<string>; stableId: Ref<string>; canLocate: Ref<boolean>; graph: Ref<TopologyGraph>; sourceStatus: Ref<string>; showGraph: Ref<boolean>; tab: Ref<TopologyRootType>; items: Ref<TopologyNode[]>; path: Ref<TopologyNode[]>; submit: () => Promise<void>; backToDirectory: () => void; openItem: (item: TopologyNode) => Promise<void> }
 const setup = (TopologyBrowser as unknown as { setup: (props: unknown, context: unknown) => State }).setup
 
 it('automatically resolves exactly one enabled CMDB source, never an arbitrary first source', async () => {
@@ -41,6 +41,10 @@ it('device SN shortcut uses sole-source context and returns to the retained dire
     await state.submit()
     expect(state.showGraph.value).toBe(true)
     expect(state.graph.value.nodes).toEqual([root])
+    expect(state.viewMode.value).toBe('device')
+    state.viewMode.value = 'graph'
+    expect(state.graph.value.nodes).toEqual([root])
+    expect(topologyDirectoryApi.deviceContext).toHaveBeenCalledTimes(1)
     expect(topologyDirectoryApi.deviceContext).toHaveBeenCalledWith({ source_id: 's', stable_id: 'SN' }, expect.any(AbortSignal))
     expect(topologyApi.node).not.toHaveBeenCalled()
     expect(topologyApi.neighbors).not.toHaveBeenCalled()

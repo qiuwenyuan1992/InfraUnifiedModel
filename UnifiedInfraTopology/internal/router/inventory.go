@@ -21,7 +21,11 @@ func InitInventoryRouter(deps RouterDeps, r *gin.RouterGroup) {
 		if c.Writer.Header().Get("X-Request-ID") == "" {
 			c.Header("X-Request-ID", uuid.NewString())
 		}
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		timeout := 5 * time.Second
+		if c.Request.Method == "GET" && c.FullPath() == g.BasePath()+"/topology/scene" {
+			timeout = service.TopologySceneTimeout
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
 		defer cancel()
 		c.Request = c.Request.WithContext(ctx)
 		if authDisabled {
@@ -56,5 +60,6 @@ func InitInventoryRouter(deps RouterDeps, r *gin.RouterGroup) {
 		g.GET("/topology/roots", topology.Roots)
 		g.GET("/topology/children", topology.Children)
 		g.GET("/topology/device-context", topology.DeviceContext)
+		g.GET("/topology/scene", topology.Scene)
 	}
 }

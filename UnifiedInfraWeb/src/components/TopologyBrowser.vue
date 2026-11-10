@@ -7,6 +7,7 @@ import { useTopologyDirectory } from '../composables/useTopologyDirectory'
 import { edgeColors, edgeLabels, entityLabels, validIdentity, topologyDisplayName } from '../services/topology'
 import TopologyCanvas from './TopologyCanvas.vue'
 import TopologyDetails from './TopologyDetails.vue'
+import DeviceTopologyView from './DeviceTopologyView.vue'
 
 const props = defineProps<{ sources: Source[]; sourcesLoading: boolean; sourcesLoaded: boolean; sourcesError: string }>()
 const {
@@ -27,6 +28,7 @@ const canLocate = computed(() => sourceEnabled.value && validIdentity('device', 
 const directory = useTopologyDirectory(resolvedSourceId)
 const { tab, items, path, itemType, pageIndex, nextAfter, loading: directoryLoading, error: directoryError } = directory
 const showGraph = ref(false)
+const viewMode = ref<'device' | 'graph'>('device')
 const compact = ref(false)
 const detailsOpen = ref(false)
 let media: MediaQueryList | undefined
@@ -128,25 +130,30 @@ async function reloadDirectory() { backToDirectory(); await directory.reload() }
       <section class="panel topology-workspace">
         <div class="topology-toolbar">
           <div><h2>设备业务关联拓扑</h2><span class="muted">{{ graph.nodes.length }} / 500 节点 · {{ graph.edges.length }} / 1000 关系</span></div>
+          <div class="topology-tabs" role="tablist" aria-label="拓扑展示方式">
+            <button role="tab" :aria-selected="viewMode === 'device'" :class="{ active: viewMode === 'device' }" @click="viewMode = 'device'">设备视图</button>
+            <button role="tab" :aria-selected="viewMode === 'graph'" :class="{ active: viewMode === 'graph' }" @click="viewMode = 'graph'">关系图</button>
+          </div>
           <el-select v-model="edgeType" placeholder="全部关系领域" aria-label="展开关系领域"><el-option label="全部关系领域" value="" /><el-option v-for="(label, type) in edgeLabels" :key="type" :label="label" :value="type" /></el-select>
           <el-select v-model="direction" aria-label="展开方向"><el-option label="双向邻居" value="both" /><el-option label="入向邻居" value="in" /><el-option label="出向邻居" value="out" /></el-select>
           <el-button type="primary" plain :disabled="!selectedNode || !sourceEnabled" :loading="loading" @click="expand">展开选中节点一跳</el-button>
           <el-button :disabled="!canLocate" :loading="loading" @click="submit">重新读取设备关联</el-button>
-          <el-button v-if="compact && selection" @click="detailsOpen = true">查看详情</el-button>
+          <el-button v-if="(compact || viewMode === 'device') && selection" @click="detailsOpen = true">查看详情</el-button>
         </div>
         <p class="muted topology-selection">{{ selectedNode ? `选中：${selectedNode.label || selectedNode.stable_id}` : selectedEdge ? '已选中关系；请选择节点后展开' : '点击节点选择，点击关系查看属性' }} · 筛选仅作用于下一次手动读取，不删除已展示关系。</p>
         <p class="muted">原始真实图，不生成供电直连。缺失关系与截断会明确提示，不能据此认定设备没有依赖。</p>
-        <div class="topology-layout">
+        <div class="topology-layout" :style="viewMode === 'device' ? { gridTemplateColumns: 'minmax(0, 1fr)' } : undefined">
           <div v-loading="loading" class="topology-graph-area">
-            <TopologyCanvas v-if="graph.nodes.length" :graph="graph" :selection="selection" :root-id="rootId" @select="select" />
+            <DeviceTopologyView v-if="graph.nodes.length && viewMode === 'device'" :graph="graph" :selection="selection" :root-id="rootId" @select="select" />
+            <TopologyCanvas v-else-if="graph.nodes.length" :graph="graph" :selection="selection" :root-id="rootId" @select="select" />
             <el-empty v-else :description="loading ? '正在读取设备关联路径' : '未展示设备，请核对 SN 或服务状态后重试'" :image-size="100" />
           </div>
-          <aside v-if="!compact" class="topology-detail-sidebar"><TopologyDetails :node="selectedNode" :edge="selectedEdge" :source-name="sourceName" /></aside>
+          <aside v-if="!compact && viewMode === 'graph'" class="topology-detail-sidebar"><TopologyDetails :node="selectedNode" :edge="selectedEdge" :source-name="sourceName" /></aside>
         </div>
         <div class="topology-legend" aria-label="关系图例"><span v-for="(label, type) in edgeLabels" :key="type"><i :style="{ background: edgeColors[type] }" />{{ label }}</span><span>箭头保留存储方向 · A/B 路径及 UPS 成员旁支保留 · 可拖拽 / 滚轮缩放</span></div>
       </section>
     </template>
-    <el-drawer v-if="compact && showGraph" v-model="detailsOpen" title="拓扑对象详情" size="min(420px, 100%)" destroy-on-close><TopologyDetails :node="selectedNode" :edge="selectedEdge" :source-name="sourceName" /></el-drawer>
+    <el-drawer v-if="(compact || viewMode === 'device') && showGraph" v-model="detailsOpen" title="拓扑对象详情" size="min(420px, 100%)" destroy-on-close><TopologyDetails :node="selectedNode" :edge="selectedEdge" :source-name="sourceName" /></el-drawer>
     <p class="page-footnote">目录按需分页，不读取全图库；设备自动读取有界供电、GPU 与网络路径，其他节点仅手动展开一跳（每次最多 100 条关系）。同步标记可能包含旧数据，不代表原子全局快照；无故障模拟或写操作。</p>
   </section>
 </template>

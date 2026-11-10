@@ -1,4 +1,5 @@
 import { inventoryRequest } from './inventory'
+import type { SceneQuery, SceneResponse } from './newSceneTypes'
 import type { DeviceContext, DeviceContextQuery, Neighborhood, NeighborQuery, TopologyChildQuery, TopologyDirectoryPage, TopologyIdentity, TopologyNode, TopologyRootQuery } from './topologyTypes'
 
 function query(identity: Partial<TopologyIdentity>, options: Record<string, string | number | undefined> = {}) {
@@ -16,6 +17,10 @@ export const topologyDirectoryApi = {
     inventoryRequest<TopologyDirectoryPage>(`/topology/children?${query(identity, { limit: identity.limit, after: identity.after })}`, { method: 'GET', signal }),
   deviceContext: (identity: DeviceContextQuery, signal?: AbortSignal) =>
     inventoryRequest<DeviceContext>(`/topology/device-context?${query(identity)}`, { method: 'GET', signal }),
+}
+export const topologySceneApi = {
+  scene: (identity: SceneQuery, signal?: AbortSignal) =>
+    inventoryRequest<SceneResponse>(`/topology/scene?${query(identity, { limit: identity.limit ?? 5, after: identity.after })}`, { method: 'GET', signal }),
 }
 export const topologyApi = {
   node: (identity: TopologyIdentity, signal?: AbortSignal) =>

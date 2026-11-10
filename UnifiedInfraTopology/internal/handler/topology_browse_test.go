@@ -25,6 +25,12 @@ type topologyBrowseStub struct {
 	err            error
 }
 
+func (s *topologyBrowseStub) Scene(_ context.Context, user string, i model.EntityIdentity, q repository.TopologyDirectoryQuery) (*service.TopologyScene, error) {
+	s.calls++
+	s.user, s.identity, s.directoryQuery = user, i, q
+	return &service.TopologyScene{Root: service.SceneNode{ID: "root"}, Cabinets: []service.SceneCabinet{}, Unassigned: []service.SceneUnassigned{}, NetworkLevels: []service.SceneNetworkLevel{}, Nodes: []service.SceneNode{}, Edges: []service.SceneEdge{}, Warnings: []string{}}, s.err
+}
+
 func (s *topologyBrowseStub) Roots(_ context.Context, user, source string, kind model.EntityType, q repository.TopologyDirectoryQuery) (*repository.TopologyDirectoryPage, error) {
 	s.calls++
 	s.user = user
@@ -67,6 +73,7 @@ func topologyRequest(t *testing.T, path string, stub *topologyBrowseStub) *httpt
 	g.GET("/roots", h.Roots)
 	g.GET("/children", h.Children)
 	g.GET("/device-context", h.DeviceContext)
+	g.GET("/scene", h.Scene)
 	w := httptest.NewRecorder()
 	g.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 	return w
@@ -99,6 +106,44 @@ func TestTopologyDirectoryAndContextHandler(t *testing.T) {
 		require.Equal(t, 400, w.Code, path)
 		require.Zero(t, s.calls)
 	}
+}
+
+func TestTopologySceneHandlerContract(t *testing.T) {
+	base := "/scene?source_id=" + strings.Repeat("a", 32) + "&entity_type=pod&stable_id=pod"
+	s := &topologyBrowseStub{}
+	w := topologyRequest(t, base, s)
+	require.Equal(t, 200, w.Code)
+	require.Equal(t, 5, s.directoryQuery.Limit)
+	require.Equal(t, "reader", s.user)
+	var body struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Len(t, body.Data, 9)
+	for _, key := range []string{"root", "cabinets", "unassigned", "network_levels", "nodes", "edges", "next_after", "truncated", "warnings"} {
+		require.Contains(t, body.Data, key)
+	}
+	for _, extra := range []string{"&limit=11", "&limit=0", "&limit=no", "&after=", "&limit=5&limit=6", "&properties=1"} {
+		s = &topologyBrowseStub{}
+		w = topologyRequest(t, base+extra, s)
+		require.Equal(t, 400, w.Code)
+		require.Zero(t, s.calls)
+	}
+	s = &topologyBrowseStub{}
+	w = topologyRequest(t, strings.Replace(base, "entity_type=pod", "entity_type=device", 1), s)
+	require.Equal(t, 400, w.Code)
+	require.Zero(t, s.calls)
+	s = &topologyBrowseStub{}
+	w = topologyRequest(t, base+"&limit=10&after=opaque", s)
+	require.Equal(t, 200, w.Code)
+	require.Equal(t, 10, s.directoryQuery.Limit)
+	require.Equal(t, "opaque", s.directoryQuery.After)
+	s = &topologyBrowseStub{err: context.DeadlineExceeded}
+	w = topologyRequest(t, base, s)
+	require.Equal(t, 504, w.Code)
+	s = &topologyBrowseStub{err: service.ErrInventoryNotReady}
+	w = topologyRequest(t, base, s)
+	require.Equal(t, 503, w.Code)
 }
 func topologyArgs() string {
 	return "source_id=" + strings.Repeat("a", 32) + "&entity_type=gpu&stable_id=gpu-SN"

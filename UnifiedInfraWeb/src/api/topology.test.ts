@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { topologyApi, topologyDirectoryApi } from './topology'
+import { topologyApi, topologyDirectoryApi, topologySceneApi } from './topology'
 import { ApiError } from './inventory'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -36,6 +36,21 @@ it('uses only GET exact identity queries, envelope data, optional edge enum, and
   expect(calls[2]![0]).toContain('edge_type=power_relation')
   expect(calls[0]![1]).toMatchObject({ method: 'GET', signal: controller.signal, credentials: 'omit' })
   expect((calls[0]![1].headers as Record<string, string>).Authorization).toBeUndefined()
+})
+it('reads compact scenes once via GET with limit five by default and an opaque cursor', async () => {
+  const data = { root: null, cabinets: [], unassigned: [], network_levels: [], nodes: [], edges: [], next_after: '', truncated: false, warnings: [] }
+  const fetcher = vi.fn(async () => new Response(JSON.stringify({ code: 0, data })))
+  vi.stubGlobal('fetch', fetcher)
+  const controller = new AbortController()
+  const identity = { source_id: 's+/&', entity_type: 'pod' as const, stable_id: 'pod /+&' }
+  expect(await topologySceneApi.scene(identity, controller.signal)).toEqual(data)
+  await topologySceneApi.scene({ ...identity, limit: 10, after: 'opaque+/==' }, controller.signal)
+  const calls = fetcher.mock.calls as unknown as [string, RequestInit][]
+  const urls = calls.map(([url]) => new URL(url, 'http://localhost'))
+  expect(urls[0]!.pathname).toBe('/v1/inventory/topology/scene')
+  expect(Object.fromEntries(urls[0]!.searchParams)).toEqual({ ...identity, limit: '5' })
+  expect(Object.fromEntries(urls[1]!.searchParams)).toEqual({ ...identity, limit: '10', after: 'opaque+/==' })
+  expect(calls.every(([, init]) => init.method === 'GET' && init.signal === controller.signal)).toBe(true)
 })
 it('does not swallow missing nodes, BAD_TYPE, auth, or unavailable graph errors', async () => {
   for (const status of [400, 401, 403, 404, 503]) {

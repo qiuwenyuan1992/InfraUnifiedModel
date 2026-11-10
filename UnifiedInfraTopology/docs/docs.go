@@ -1148,6 +1148,126 @@ const docTemplate = `{
                 }
             }
         },
+        "/inventory/topology/scene": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "topology"
+                ],
+                "summary": "Read a compact, bounded spatial scene using only verified topology relations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "32 lowercase hexadecimal source ID",
+                        "name": "source_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "data_center",
+                            "pod"
+                        ],
+                        "type": "string",
+                        "description": "Scene root type",
+                        "name": "entity_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exact stable root ID, up to 256 bytes",
+                        "name": "stable_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "maximum": 10,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 5,
+                        "description": "Maximum cabinets (data center) or member devices (POD)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque signed root child cursor, up to 4096 bytes",
+                        "name": "after",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/v1.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/service.TopologyScene"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/login": {
             "post": {
                 "consumes": [
@@ -1386,6 +1506,117 @@ const docTemplate = `{
                 }
             }
         },
+        "service.SceneCabinet": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SceneNode"
+                    }
+                },
+                "next_after": {
+                    "type": "string"
+                },
+                "node": {
+                    "$ref": "#/definitions/service.SceneNode"
+                }
+            }
+        },
+        "service.SceneEdge": {
+            "type": "object",
+            "properties": {
+                "edge_type": {
+                    "type": "string"
+                },
+                "from": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "plane": {
+                    "type": "integer"
+                },
+                "power_path": {
+                    "type": "string"
+                },
+                "rank": {
+                    "type": "string"
+                },
+                "relation_kind": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.SceneNetworkLevel": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "integer"
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SceneNode"
+                    }
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.SceneNode": {
+            "type": "object",
+            "properties": {
+                "entity_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "parent_type_id": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "stable_id": {
+                    "type": "string"
+                },
+                "synced_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.SceneUnassigned": {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "$ref": "#/definitions/service.SceneNode"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "missing",
+                        "ambiguous",
+                        "truncated"
+                    ]
+                }
+            }
+        },
         "service.TopologyDeviceContext": {
             "type": "object",
             "properties": {
@@ -1409,6 +1640,56 @@ const docTemplate = `{
                 },
                 "truncated": {
                     "type": "boolean"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "service.TopologyScene": {
+            "type": "object",
+            "properties": {
+                "cabinets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SceneCabinet"
+                    }
+                },
+                "edges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SceneEdge"
+                    }
+                },
+                "network_levels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SceneNetworkLevel"
+                    }
+                },
+                "next_after": {
+                    "type": "string"
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SceneNode"
+                    }
+                },
+                "root": {
+                    "$ref": "#/definitions/service.SceneNode"
+                },
+                "truncated": {
+                    "type": "boolean"
+                },
+                "unassigned": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SceneUnassigned"
+                    }
                 },
                 "warnings": {
                     "type": "array",

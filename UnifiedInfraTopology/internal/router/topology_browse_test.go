@@ -50,9 +50,15 @@ func (s *topologyRouterStub) DeviceContext(ctx context.Context, user string, _ m
 	_, s.deadline = ctx.Deadline()
 	return &service.TopologyDeviceContext{}, nil
 }
+func (s *topologyRouterStub) Scene(ctx context.Context, user string, _ model.EntityIdentity, _ repository.TopologyDirectoryQuery) (*service.TopologyScene, error) {
+	s.user = user
+	_, s.deadline = ctx.Deadline()
+	return &service.TopologyScene{}, nil
+}
+
 func TestTopologyRoutesReuseInventoryMiddleware(t *testing.T) {
 	for _, disabled := range []bool{false, true} {
-		for _, endpoint := range []string{"node", "neighbors", "roots", "children", "device-context"} {
+		for _, endpoint := range []string{"node", "neighbors", "roots", "children", "device-context", "scene"} {
 			c := viper.New()
 			c.Set("inventory.auth.enabled", !disabled)
 			l := &log.Logger{Logger: zap.NewNop()}
@@ -64,7 +70,7 @@ func TestTopologyRoutesReuseInventoryMiddleware(t *testing.T) {
 			if endpoint == "roots" {
 				args = "source_id=" + strings.Repeat("a", 32) + "&entity_type=pod"
 			}
-			if endpoint == "children" {
+			if endpoint == "children" || endpoint == "scene" {
 				args = "source_id=" + strings.Repeat("a", 32) + "&entity_type=pod&stable_id=pod"
 			}
 			if endpoint == "device-context" {
