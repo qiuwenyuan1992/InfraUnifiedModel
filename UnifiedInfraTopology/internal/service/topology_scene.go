@@ -53,16 +53,22 @@ type SceneNetworkLevel struct {
 	Level *int        `json:"level"`
 	Nodes []SceneNode `json:"nodes"`
 }
+type SceneComponentOwner struct {
+	ParentID string   `json:"parent_id"`
+	ChildIDs []string `json:"child_ids"`
+}
+
 type TopologyScene struct {
-	Root          SceneNode           `json:"root"`
-	Cabinets      []SceneCabinet      `json:"cabinets"`
-	Unassigned    []SceneUnassigned   `json:"unassigned"`
-	NetworkLevels []SceneNetworkLevel `json:"network_levels"`
-	Nodes         []SceneNode         `json:"nodes"`
-	Edges         []SceneEdge         `json:"edges"`
-	NextAfter     string              `json:"next_after"`
-	Truncated     bool                `json:"truncated"`
-	Warnings      []string            `json:"warnings"`
+	Root            SceneNode             `json:"root"`
+	Cabinets        []SceneCabinet        `json:"cabinets"`
+	Unassigned      []SceneUnassigned     `json:"unassigned"`
+	NetworkLevels   []SceneNetworkLevel   `json:"network_levels"`
+	ComponentOwners []SceneComponentOwner `json:"component_owners"`
+	Nodes           []SceneNode           `json:"nodes"`
+	Edges           []SceneEdge           `json:"edges"`
+	NextAfter       string                `json:"next_after"`
+	Truncated       bool                  `json:"truncated"`
+	Warnings        []string              `json:"warnings"`
 }
 
 func NormalizeTopologySceneQuery(q repository.TopologyDirectoryQuery) (repository.TopologyDirectoryQuery, error) {
@@ -171,7 +177,7 @@ func (s *topologyBrowseService) Scene(ctx context.Context, user string, identity
 	if err := s.auth.authorize(user, "sources"); err != nil {
 		return nil, err
 	}
-	if ValidateTopologyIdentity(identity) != nil || (identity.EntityType != model.EntityDataCenter && identity.EntityType != model.EntityPod) {
+	if ValidateTopologyIdentity(identity) != nil || (identity.EntityType != model.EntityDataCenter && identity.EntityType != model.EntityRoom && identity.EntityType != model.EntityPod) {
 		return nil, ErrInventoryInvalid
 	}
 	query, err := NormalizeTopologySceneQuery(query)
@@ -206,6 +212,8 @@ func (s *topologyBrowseService) Scene(ctx context.Context, user string, identity
 		w.result.NextAfter = page.NextAfter
 		var devices []repository.TopologyNode
 		if identity.EntityType == model.EntityDataCenter {
+			devices, err = w.dataCenterRooms(*root, page.Items, query.Limit)
+		} else if identity.EntityType == model.EntityRoom {
 			devices, err = w.dataCenter(*root, page.Items)
 		} else {
 			devices = page.Items
@@ -213,7 +221,7 @@ func (s *topologyBrowseService) Scene(ctx context.Context, user string, identity
 		if err != nil {
 			return nil, err
 		}
-		if err = w.devices(devices, identity.EntityType == model.EntityDataCenter); err != nil {
+		if err = w.devices(devices, identity.EntityType != model.EntityPod); err != nil {
 			return nil, err
 		}
 		if err = w.network(devices); err != nil {
@@ -247,6 +255,8 @@ func (w *sceneWalk) children(n repository.TopologyNode, q repository.TopologyDir
 	}
 	expected := model.EntityDevice
 	if n.EntityType == string(model.EntityDataCenter) {
+		expected = model.EntityRoom
+	} else if n.EntityType == string(model.EntityRoom) {
 		expected = model.EntityCabinet
 	}
 	for _, child := range p.Items {
@@ -397,10 +407,49 @@ func (w *sceneWalk) cabinet(n repository.TopologyNode) int {
 	w.result.Cabinets = append(w.result.Cabinets, SceneCabinet{Node: compactSceneNode(n), Devices: []SceneNode{}})
 	return len(w.result.Cabinets) - 1
 }
+func (w *sceneWalk) dataCenterRooms(root repository.TopologyNode, rooms []repository.TopologyNode, cabinetLimit int) ([]repository.TopologyNode, error) {
+	devices := []repository.TopologyNode{}
+	remaining := cabinetLimit
+	for _, room := range rooms {
+		q := spatialSceneQuery(model.EntityDataCenter)
+		parents, incomplete, err := w.merge(room, q, w.read(room, q))
+		if err != nil {
+			return nil, err
+		}
+		status := sceneParentStatus(parents, incomplete)
+		if status == "" && parents[0].ID != root.ID {
+			status = "missing"
+			w.warnings["parent_outside_scope"] = true
+		}
+		if status != "" {
+			w.unassigned(room, status)
+			continue
+		}
+		if remaining == 0 {
+			w.warn("cabinet_budget_exhausted")
+			continue
+		}
+		page, err := w.children(room, repository.TopologyDirectoryQuery{Limit: min(5, remaining)})
+		if err != nil {
+			return nil, err
+		}
+		if page == nil {
+			continue
+		}
+		remaining -= len(page.Items)
+		members, err := w.dataCenter(room, page.Items)
+		if err != nil {
+			return nil, err
+		}
+		devices = append(devices, members...)
+	}
+	return devices, nil
+}
+
 func (w *sceneWalk) dataCenter(root repository.TopologyNode, cabinets []repository.TopologyNode) ([]repository.TopologyNode, error) {
 	devices := []repository.TopologyNode{}
 	for _, cabinet := range cabinets {
-		q := spatialSceneQuery(model.EntityDataCenter)
+		q := spatialSceneQuery(model.EntityType(root.EntityType))
 		parents, incomplete, err := w.merge(cabinet, q, w.read(cabinet, q))
 		if err != nil {
 			return nil, err
@@ -493,7 +542,6 @@ func (w *sceneWalk) devices(devices []repository.TopologyNode, dc bool) error {
 }
 
 func (w *sceneWalk) network(devices []repository.TopologyNode) error {
-	ports := map[string]repository.TopologyNode{}
 	seen := map[string]bool{}
 	visible := []repository.TopologyNode{}
 	for _, device := range devices {
@@ -504,62 +552,10 @@ func (w *sceneWalk) network(devices []repository.TopologyNode) error {
 			}
 		}
 	}
-	if reader, ok := w.service.repo.(repository.TopologySceneNetworkReader); ok {
-		return w.networkBatch(reader, visible)
-	}
-	queries := []repository.TopologyNeighborQuery{
-		{Limit: 20, Direction: "out", EdgeType: model.EdgeNetwork, PeerEntityType: model.EntityInterface},
-		{Limit: 20, Direction: "out", EdgeType: model.EdgeComposition, RelationKind: model.RelationOwnsInterface, PeerEntityType: model.EntityInterface},
-	}
-	for _, q := range queries {
-		reads := w.batch(visible, q)
-		for i, device := range visible {
-			peers, _, err := w.merge(device, q, reads[i])
-			if err != nil {
-				return err
-			}
-			for _, port := range peers {
-				ports[port.ID] = port
-			}
-		}
-	}
-	// 仅展开已返回的真实接口的一跳网络端点，不扫描所有接口或远端设备。
-	initial := make([]repository.TopologyNode, 0, len(ports))
-	for _, p := range ports {
-		initial = append(initial, p)
-	}
-	sort.Slice(initial, func(i, j int) bool { return initial[i].ID < initial[j].ID })
-	linkQuery := repository.TopologyNeighborQuery{Limit: 20, Direction: "both", EdgeType: model.EdgeNetwork, RelationKind: model.RelationLinksTo, PeerEntityType: model.EntityInterface}
-	linkReads := w.batch(initial, linkQuery)
-	for i, port := range initial {
-		peers, _, err := w.merge(port, linkQuery, linkReads[i])
-		if err != nil {
-			return err
-		}
-		for _, peer := range peers {
-			ports[peer.ID] = peer
-		}
-	}
-	all := make([]repository.TopologyNode, 0, len(ports))
-	for _, port := range ports {
-		all = append(all, port)
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
-	ownerQuery := repository.TopologyNeighborQuery{Limit: 20, Direction: "in", EdgeType: model.EdgeComposition, RelationKind: model.RelationOwnsInterface, PeerEntityType: model.EntityDevice}
-	ownerReads := w.batch(all, ownerQuery)
-	for i, port := range all {
-		owners, incomplete, err := w.merge(port, ownerQuery, ownerReads[i])
-		if err != nil {
-			return err
-		}
-		if status := sceneParentStatus(owners, incomplete); status != "" {
-			w.unassigned(port, status)
-		}
-	}
-	return nil
+	return w.networkBatch(visible)
 }
 
-func (w *sceneWalk) networkBatch(reader repository.TopologySceneNetworkReader, seeds []repository.TopologyNode) error {
+func (w *sceneWalk) networkBatch(seeds []repository.TopologyNode) error {
 	if len(seeds) == 0 {
 		return nil
 	}
@@ -567,7 +563,7 @@ func (w *sceneWalk) networkBatch(reader repository.TopologySceneNetworkReader, s
 		w.warn("query_budget_exhausted")
 		return nil
 	}
-	page, err := reader.SceneNetwork(w.ctx, seeds, topologySceneEdges)
+	page, err := w.service.repo.SceneNetwork(w.ctx, seeds, topologySceneEdges)
 	if w.ctx.Err() != nil {
 		return w.ctx.Err()
 	}
@@ -686,6 +682,38 @@ func (w *sceneWalk) networkBatch(reader repository.TopologySceneNetworkReader, s
 }
 
 func (w *sceneWalk) finish() {
+	// 组件归属在后端统一解析；不完整或多父关系只保留诊断和原始边。
+	w.result.ComponentOwners = []SceneComponentOwner{}
+	unresolved := map[string]bool{}
+	for _, item := range w.result.Unassigned {
+		unresolved[item.Node.ID] = true
+	}
+	parents := map[string]map[string]bool{}
+	for _, edge := range w.edges {
+		if edge.EdgeType != string(model.EdgeComposition) || (edge.RelationKind != string(model.RelationOwnsInterface) && edge.RelationKind != string(model.RelationContainsGPU)) {
+			continue
+		}
+		if parents[edge.To] == nil {
+			parents[edge.To] = map[string]bool{}
+		}
+		parents[edge.To][edge.From] = true
+	}
+	children := map[string][]string{}
+	for child, owners := range parents {
+		if unresolved[child] || len(owners) != 1 {
+			continue
+		}
+		for parent := range owners {
+			children[parent] = append(children[parent], child)
+		}
+	}
+	for parent, ids := range children {
+		sort.Strings(ids)
+		w.result.ComponentOwners = append(w.result.ComponentOwners, SceneComponentOwner{ParentID: parent, ChildIDs: ids})
+	}
+	sort.Slice(w.result.ComponentOwners, func(i, j int) bool {
+		return w.result.ComponentOwners[i].ParentID < w.result.ComponentOwners[j].ParentID
+	})
 	for _, n := range w.nodes {
 		w.result.Nodes = append(w.result.Nodes, compactSceneNode(n))
 	}

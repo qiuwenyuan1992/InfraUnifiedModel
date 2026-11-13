@@ -81,6 +81,15 @@ definitions:
       node:
         $ref: '#/definitions/service.SceneNode'
     type: object
+  service.SceneComponentOwner:
+    properties:
+      child_ids:
+        items:
+          type: string
+        type: array
+      parent_id:
+        type: string
+    type: object
   service.SceneEdge:
     properties:
       edge_type:
@@ -164,11 +173,40 @@ definitions:
           type: string
         type: array
     type: object
+  service.TopologyRoomPowerContext:
+    properties:
+      edges:
+        items:
+          $ref: '#/definitions/repository.TopologyEdge'
+        type: array
+      limit:
+        type: integer
+      nodes:
+        items:
+          $ref: '#/definitions/repository.TopologyNode'
+        type: array
+      power_missing:
+        items:
+          type: string
+        type: array
+      root:
+        $ref: '#/definitions/repository.TopologyNode'
+      truncated:
+        type: boolean
+      warnings:
+        items:
+          type: string
+        type: array
+    type: object
   service.TopologyScene:
     properties:
       cabinets:
         items:
           $ref: '#/definitions/service.SceneCabinet'
+        type: array
+      component_owners:
+        items:
+          $ref: '#/definitions/service.SceneComponentOwner'
         type: array
       edges:
         items:
@@ -721,9 +759,11 @@ paths:
         name: source_id
         required: true
         type: string
-      - description: Parent directory type
+      - description: 'Parent directory type: data_center to room, room to cabinet,
+          cabinet to device; POD members unchanged'
         enum:
         - data_center
+        - room
         - pod
         - cabinet
         in: query
@@ -865,6 +905,7 @@ paths:
         - gpu
         - pod
         - cabinet
+        - room
         - data_center
         - rpp
         - ups_group
@@ -965,6 +1006,7 @@ paths:
         - gpu
         - pod
         - cabinet
+        - room
         - data_center
         - rpp
         - ups_group
@@ -1023,6 +1065,64 @@ paths:
       security:
       - Bearer: []
       summary: Locate a topology node by its exact stable identity
+      tags:
+      - topology
+  /inventory/topology/room-power:
+    get:
+      parameters:
+      - description: 32 lowercase hexadecimal source ID
+        in: query
+        name: source_id
+        required: true
+        type: string
+      - description: Exact room stable ID, up to 256 bytes
+        in: query
+        name: stable_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/v1.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.TopologyRoomPowerContext'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.Response'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: Read the room power distribution view with explicit missing-power markers
       tags:
       - topology
   /inventory/topology/roots:
@@ -1108,6 +1208,7 @@ paths:
       - description: Scene root type
         enum:
         - data_center
+        - room
         - pod
         in: query
         name: entity_type
@@ -1119,7 +1220,8 @@ paths:
         required: true
         type: string
       - default: 5
-        description: Maximum cabinets (data center) or member devices (POD)
+        description: Maximum rooms and aggregate cabinets (data center), cabinets
+          (room), or member devices (POD)
         in: query
         maximum: 10
         minimum: 1

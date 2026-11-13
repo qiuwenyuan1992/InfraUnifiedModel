@@ -19,6 +19,9 @@ type TopologyReadRepository interface {
 	Neighbors(context.Context, model.EntityIdentity, TopologyNeighborQuery) (*TopologyNeighborhood, error)
 	Roots(context.Context, string, model.EntityType, TopologyDirectoryQuery) (*TopologyDirectoryPage, error)
 	Children(context.Context, model.EntityIdentity, TopologyDirectoryQuery) (*TopologyDirectoryPage, error)
+	SceneNetwork(context.Context, []TopologyNode, int) (*TopologyNeighborhood, error)
+	SceneNetworkPeers(context.Context, []TopologyNode, int) (*TopologyNeighborhood, error)
+	SceneRoomPower(context.Context, []TopologyNode, int) (*TopologyNeighborhood, error)
 }
 
 type TopologyDirectoryQuery struct {

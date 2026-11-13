@@ -54,7 +54,8 @@ func TestTopologyDirectoryChildrenFixedMatrixDistinctBeforeLimit(t *testing.T) {
 		parent, child model.EntityType
 		kind          model.RelationKind
 	}{
-		{model.EntityDataCenter, model.EntityCabinet, model.RelationLocatedIn},
+		{model.EntityDataCenter, model.EntityRoom, model.RelationLocatedIn},
+		{model.EntityRoom, model.EntityCabinet, model.RelationLocatedIn},
 		{model.EntityCabinet, model.EntityDevice, model.RelationLocatedIn},
 		{model.EntityPod, model.EntityDevice, model.RelationMemberOf},
 	} {

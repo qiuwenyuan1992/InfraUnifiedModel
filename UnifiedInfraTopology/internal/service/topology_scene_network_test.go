@@ -10,13 +10,39 @@ import (
 	"testing"
 )
 
-type sceneBatchReadStub struct {
-	*sceneReadStub
-	network func(context.Context, []repository.TopologyNode, int) (*repository.TopologyNeighborhood, error)
+func TestScenePublishesOnlyVerifiedComponentOwners(t *testing.T) {
+	device := contextNode(model.EntityDevice, "device")
+	port := contextNode(model.EntityInterface, "port")
+	edges := scenePage(device, []repository.TopologyNode{port}, model.EdgeComposition, model.RelationOwnsInterface, false).Edges
+	for _, status := range []string{"", "truncated", "ambiguous", "missing"} {
+		result := &TopologyScene{}
+		if status != "" {
+			result.Unassigned = []SceneUnassigned{{Node: compactSceneNode(port), Status: status}}
+		}
+		walk := &sceneWalk{nodes: map[string]repository.TopologyNode{device.ID: device, port.ID: port}, edges: map[string]repository.TopologyEdge{edges[0].ID: edges[0]}, warnings: map[string]bool{}, result: result}
+		walk.finish()
+		if status == "" {
+			require.Equal(t, []SceneComponentOwner{{ParentID: device.ID, ChildIDs: []string{port.ID}}}, result.ComponentOwners)
+		} else {
+			require.Empty(t, result.ComponentOwners)
+		}
+	}
 }
 
-func (s *sceneBatchReadStub) SceneNetwork(ctx context.Context, seeds []repository.TopologyNode, limit int) (*repository.TopologyNeighborhood, error) {
-	return s.network(ctx, seeds, limit)
+func TestSceneComponentOwnerDoesNotChooseAmongConflictingParents(t *testing.T) {
+	first := contextNode(model.EntityDevice, "first")
+	second := contextNode(model.EntityDevice, "second")
+	port := contextNode(model.EntityInterface, "port")
+	edges := map[string]repository.TopologyEdge{}
+	for _, parent := range []repository.TopologyNode{first, second} {
+		edge := scenePage(parent, []repository.TopologyNode{port}, model.EdgeComposition, model.RelationOwnsInterface, false).Edges[0]
+		edges[edge.ID] = edge
+	}
+	result := &TopologyScene{}
+	walk := &sceneWalk{nodes: map[string]repository.TopologyNode{first.ID: first, second.ID: second, port.ID: port}, edges: edges, warnings: map[string]bool{}, result: result}
+	walk.finish()
+	require.Empty(t, result.ComponentOwners)
+	require.Len(t, result.Edges, 2, "歧义边仍保留，不任意选择父节点")
 }
 
 func TestSceneBatchNetworkTruncationAndValidation(t *testing.T) {
@@ -47,11 +73,11 @@ func TestSceneBatchNetworkTruncationAndValidation(t *testing.T) {
 					page.Edges = append(page.Edges, page.Edges[0])
 				}
 			}
-			stub := &sceneBatchReadStub{network: func(context.Context, []repository.TopologyNode, int) (*repository.TopologyNeighborhood, error) {
+			stub := &sceneReadStub{network: func(context.Context, []repository.TopologyNode, int) (*repository.TopologyNeighborhood, error) {
 				return page, readErr
 			}}
-			walk := &sceneWalk{ctx: context.Background(), source: device.SourceID, result: &TopologyScene{}, nodes: map[string]repository.TopologyNode{device.ID: device}, edges: map[string]repository.TopologyEdge{}, warnings: map[string]bool{}}
-			err := walk.networkBatch(stub, []repository.TopologyNode{device})
+			walk := &sceneWalk{service: &topologyBrowseService{repo: stub}, ctx: context.Background(), source: device.SourceID, result: &TopologyScene{}, nodes: map[string]repository.TopologyNode{device.ID: device}, edges: map[string]repository.TopologyEdge{}, warnings: map[string]bool{}}
+			err := walk.network([]repository.TopologyNode{device})
 			if name == "truncated" {
 				require.NoError(t, err)
 				require.True(t, walk.result.Truncated)
@@ -68,13 +94,28 @@ func TestSceneBatchNetworkTruncationAndValidation(t *testing.T) {
 	}
 }
 
+func TestSceneBatchNetworkDeduplicatesVisibleSeeds(t *testing.T) {
+	device := contextNode(model.EntityDevice, "switch")
+	hidden := contextNode(model.EntityDevice, "not-loaded")
+	calls := 0
+	stub := &sceneReadStub{network: func(_ context.Context, seeds []repository.TopologyNode, limit int) (*repository.TopologyNeighborhood, error) {
+		calls++
+		require.Equal(t, []repository.TopologyNode{device}, seeds)
+		require.Equal(t, topologySceneEdges, limit)
+		return &repository.TopologyNeighborhood{Nodes: seeds, Edges: []repository.TopologyEdge{}}, nil
+	}}
+	walk := &sceneWalk{service: &topologyBrowseService{repo: stub}, ctx: context.Background(), source: device.SourceID, result: &TopologyScene{}, nodes: map[string]repository.TopologyNode{device.ID: device}, edges: map[string]repository.TopologyEdge{}, warnings: map[string]bool{}}
+	require.NoError(t, walk.network([]repository.TopologyNode{device, device, hidden}))
+	require.Equal(t, 1, calls)
+}
+
 func TestSceneUsesBatchNetworkAndKeepsAmbiguousOwners(t *testing.T) {
 	root := contextNode(model.EntityPod, "pod")
 	device := contextNode(model.EntityDevice, "switch")
 	port := contextNode(model.EntityInterface, "port")
 	other := contextNode(model.EntityDevice, "other")
 	calls := 0
-	stub := &sceneBatchReadStub{sceneReadStub: &sceneReadStub{root: root}}
+	stub := &sceneReadStub{root: root}
 	stub.children = func(model.EntityIdentity, repository.TopologyDirectoryQuery) (*repository.TopologyDirectoryPage, error) {
 		return &repository.TopologyDirectoryPage{Items: []repository.TopologyNode{device}}, nil
 	}
@@ -121,27 +162,35 @@ func TestSceneReadsSwitchPortsAndIncomingPhysicalLink(t *testing.T) {
 		return &repository.TopologyDirectoryPage{Items: []repository.TopologyNode{sw}}, nil
 	}}
 	stub.neighbors = func(i model.EntityIdentity, q repository.TopologyNeighborQuery) (*repository.TopologyNeighborhood, error) {
+		require.Equal(t, model.EdgeSpatial, q.EdgeType)
 		n := contextNode(i.EntityType, i.StableID)
-		if i.EntityType == model.EntityDevice && q.RelationKind == model.RelationOwnsInterface {
-			return scenePage(n, []repository.TopologyNode{local}, model.EdgeComposition, model.RelationOwnsInterface, false), nil
-		}
-		if i.EntityType == model.EntityInterface && q.RelationKind == model.RelationLinksTo {
-			require.Equal(t, "both", q.Direction)
-			return scenePage(n, []repository.TopologyNode{remote}, model.EdgeNetwork, model.RelationLinksTo, true), nil
-		}
-		if i.EntityType == model.EntityInterface && q.RelationKind == model.RelationOwnsInterface {
-			parent := owner
-			if i.StableID == "local" {
-				parent = sw
-			}
-			return scenePage(n, []repository.TopologyNode{parent}, model.EdgeComposition, model.RelationOwnsInterface, true), nil
-		}
 		return scenePage(n, nil, q.EdgeType, q.RelationKind, false), nil
+	}
+	calls := 0
+	stub.network = func(_ context.Context, seeds []repository.TopologyNode, limit int) (*repository.TopologyNeighborhood, error) {
+		calls++
+		require.Equal(t, []repository.TopologyNode{sw}, seeds)
+		require.Equal(t, topologySceneEdges, limit)
+		page := scenePage(sw, []repository.TopologyNode{local}, model.EdgeComposition, model.RelationOwnsInterface, false)
+		page.Root = nil
+		page.Nodes = []repository.TopologyNode{sw, local, remote, owner}
+		page.Edges = append(page.Edges, scenePage(local, []repository.TopologyNode{remote}, model.EdgeNetwork, model.RelationLinksTo, true).Edges...)
+		page.Edges = append(page.Edges, scenePage(remote, []repository.TopologyNode{owner}, model.EdgeComposition, model.RelationOwnsInterface, true).Edges...)
+		return page, nil
 	}
 	conf := topologyConf()
 	conf.Set("inventory.cursor_key", strings.Repeat("k", 32))
 	scene, err := NewTopologyBrowseService(stub, conf).Scene(context.Background(), "reader", sceneIdentity(root), repository.TopologyDirectoryQuery{})
 	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+	require.ElementsMatch(t, []SceneEdge{
+		compactSceneEdge(scenePage(sw, []repository.TopologyNode{local}, model.EdgeComposition, model.RelationOwnsInterface, false).Edges[0]),
+		compactSceneEdge(scenePage(local, []repository.TopologyNode{remote}, model.EdgeNetwork, model.RelationLinksTo, true).Edges[0]),
+		compactSceneEdge(scenePage(remote, []repository.TopologyNode{owner}, model.EdgeComposition, model.RelationOwnsInterface, true).Edges[0]),
+	}, scene.Edges)
+	for _, entry := range scene.Unassigned {
+		require.Equal(t, sw.ID, entry.Node.ID, "both interface owners are known")
+	}
 	links := 0
 	for _, e := range scene.Edges {
 		if e.RelationKind == "links_to" {

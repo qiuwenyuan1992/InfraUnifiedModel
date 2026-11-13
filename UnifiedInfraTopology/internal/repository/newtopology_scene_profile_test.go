@@ -74,7 +74,7 @@ func TestLivePOD248SceneNetworkReadOnlyProfile(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, children.Items, 5)
 	began := time.Now()
-	page, err := repo.(TopologySceneNetworkReader).SceneNetwork(ctx, children.Items, 600)
+	page, err := repo.SceneNetwork(ctx, children.Items, 600)
 	duration := time.Since(began)
 	require.NoError(t, err)
 	t.Logf("scene_network duration=%s seeds=%d nodes=%d edges=%d truncated=%t", duration, len(children.Items), len(page.Nodes), len(page.Edges), page.Truncated)

@@ -69,6 +69,21 @@ func TestLiveCompactSceneAPIReadOnly(t *testing.T) {
 		require.NoError(t, json.Unmarshal(raw, &scene))
 		require.Equal(t, roots.Items[0].ID, scene.Root.ID)
 		require.NotContains(t, string(raw), "properties")
+		require.Contains(t, string(raw), "\"component_owners\"")
+		present := map[string]service.SceneNode{}
+		for _, node := range scene.Nodes {
+			present[node.ID] = node
+		}
+		for _, group := range scene.ComponentOwners {
+			require.Equal(t, "device", present[group.ParentID].EntityType)
+			for _, id := range group.ChildIDs {
+				require.Contains(t, present, id)
+				require.Contains(t, []string{"interface", "gpu"}, present[id].EntityType)
+				for _, unresolved := range scene.Unassigned {
+					require.NotEqual(t, id, unresolved.Node.ID)
+				}
+			}
+		}
 		require.LessOrEqual(t, len(scene.Nodes), 400)
 		require.LessOrEqual(t, len(scene.Edges), 600)
 		t.Logf("scene=%s cabinets=%d nodes=%d edges=%d levels=%d unassigned=%d truncated=%v duration=%s", kind, len(scene.Cabinets), len(scene.Nodes), len(scene.Edges), len(scene.NetworkLevels), len(scene.Unassigned), scene.Truncated, time.Since(began))

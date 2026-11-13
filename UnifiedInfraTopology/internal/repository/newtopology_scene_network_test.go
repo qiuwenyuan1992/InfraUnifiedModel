@@ -13,6 +13,79 @@ import (
 	"github.com/vesoft-inc/nebula-go/v3/nebula"
 )
 
+// 仅互联模式（网络设备设备上下文）：首阶段只查 owns_interface，跳过 server_uplink。
+func TestSceneNetworkPeersSkipsServerUplink(t *testing.T) {
+	device := model.EntityIdentity{SourceID: "s", EntityType: model.EntityDevice, StableID: "d"}
+	port := model.EntityIdentity{SourceID: "s", EntityType: model.EntityInterface, StableID: "p"}
+	own := model.RelationIdentity{SourceID: "s", EdgeType: model.EdgeComposition, Kind: model.RelationOwnsInterface, From: device, To: port}
+	columns := []string{"src_vid", "dst_vid", "edge_rank", "props"}
+	fake := &topologyGraphFake{results: []*nebulago.ResultSet{
+		readResult(t, columns, readEdge(t, own, nil)),
+		readResult(t, []string{"node"}, []*nebula.Value{readPeer(t, port)}),
+		readResult(t, columns), readResult(t, columns),
+		readResult(t, columns),
+	}}
+	page, err := (&topologyReadRepository{client: fake}).SceneNetworkPeers(context.Background(), []TopologyNode{sceneNetworkSeed(t, device)}, 600)
+	require.NoError(t, err)
+	require.Nil(t, page.Root)
+	require.Len(t, page.Edges, 1)
+	id, _ := own.ID()
+	require.Equal(t, id, page.Edges[0].ID)
+	for _, call := range fake.calls {
+		require.NotEqual(t, string(model.RelationServerUplink), call.params["relation_kind"], "仅互联模式不得查询服务器上联")
+	}
+}
+
+// 房间供电：从房间批量遍历主供电链（机柜→列头柜→UPS组→变压器）与UPS成员；默认链不含备用关系。
+func TestSceneRoomPowerWalksMainChainAndUpsMembers(t *testing.T) {
+	room := model.EntityIdentity{SourceID: "s", EntityType: model.EntityRoom, StableID: "r"}
+	fed := model.EntityIdentity{SourceID: "s", EntityType: model.EntityCabinet, StableID: "c1"}
+	unfed := model.EntityIdentity{SourceID: "s", EntityType: model.EntityCabinet, StableID: "c2"}
+	rpp := model.EntityIdentity{SourceID: "s", EntityType: model.EntityRPP, StableID: "6204"}
+	group := model.EntityIdentity{SourceID: "s", EntityType: model.EntityUPSGroup, StableID: "7"}
+	transformer := model.EntityIdentity{SourceID: "s", EntityType: model.EntityTransformer, StableID: "8"}
+	ups := model.EntityIdentity{SourceID: "s", EntityType: model.EntityUPS, StableID: "9"}
+	fedIn := model.RelationIdentity{SourceID: "s", EdgeType: model.EdgeSpatial, Kind: model.RelationLocatedIn, From: fed, To: room}
+	unfedIn := model.RelationIdentity{SourceID: "s", EdgeType: model.EdgeSpatial, Kind: model.RelationLocatedIn, From: unfed, To: room}
+	rppIn := model.RelationIdentity{SourceID: "s", EdgeType: model.EdgeSpatial, Kind: model.RelationLocatedIn, From: rpp, To: room}
+	feed := model.RelationIdentity{SourceID: "s", EdgeType: model.EdgePower, Kind: model.RelationPowerUpstream, From: fed, To: rpp, Discriminator: "A"}
+	rppUp := model.RelationIdentity{SourceID: "s", EdgeType: model.EdgePower, Kind: model.RelationPowerUpstream, From: rpp, To: group}
+	groupUp := model.RelationIdentity{SourceID: "s", EdgeType: model.EdgePower, Kind: model.RelationPowerUpstream, From: group, To: transformer}
+	member := model.RelationIdentity{SourceID: "s", EdgeType: model.EdgePower, Kind: model.RelationMemberOf, From: ups, To: group}
+	columns := []string{"src_vid", "dst_vid", "edge_rank", "props"}
+	fake := &topologyGraphFake{results: []*nebulago.ResultSet{
+		readResult(t, columns, readEdge(t, fedIn, nil), readEdge(t, unfedIn, nil)),
+		readResult(t, columns, readEdge(t, rppIn, nil)),
+		readResult(t, []string{"node"}, []*nebula.Value{readPeer(t, fed)}, []*nebula.Value{readPeer(t, unfed)}, []*nebula.Value{readPeer(t, rpp)}),
+		readResult(t, columns, readEdge(t, feed, nil)),
+		readResult(t, columns, readEdge(t, rppUp, nil)),
+		readResult(t, []string{"node"}, []*nebula.Value{readPeer(t, group)}),
+		readResult(t, columns, readEdge(t, groupUp, nil)),
+		readResult(t, []string{"node"}, []*nebula.Value{readPeer(t, transformer)}),
+		readResult(t, columns, readEdge(t, member, nil)),
+		readResult(t, []string{"node"}, []*nebula.Value{readPeer(t, ups)}),
+	}}
+	page, err := (&topologyReadRepository{client: fake}).SceneRoomPower(context.Background(), []TopologyNode{sceneNetworkSeed(t, room)}, 600)
+	require.NoError(t, err)
+	require.Nil(t, page.Root)
+	require.Len(t, page.Nodes, 7)
+	require.Len(t, page.Edges, 7)
+	for _, edge := range page.Edges {
+		require.NotEqual(t, string(model.RelationHasStandby), edge.RelationKind)
+	}
+	for _, call := range fake.calls {
+		require.NotEqual(t, string(model.RelationHasStandby), call.params["relation_kind"], "默认供电链不得查询备用关系")
+	}
+	fedVID, _ := fed.VID()
+	unfedVID, _ := unfed.VID()
+	// 供电上游阶段必须以房间内机柜为种子批量查询。
+	require.ElementsMatch(t, []interface{}{fedVID, unfedVID}, fake.calls[3].params["seed_vids"])
+	// 列头柜在首阶段以房间为种子收取，即使机柜→列头柜边缺失也保住主链起点。
+	roomVID, _ := room.VID()
+	require.Equal(t, []interface{}{roomVID}, fake.calls[1].params["seed_vids"])
+	require.Equal(t, string(model.EntityRPP), fake.calls[1].params["peer_entity_type"])
+}
+
 func TestSceneNetworkPreservesStoredServerUplinkAndDates(t *testing.T) {
 	device := model.EntityIdentity{SourceID: "s", EntityType: model.EntityDevice, StableID: "d"}
 	port := model.EntityIdentity{SourceID: "s", EntityType: model.EntityInterface, StableID: "p"}
@@ -68,10 +141,7 @@ func TestSceneNetworkBatchesHundredDevicesPreservesIncomingAndParallelEdges(t *t
 		identity.StableID = fmt.Sprintf("d%d", i)
 		seeds = append(seeds, sceneNetworkSeed(t, identity))
 	}
-	reader, ok := any(&topologyReadRepository{client: fake}).(interface {
-		SceneNetwork(context.Context, []TopologyNode, int) (*TopologyNeighborhood, error)
-	})
-	require.True(t, ok, "production repository must offer a batched scene network reader")
+	var reader TopologyReadRepository = &topologyReadRepository{client: fake}
 	page, err := reader.SceneNetwork(context.Background(), seeds, 600)
 	require.NoError(t, err)
 	require.Nil(t, page.Root)
@@ -209,10 +279,7 @@ func TestSceneNetworkGlobalLimitStopsExpansion(t *testing.T) {
 		readResult(t, []string{"src_vid", "dst_vid", "edge_rank", "props"}, readEdge(t, own, nil), readEdge(t, second, nil)),
 		readResult(t, []string{"node"}, []*nebula.Value{readPeer(t, local)}),
 	}}
-	reader, ok := any(&topologyReadRepository{client: fake}).(interface {
-		SceneNetwork(context.Context, []TopologyNode, int) (*TopologyNeighborhood, error)
-	})
-	require.True(t, ok)
+	var reader TopologyReadRepository = &topologyReadRepository{client: fake}
 	page, err := reader.SceneNetwork(context.Background(), []TopologyNode{sceneNetworkSeed(t, device)}, 1)
 	require.NoError(t, err)
 	require.True(t, page.Truncated)

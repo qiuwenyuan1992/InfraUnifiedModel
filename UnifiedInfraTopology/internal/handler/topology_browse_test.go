@@ -49,6 +49,12 @@ func (s *topologyBrowseStub) DeviceContext(_ context.Context, user string, i mod
 	s.identity = i
 	return &service.TopologyDeviceContext{Root: &repository.TopologyNode{ID: "device"}, Nodes: []repository.TopologyNode{}, Edges: []repository.TopologyEdge{}, Warnings: []string{"missing_cabinet"}, Limit: 200}, s.err
 }
+func (s *topologyBrowseStub) RoomPowerContext(_ context.Context, user string, i model.EntityIdentity) (*service.TopologyRoomPowerContext, error) {
+	s.calls++
+	s.user = user
+	s.identity = i
+	return &service.TopologyRoomPowerContext{Root: &repository.TopologyNode{ID: "room"}, Nodes: []repository.TopologyNode{}, Edges: []repository.TopologyEdge{}, PowerMissing: []string{"c-unfed"}, Limit: 600}, s.err
+}
 
 func (s *topologyBrowseStub) Node(_ context.Context, user string, i model.EntityIdentity) (*repository.TopologyNode, error) {
 	s.calls++
@@ -73,6 +79,7 @@ func topologyRequest(t *testing.T, path string, stub *topologyBrowseStub) *httpt
 	g.GET("/roots", h.Roots)
 	g.GET("/children", h.Children)
 	g.GET("/device-context", h.DeviceContext)
+	g.GET("/room-power", h.RoomPower)
 	g.GET("/scene", h.Scene)
 	w := httptest.NewRecorder()
 	g.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
@@ -81,7 +88,7 @@ func topologyRequest(t *testing.T, path string, stub *topologyBrowseStub) *httpt
 
 func TestTopologyDirectoryAndContextHandler(t *testing.T) {
 	source := "source_id=" + strings.Repeat("a", 32)
-	for _, path := range []string{"/roots?" + source + "&entity_type=pod", "/children?" + source + "&entity_type=cabinet&stable_id=cab&limit=100&after=opaque", "/device-context?" + source + "&stable_id=server"} {
+	for _, path := range []string{"/roots?" + source + "&entity_type=pod", "/children?" + source + "&entity_type=cabinet&stable_id=cab&limit=100&after=opaque", "/device-context?" + source + "&stable_id=server", "/room-power?" + source + "&stable_id=room-uuid"} {
 		s := &topologyBrowseStub{}
 		w := topologyRequest(t, path, s)
 		require.Equal(t, 200, w.Code)
@@ -99,6 +106,10 @@ func TestTopologyDirectoryAndContextHandler(t *testing.T) {
 			require.Equal(t, model.EntityDevice, s.identity.EntityType)
 			require.Contains(t, w.Body.String(), `"warnings":["missing_cabinet"]`)
 		}
+		if strings.HasPrefix(path, "/room-power") {
+			require.Equal(t, model.EntityRoom, s.identity.EntityType)
+			require.Contains(t, w.Body.String(), `"power_missing":["c-unfed"]`)
+		}
 	}
 	for _, path := range []string{"/roots?" + source + "&entity_type=device", "/roots?" + source + "&entity_type=pod&limit=0", "/roots?" + source + "&entity_type=pod&limit=101", "/roots?" + source + "&entity_type=pod&after=", "/children?" + source + "&entity_type=gpu&stable_id=x", "/children?" + source + "&entity_type=pod&stable_id=x&after=" + strings.Repeat("x", 4097), "/device-context?" + source + "&stable_id=x&entity_type=device", "/device-context?" + source + "&stable_id=x&limit=1", "/device-context?" + source} {
 		s := &topologyBrowseStub{}
@@ -106,6 +117,21 @@ func TestTopologyDirectoryAndContextHandler(t *testing.T) {
 		require.Equal(t, 400, w.Code, path)
 		require.Zero(t, s.calls)
 	}
+}
+
+func TestTopologyRoomHandlerUsesStableUUIDAndIsNotRoot(t *testing.T) {
+	args := "source_id=" + strings.Repeat("a", 32) + "&entity_type=room&stable_id=room-uuid"
+	for _, endpoint := range []string{"/node", "/neighbors", "/children", "/scene"} {
+		stub := &topologyBrowseStub{}
+		response := topologyRequest(t, endpoint+"?"+args, stub)
+		require.Equal(t, 200, response.Code, endpoint)
+		require.Equal(t, model.EntityRoom, stub.identity.EntityType)
+		require.Equal(t, "room-uuid", stub.identity.StableID)
+	}
+	stub := &topologyBrowseStub{}
+	response := topologyRequest(t, "/roots?source_id="+strings.Repeat("a", 32)+"&entity_type=room", stub)
+	require.Equal(t, 400, response.Code)
+	require.Zero(t, stub.calls)
 }
 
 func TestTopologySceneHandlerContract(t *testing.T) {
@@ -119,8 +145,8 @@ func TestTopologySceneHandlerContract(t *testing.T) {
 		Data map[string]json.RawMessage `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	require.Len(t, body.Data, 9)
-	for _, key := range []string{"root", "cabinets", "unassigned", "network_levels", "nodes", "edges", "next_after", "truncated", "warnings"} {
+	require.Len(t, body.Data, 10)
+	for _, key := range []string{"root", "cabinets", "unassigned", "network_levels", "component_owners", "nodes", "edges", "next_after", "truncated", "warnings"} {
 		require.Contains(t, body.Data, key)
 	}
 	for _, extra := range []string{"&limit=11", "&limit=0", "&limit=no", "&after=", "&limit=5&limit=6", "&properties=1"} {

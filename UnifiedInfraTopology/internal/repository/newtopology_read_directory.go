@@ -33,6 +33,8 @@ func (r *topologyReadRepository) Children(ctx context.Context, identity model.En
 	var kind model.RelationKind
 	switch identity.EntityType {
 	case model.EntityDataCenter:
+		childType, kind = model.EntityRoom, model.RelationLocatedIn
+	case model.EntityRoom:
 		childType, kind = model.EntityCabinet, model.RelationLocatedIn
 	case model.EntityCabinet:
 		childType, kind = model.EntityDevice, model.RelationLocatedIn

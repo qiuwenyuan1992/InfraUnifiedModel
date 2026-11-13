@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -21,6 +20,7 @@ type TopologyBrowseService interface {
 	Roots(context.Context, string, string, model.EntityType, repository.TopologyDirectoryQuery) (*repository.TopologyDirectoryPage, error)
 	Children(context.Context, string, model.EntityIdentity, repository.TopologyDirectoryQuery) (*repository.TopologyDirectoryPage, error)
 	DeviceContext(context.Context, string, model.EntityIdentity) (*TopologyDeviceContext, error)
+	RoomPowerContext(context.Context, string, model.EntityIdentity) (*TopologyRoomPowerContext, error)
 	Scene(context.Context, string, model.EntityIdentity, repository.TopologyDirectoryQuery) (*TopologyScene, error)
 }
 
@@ -35,10 +35,7 @@ func NewTopologyBrowseService(repo repository.TopologyReadRepository, conf *vipe
 
 // ValidateTopologyIdentity 保留调用方提供的稳定身份，不从名称或属性推断 ID。
 func ValidateTopologyIdentity(identity model.EntityIdentity) error {
-	if len(identity.SourceID) != 32 || strings.ToLower(identity.SourceID) != identity.SourceID || len(identity.StableID) > 256 {
-		return ErrInventoryInvalid
-	}
-	if _, err := hex.DecodeString(identity.SourceID); err != nil {
+	if !inventoryID(identity.SourceID) || len(identity.StableID) > 256 {
 		return ErrInventoryInvalid
 	}
 	if _, err := identity.CanonicalJSON(); err != nil {
@@ -185,7 +182,7 @@ func (s *topologyBrowseService) Children(ctx context.Context, user string, ident
 	if err := ValidateTopologyIdentity(identity); err != nil {
 		return nil, err
 	}
-	if identity.EntityType != model.EntityDataCenter && identity.EntityType != model.EntityPod && identity.EntityType != model.EntityCabinet {
+	if identity.EntityType != model.EntityDataCenter && identity.EntityType != model.EntityRoom && identity.EntityType != model.EntityPod && identity.EntityType != model.EntityCabinet {
 		return nil, ErrInventoryInvalid
 	}
 	return s.directory(ctx, user, identity, query)

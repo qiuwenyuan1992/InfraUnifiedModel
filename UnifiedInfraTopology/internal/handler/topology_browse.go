@@ -19,6 +19,7 @@ type TopologyBrowseHandler interface {
 	Roots(*gin.Context)
 	Children(*gin.Context)
 	DeviceContext(*gin.Context)
+	RoomPower(*gin.Context)
 	Scene(*gin.Context)
 }
 type topologyBrowseHandler struct {
@@ -49,7 +50,7 @@ func topologyError(c *gin.Context, err error) {
 // @Security Bearer
 // @Produce json
 // @Param source_id query string true "32 lowercase hexadecimal source ID"
-// @Param entity_type query string true "Entity type" Enums(device,interface,gpu,pod,cabinet,data_center,rpp,ups_group,ups,transformer)
+// @Param entity_type query string true "Entity type" Enums(device,interface,gpu,pod,cabinet,room,data_center,rpp,ups_group,ups,transformer)
 // @Param stable_id query string true "Stable ID, up to 256 bytes; power entities require canonical positive int64 inst_id"
 // @Success 200 {object} v1.Response{data=repository.TopologyNode}
 // @Failure 400,401,403,404,500,503,504 {object} v1.Response
@@ -79,7 +80,7 @@ func (h *topologyBrowseHandler) Node(c *gin.Context) {
 // @Security Bearer
 // @Produce json
 // @Param source_id query string true "32 lowercase hexadecimal source ID"
-// @Param entity_type query string true "Entity type" Enums(device,interface,gpu,pod,cabinet,data_center,rpp,ups_group,ups,transformer)
+// @Param entity_type query string true "Entity type" Enums(device,interface,gpu,pod,cabinet,room,data_center,rpp,ups_group,ups,transformer)
 // @Param stable_id query string true "Stable ID, up to 256 bytes; power entities require canonical positive int64 inst_id"
 // @Param limit query int false "Maximum returned edges" minimum(1) maximum(200) default(100)
 // @Param direction query string false "Stored edge direction" Enums(in,out,both) default(both)
@@ -174,7 +175,7 @@ func (h *topologyBrowseHandler) Roots(c *gin.Context) {
 // @Security Bearer
 // @Produce json
 // @Param source_id query string true "32 lowercase hexadecimal source ID"
-// @Param entity_type query string true "Parent directory type" Enums(data_center,pod,cabinet)
+// @Param entity_type query string true "Parent directory type: data_center to room, room to cabinet, cabinet to device; POD members unchanged" Enums(data_center,room,pod,cabinet)
 // @Param stable_id query string true "Exact stable parent ID, up to 256 bytes"
 // @Param limit query int false "Maximum returned nodes" minimum(1) maximum(100) default(50)
 // @Param after query string false "Opaque signed directory cursor, up to 4096 bytes"
@@ -192,7 +193,7 @@ func (h *topologyBrowseHandler) Children(c *gin.Context) {
 		topologyError(c, err)
 		return
 	}
-	if identity.EntityType != model.EntityDataCenter && identity.EntityType != model.EntityPod && identity.EntityType != model.EntityCabinet {
+	if identity.EntityType != model.EntityDataCenter && identity.EntityType != model.EntityRoom && identity.EntityType != model.EntityPod && identity.EntityType != model.EntityCabinet {
 		topologyError(c, service.ErrInventoryInvalid)
 		return
 	}
@@ -238,15 +239,44 @@ func (h *topologyBrowseHandler) DeviceContext(c *gin.Context) {
 	inventorySuccess(c, http.StatusOK, result)
 }
 
+// RoomPower godoc
+// @Summary Read the room power distribution view with explicit missing-power markers
+// @Tags topology
+// @Security Bearer
+// @Produce json
+// @Param source_id query string true "32 lowercase hexadecimal source ID"
+// @Param stable_id query string true "Exact room stable ID, up to 256 bytes"
+// @Success 200 {object} v1.Response{data=service.TopologyRoomPowerContext}
+// @Failure 400,401,403,404,500,503,504 {object} v1.Response
+// @Router /inventory/topology/room-power [get]
+func (h *topologyBrowseHandler) RoomPower(c *gin.Context) {
+	query, err := inventoryQuery(c, "source_id", "stable_id")
+	if err != nil {
+		topologyError(c, err)
+		return
+	}
+	identity := model.EntityIdentity{SourceID: query.Get("source_id"), EntityType: model.EntityRoom, StableID: query.Get("stable_id")}
+	if err := service.ValidateTopologyIdentity(identity); err != nil {
+		topologyError(c, err)
+		return
+	}
+	result, err := h.service.RoomPowerContext(c.Request.Context(), GetUserIdFromCtx(c), identity)
+	if err != nil {
+		topologyError(c, err)
+		return
+	}
+	inventorySuccess(c, http.StatusOK, result)
+}
+
 // Scene godoc
 // @Summary Read a compact, bounded spatial scene using only verified topology relations
 // @Tags topology
 // @Security Bearer
 // @Produce json
 // @Param source_id query string true "32 lowercase hexadecimal source ID"
-// @Param entity_type query string true "Scene root type" Enums(data_center,pod)
+// @Param entity_type query string true "Scene root type" Enums(data_center,room,pod)
 // @Param stable_id query string true "Exact stable root ID, up to 256 bytes"
-// @Param limit query int false "Maximum cabinets (data center) or member devices (POD)" minimum(1) maximum(10) default(5)
+// @Param limit query int false "Maximum rooms and aggregate cabinets (data center), cabinets (room), or member devices (POD)" minimum(1) maximum(10) default(5)
 // @Param after query string false "Opaque signed root child cursor, up to 4096 bytes"
 // @Success 200 {object} v1.Response{data=service.TopologyScene}
 // @Failure 400,401,403,404,500,503,504 {object} v1.Response
@@ -258,7 +288,7 @@ func (h *topologyBrowseHandler) Scene(c *gin.Context) {
 		return
 	}
 	identity, err := topologyIdentity(query)
-	if err != nil || (identity.EntityType != model.EntityDataCenter && identity.EntityType != model.EntityPod) {
+	if err != nil || (identity.EntityType != model.EntityDataCenter && identity.EntityType != model.EntityRoom && identity.EntityType != model.EntityPod) {
 		topologyError(c, service.ErrInventoryInvalid)
 		return
 	}

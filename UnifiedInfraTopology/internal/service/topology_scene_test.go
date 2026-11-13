@@ -19,6 +19,7 @@ type sceneReadStub struct {
 	root      repository.TopologyNode
 	children  func(model.EntityIdentity, repository.TopologyDirectoryQuery) (*repository.TopologyDirectoryPage, error)
 	neighbors func(model.EntityIdentity, repository.TopologyNeighborQuery) (*repository.TopologyNeighborhood, error)
+	network   func(context.Context, []repository.TopologyNode, int) (*repository.TopologyNeighborhood, error)
 }
 
 func (r *sceneReadStub) Node(context.Context, model.EntityIdentity) (*repository.TopologyNode, error) {
@@ -29,6 +30,12 @@ func (r *sceneReadStub) Children(_ context.Context, i model.EntityIdentity, q re
 }
 func (r *sceneReadStub) Neighbors(_ context.Context, i model.EntityIdentity, q repository.TopologyNeighborQuery) (*repository.TopologyNeighborhood, error) {
 	return r.neighbors(i, q)
+}
+func (r *sceneReadStub) SceneNetwork(ctx context.Context, seeds []repository.TopologyNode, limit int) (*repository.TopologyNeighborhood, error) {
+	if r.network != nil {
+		return r.network(ctx, seeds, limit)
+	}
+	return &repository.TopologyNeighborhood{Nodes: []repository.TopologyNode{}, Edges: []repository.TopologyEdge{}, Limit: limit}, nil
 }
 func sceneIdentity(n repository.TopologyNode) model.EntityIdentity {
 	return model.EntityIdentity{SourceID: n.SourceID, EntityType: model.EntityType(n.EntityType), StableID: n.StableID}
@@ -59,10 +66,7 @@ func TestScenePodMissingAmbiguousAndActualRoles(t *testing.T) {
 	}
 	r.neighbors = func(i model.EntityIdentity, q repository.TopologyNeighborQuery) (*repository.TopologyNeighborhood, error) {
 		n := contextNode(i.EntityType, i.StableID)
-		if q.EdgeType == model.EdgeNetwork || q.EdgeType == model.EdgeComposition {
-			require.Equal(t, "out", q.Direction)
-			return scenePage(n, nil, q.EdgeType, q.RelationKind, false), nil
-		}
+		require.Equal(t, model.EdgeSpatial, q.EdgeType)
 		require.Equal(t, model.RelationLocatedIn, q.RelationKind)
 		require.Equal(t, model.EntityCabinet, q.PeerEntityType)
 		peers := []repository.TopologyNode{}
@@ -128,9 +132,14 @@ func TestSceneRejectsCrossSourceAndWrongRoot(t *testing.T) {
 
 func TestSceneDataCenterActualEdgesAndCabinetPagination(t *testing.T) {
 	root, cabinet, device := contextNode(model.EntityDataCenter, "dc"), contextNode(model.EntityCabinet, "cab"), contextNode(model.EntityDevice, "server")
+	room := contextNode(model.EntityRoom, "room-uuid")
 	r := &sceneReadStub{root: root}
 	r.children = func(i model.EntityIdentity, q repository.TopologyDirectoryQuery) (*repository.TopologyDirectoryPage, error) {
 		if i.EntityType == model.EntityDataCenter {
+			require.Equal(t, 5, q.Limit)
+			return &repository.TopologyDirectoryPage{Items: []repository.TopologyNode{room}}, nil
+		}
+		if i.EntityType == model.EntityRoom {
 			require.Equal(t, 5, q.Limit)
 			return &repository.TopologyDirectoryPage{Items: []repository.TopologyNode{cabinet}}, nil
 		}
@@ -139,13 +148,15 @@ func TestSceneDataCenterActualEdgesAndCabinetPagination(t *testing.T) {
 	}
 	r.neighbors = func(i model.EntityIdentity, q repository.TopologyNeighborQuery) (*repository.TopologyNeighborhood, error) {
 		n := contextNode(i.EntityType, i.StableID)
-		if q.EdgeType == model.EdgeNetwork || q.EdgeType == model.EdgeComposition {
-			return scenePage(n, nil, q.EdgeType, q.RelationKind, false), nil
-		}
+		require.Equal(t, model.EdgeSpatial, q.EdgeType)
 		parent := cabinet
-		if i.EntityType == model.EntityCabinet {
+		if i.EntityType == model.EntityRoom {
 			parent = root
 			require.Equal(t, model.EntityDataCenter, q.PeerEntityType)
+		}
+		if i.EntityType == model.EntityCabinet {
+			parent = room
+			require.Equal(t, model.EntityRoom, q.PeerEntityType)
 		}
 		return scenePage(n, []repository.TopologyNode{parent}, q.EdgeType, q.RelationKind, false), nil
 	}
@@ -156,7 +167,12 @@ func TestSceneDataCenterActualEdgesAndCabinetPagination(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, p.Cabinets, 1)
 	require.Len(t, p.Cabinets[0].Devices, 1)
-	require.Len(t, p.Edges, 2)
+	require.Len(t, p.Edges, 3)
+	roomPresent := false
+	for _, n := range p.Nodes {
+		roomPresent = roomPresent || n.ID == room.ID
+	}
+	require.True(t, roomPresent)
 	require.Empty(t, p.NextAfter)
 	require.True(t, p.Truncated)
 	after, err := s.decodeDirectoryCursor(p.Cabinets[0].NextAfter, topologyDirectoryCursor{Version: 1, User: "reader", Source: root.SourceID, EntityType: model.EntityCabinet, Parent: cabinet.StableID})
@@ -173,36 +189,38 @@ func TestSceneNetworkRealPortsOwnersAndParallelEdges(t *testing.T) {
 	}}
 	r.neighbors = func(i model.EntityIdentity, q repository.TopologyNeighborQuery) (*repository.TopologyNeighborhood, error) {
 		n := contextNode(i.EntityType, i.StableID)
-		if q.EdgeType == model.EdgeSpatial {
-			return scenePage(n, nil, q.EdgeType, q.RelationKind, false), nil
-		}
-		if i.EntityType == model.EntityDevice {
-			if q.EdgeType == model.EdgeComposition {
-				return scenePage(n, nil, q.EdgeType, q.RelationKind, false), nil
-			}
-			p := scenePage(n, []repository.TopologyNode{port}, model.EdgeNetwork, model.RelationServerUplink, false)
-			extra := p.Edges[0]
-			extra.ID += "/parallel"
-			extra.Rank = "2"
-			extra.Properties = map[string]any{"plane": int64(2), "private": "not-sent"}
-			p.Edges = append(p.Edges, extra)
-			return p, nil
-		}
-		if q.EdgeType == model.EdgeNetwork {
-			return scenePage(n, []repository.TopologyNode{remote}, model.EdgeNetwork, model.RelationLinksTo, false), nil
-		}
-		require.Equal(t, model.RelationOwnsInterface, q.RelationKind)
-		require.Equal(t, "in", q.Direction)
-		if i.StableID == "remote" {
-			return scenePage(n, []repository.TopologyNode{owner}, model.EdgeComposition, model.RelationOwnsInterface, true), nil
-		}
-		return scenePage(n, nil, q.EdgeType, q.RelationKind, true), nil
+		require.Equal(t, model.EdgeSpatial, q.EdgeType)
+		return scenePage(n, nil, q.EdgeType, q.RelationKind, false), nil
+	}
+	calls := 0
+	r.network = func(_ context.Context, seeds []repository.TopologyNode, limit int) (*repository.TopologyNeighborhood, error) {
+		calls++
+		require.Equal(t, []repository.TopologyNode{device}, seeds)
+		require.Equal(t, topologySceneEdges, limit)
+		p := scenePage(device, []repository.TopologyNode{port}, model.EdgeNetwork, model.RelationServerUplink, false)
+		p.Root = nil
+		p.Nodes = []repository.TopologyNode{device, port, remote, owner}
+		extra := p.Edges[0]
+		extra.ID += "/parallel"
+		extra.Rank = "2"
+		extra.Properties = map[string]any{"plane": int64(2), "private": "not-sent"}
+		p.Edges = append(p.Edges, extra)
+		p.Edges = append(p.Edges, scenePage(port, []repository.TopologyNode{remote}, model.EdgeNetwork, model.RelationLinksTo, false).Edges...)
+		p.Edges = append(p.Edges, scenePage(remote, []repository.TopologyNode{owner}, model.EdgeComposition, model.RelationOwnsInterface, true).Edges...)
+		return p, nil
 	}
 	conf := topologyConf()
 	conf.Set("inventory.cursor_key", strings.Repeat("k", 32))
 	p, err := NewTopologyBrowseService(r, conf).Scene(context.Background(), "reader", sceneIdentity(root), repository.TopologyDirectoryQuery{})
 	require.NoError(t, err)
+	require.Equal(t, 1, calls)
 	require.Len(t, p.Edges, 4)
+	require.ElementsMatch(t, []SceneEdge{
+		compactSceneEdge(scenePage(device, []repository.TopologyNode{port}, model.EdgeNetwork, model.RelationServerUplink, false).Edges[0]),
+		{ID: device.ID + "/" + port.ID + "/parallel", SourceID: device.SourceID, EdgeType: string(model.EdgeNetwork), RelationKind: string(model.RelationServerUplink), From: device.ID, To: port.ID, Rank: "2", Plane: sceneInteger(int64(2))},
+		compactSceneEdge(scenePage(port, []repository.TopologyNode{remote}, model.EdgeNetwork, model.RelationLinksTo, false).Edges[0]),
+		compactSceneEdge(scenePage(remote, []repository.TopologyNode{owner}, model.EdgeComposition, model.RelationOwnsInterface, true).Edges[0]),
+	}, p.Edges)
 	require.Len(t, p.Nodes, 5)
 	require.Len(t, p.Unassigned, 2)
 	require.Equal(t, port.ID, p.Unassigned[1].Node.ID)
@@ -251,12 +269,12 @@ func TestSceneQueryBudgetAndDeadline(t *testing.T) {
 }
 
 func TestSceneMaximumTwoHundredDevicesAndBoundedSpatialConcurrency(t *testing.T) {
-	root := contextNode(model.EntityDataCenter, "dc")
+	root := contextNode(model.EntityRoom, "room-uuid")
 	var active, max atomic.Int32
 	r := &sceneReadStub{root: root}
 	r.children = func(i model.EntityIdentity, q repository.TopologyDirectoryQuery) (*repository.TopologyDirectoryPage, error) {
 		items := []repository.TopologyNode{}
-		if i.EntityType == model.EntityDataCenter {
+		if i.EntityType == model.EntityRoom {
 			require.Equal(t, 10, q.Limit)
 			for j := 0; j < 10; j++ {
 				items = append(items, contextNode(model.EntityCabinet, fmt.Sprint(j)))

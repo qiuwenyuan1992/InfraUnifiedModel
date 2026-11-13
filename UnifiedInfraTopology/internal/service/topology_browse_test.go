@@ -38,6 +38,15 @@ func (s *topologyReadStub) Neighbors(_ context.Context, i model.EntityIdentity, 
 	s.query = q
 	return &repository.TopologyNeighborhood{Limit: q.Limit}, s.err
 }
+func (s *topologyReadStub) SceneNetwork(context.Context, []repository.TopologyNode, int) (*repository.TopologyNeighborhood, error) {
+	panic("unexpected scene network read")
+}
+func (s *topologyReadStub) SceneNetworkPeers(context.Context, []repository.TopologyNode, int) (*repository.TopologyNeighborhood, error) {
+	panic("unexpected network peers read")
+}
+func (s *topologyReadStub) SceneRoomPower(context.Context, []repository.TopologyNode, int) (*repository.TopologyNeighborhood, error) {
+	panic("unexpected room power read")
+}
 func topologyIdentity() model.EntityIdentity {
 	return model.EntityIdentity{SourceID: strings.Repeat("a", 32), EntityType: model.EntityGPU, StableID: "gpu-SN"}
 }

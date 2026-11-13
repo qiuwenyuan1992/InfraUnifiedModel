@@ -586,11 +586,12 @@ const docTemplate = `{
                     {
                         "enum": [
                             "data_center",
+                            "room",
                             "pod",
                             "cabinet"
                         ],
                         "type": "string",
-                        "description": "Parent directory type",
+                        "description": "Parent directory type: data_center to room, room to cabinet, cabinet to device; POD members unchanged",
                         "name": "entity_type",
                         "in": "query",
                         "required": true
@@ -805,6 +806,7 @@ const docTemplate = `{
                             "gpu",
                             "pod",
                             "cabinet",
+                            "room",
                             "data_center",
                             "rpp",
                             "ups_group",
@@ -951,6 +953,7 @@ const docTemplate = `{
                             "gpu",
                             "pod",
                             "cabinet",
+                            "room",
                             "data_center",
                             "rpp",
                             "ups_group",
@@ -984,6 +987,100 @@ const docTemplate = `{
                                     "properties": {
                                         "data": {
                                             "$ref": "#/definitions/repository.TopologyNode"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/inventory/topology/room-power": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "topology"
+                ],
+                "summary": "Read the room power distribution view with explicit missing-power markers",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "32 lowercase hexadecimal source ID",
+                        "name": "source_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exact room stable ID, up to 256 bytes",
+                        "name": "stable_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/v1.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/service.TopologyRoomPowerContext"
                                         }
                                     }
                                 }
@@ -1173,6 +1270,7 @@ const docTemplate = `{
                     {
                         "enum": [
                             "data_center",
+                            "room",
                             "pod"
                         ],
                         "type": "string",
@@ -1193,7 +1291,7 @@ const docTemplate = `{
                         "minimum": 1,
                         "type": "integer",
                         "default": 5,
-                        "description": "Maximum cabinets (data center) or member devices (POD)",
+                        "description": "Maximum rooms and aggregate cabinets (data center), cabinets (room), or member devices (POD)",
                         "name": "limit",
                         "in": "query"
                     },
@@ -1523,6 +1621,20 @@ const docTemplate = `{
                 }
             }
         },
+        "service.SceneComponentOwner": {
+            "type": "object",
+            "properties": {
+                "child_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "parent_id": {
+                    "type": "string"
+                }
+            }
+        },
         "service.SceneEdge": {
             "type": "object",
             "properties": {
@@ -1649,6 +1761,44 @@ const docTemplate = `{
                 }
             }
         },
+        "service.TopologyRoomPowerContext": {
+            "type": "object",
+            "properties": {
+                "edges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/repository.TopologyEdge"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/repository.TopologyNode"
+                    }
+                },
+                "power_missing": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "root": {
+                    "$ref": "#/definitions/repository.TopologyNode"
+                },
+                "truncated": {
+                    "type": "boolean"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "service.TopologyScene": {
             "type": "object",
             "properties": {
@@ -1656,6 +1806,12 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/service.SceneCabinet"
+                    }
+                },
+                "component_owners": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SceneComponentOwner"
                     }
                 },
                 "edges": {

@@ -13,10 +13,43 @@ import (
 
 type contextReadStub struct {
 	topologyDirectoryStub
-	root       *repository.TopologyNode
-	read       func(context.Context, model.EntityIdentity, repository.TopologyNeighborQuery) (*repository.TopologyNeighborhood, error)
-	queries    []repository.TopologyNeighborQuery
-	identities []model.EntityIdentity
+	root             *repository.TopologyNode
+	read             func(context.Context, model.EntityIdentity, repository.TopologyNeighborQuery) (*repository.TopologyNeighborhood, error)
+	sceneNetwork     func(context.Context, []repository.TopologyNode, int) (*repository.TopologyNeighborhood, error)
+	networkPeers     func(context.Context, []repository.TopologyNode, int) (*repository.TopologyNeighborhood, error)
+	roomPower        func(context.Context, []repository.TopologyNode, int) (*repository.TopologyNeighborhood, error)
+	queries          []repository.TopologyNeighborQuery
+	identities       []model.EntityIdentity
+	networkCalls     int
+	networkPeerSeeds []repository.TopologyNode
+	roomPowerCalls   int
+	roomPowerSeeds   []repository.TopologyNode
+	roomPowerLimit   int
+}
+
+func (s *contextReadStub) SceneNetwork(ctx context.Context, seeds []repository.TopologyNode, limit int) (*repository.TopologyNeighborhood, error) {
+	if s.sceneNetwork == nil {
+		panic("unexpected scene network read")
+	}
+	return s.sceneNetwork(ctx, seeds, limit)
+}
+
+func (s *contextReadStub) SceneNetworkPeers(ctx context.Context, seeds []repository.TopologyNode, limit int) (*repository.TopologyNeighborhood, error) {
+	s.networkCalls++
+	s.networkPeerSeeds = seeds
+	if s.networkPeers == nil {
+		panic("unexpected network peers read")
+	}
+	return s.networkPeers(ctx, seeds, limit)
+}
+
+func (s *contextReadStub) SceneRoomPower(ctx context.Context, seeds []repository.TopologyNode, limit int) (*repository.TopologyNeighborhood, error) {
+	s.roomPowerCalls++
+	s.roomPowerSeeds = seeds
+	if s.roomPower == nil {
+		panic("unexpected room power read")
+	}
+	return s.roomPower(ctx, seeds, limit)
 }
 
 func (s *contextReadStub) Node(_ context.Context, _ model.EntityIdentity) (*repository.TopologyNode, error) {
@@ -37,7 +70,8 @@ func TestDeviceContextFixedPathsAndRetainedEdges(t *testing.T) {
 	device := contextNode(model.EntityDevice, "server")
 	peers := map[model.EntityType]repository.TopologyNode{
 		model.EntityCabinet: contextNode(model.EntityCabinet, "cab"), model.EntityDataCenter: contextNode(model.EntityDataCenter, "dc"),
-		model.EntityRPP: contextNode(model.EntityRPP, "1"), model.EntityUPSGroup: contextNode(model.EntityUPSGroup, "2"),
+		model.EntityRoom: contextNode(model.EntityRoom, "room-uuid"),
+		model.EntityRPP:  contextNode(model.EntityRPP, "1"), model.EntityUPSGroup: contextNode(model.EntityUPSGroup, "2"),
 		model.EntityTransformer: contextNode(model.EntityTransformer, "3"), model.EntityUPS: contextNode(model.EntityUPS, "4"),
 		model.EntityGPU: contextNode(model.EntityGPU, "gpu"), model.EntityInterface: contextNode(model.EntityInterface, "port"),
 		model.EntityDevice: contextNode(model.EntityDevice, "tor"), model.EntityPod: contextNode(model.EntityPod, "pod"),
@@ -91,6 +125,16 @@ func TestDeviceContextFixedPathsAndRetainedEdges(t *testing.T) {
 		}
 	}
 	require.ElementsMatch(t, []string{"1", "2"}, powerRanks)
+	require.Contains(t, ids, peers[model.EntityRoom].ID)
+	roomEdges := 0
+	for _, e := range p.Edges {
+		if e.From == peers[model.EntityRoom].ID || e.To == peers[model.EntityRoom].ID {
+			require.Equal(t, string(model.EdgeSpatial), e.EdgeType)
+			require.Equal(t, string(model.RelationLocatedIn), e.RelationKind)
+			roomEdges++
+		}
+	}
+	require.Equal(t, 2, roomEdges, "room is reached from the cabinet, never inferred as a power feed")
 	for index, i := range r.identities {
 		require.NotContains(t, []model.EntityType{model.EntityTransformer, model.EntityUPS}, i.EntityType)
 		if i.EntityType == model.EntityDevice {
@@ -109,6 +153,128 @@ func TestDeviceContextFixedPathsAndRetainedEdges(t *testing.T) {
 		}
 	}
 	require.Equal(t, 1, owners)
+}
+
+// 房间供电视图：按房间批量读取主供电链；无供电边的机柜如实标记缺失，不猜测补边。
+func TestRoomPowerContextMarksCabinetsWithoutPowerFeed(t *testing.T) {
+	room := contextNode(model.EntityRoom, "room-uuid")
+	fed := contextNode(model.EntityCabinet, "c-fed")
+	unfed := contextNode(model.EntityCabinet, "c-unfed")
+	rpp := contextNode(model.EntityRPP, "6204")
+	group := contextNode(model.EntityUPSGroup, "7")
+	transformer := contextNode(model.EntityTransformer, "8")
+	r := &contextReadStub{root: &room}
+	r.roomPower = func(_ context.Context, seeds []repository.TopologyNode, limit int) (*repository.TopologyNeighborhood, error) {
+		require.Equal(t, []repository.TopologyNode{room}, seeds)
+		require.Positive(t, limit)
+		return &repository.TopologyNeighborhood{Nodes: []repository.TopologyNode{room, fed, unfed, rpp, group, transformer}, Edges: []repository.TopologyEdge{
+			{ID: "e1", SourceID: room.SourceID, From: fed.ID, To: room.ID, Rank: "1", EdgeType: string(model.EdgeSpatial), RelationKind: string(model.RelationLocatedIn)},
+			{ID: "e2", SourceID: room.SourceID, From: unfed.ID, To: room.ID, Rank: "1", EdgeType: string(model.EdgeSpatial), RelationKind: string(model.RelationLocatedIn)},
+			{ID: "e3", SourceID: room.SourceID, From: fed.ID, To: rpp.ID, Rank: "1", EdgeType: string(model.EdgePower), RelationKind: string(model.RelationPowerUpstream)},
+			{ID: "e4", SourceID: room.SourceID, From: rpp.ID, To: group.ID, Rank: "1", EdgeType: string(model.EdgePower), RelationKind: string(model.RelationPowerUpstream)},
+			{ID: "e5", SourceID: room.SourceID, From: group.ID, To: transformer.ID, Rank: "1", EdgeType: string(model.EdgePower), RelationKind: string(model.RelationPowerUpstream)},
+		}}, nil
+	}
+	s := NewTopologyBrowseService(r, topologyConf())
+	p, err := s.RoomPowerContext(context.Background(), "reader", model.EntityIdentity{SourceID: room.SourceID, EntityType: model.EntityRoom, StableID: room.StableID})
+	require.NoError(t, err)
+	require.Equal(t, room.ID, p.Root.ID)
+	require.Equal(t, 1, r.roomPowerCalls)
+	require.Len(t, p.Nodes, 6)
+	require.Len(t, p.Edges, 5)
+	// 供电缺失按节点稳定身份标记，前端据此打缺失标记。
+	require.Equal(t, []string{unfed.ID}, p.PowerMissing)
+	require.Empty(t, p.Warnings)
+}
+
+func TestRoomPowerContextRejectsNonRoomAndBudgets(t *testing.T) {
+	r := &contextReadStub{root: func() *repository.TopologyNode { n := contextNode(model.EntityRoom, "r"); return &n }()}
+	s := NewTopologyBrowseService(r, topologyConf())
+	_, err := s.RoomPowerContext(context.Background(), "reader", model.EntityIdentity{SourceID: strings.Repeat("a", 32), EntityType: model.EntityCabinet, StableID: "c"})
+	require.ErrorIs(t, err, ErrInventoryInvalid)
+	_, err = s.RoomPowerContext(context.Background(), "writer", model.EntityIdentity{SourceID: strings.Repeat("a", 32), EntityType: model.EntityRoom, StableID: "r"})
+	require.ErrorIs(t, err, ErrInventoryForbidden)
+	require.Zero(t, r.roomPowerCalls)
+	// 图读取截断时返回截断标记，不静默当作完整供电链。
+	room := contextNode(model.EntityRoom, "r")
+	r2 := &contextReadStub{root: &room}
+	r2.roomPower = func(_ context.Context, seeds []repository.TopologyNode, limit int) (*repository.TopologyNeighborhood, error) {
+		return &repository.TopologyNeighborhood{Truncated: true, Nodes: []repository.TopologyNode{room}, Edges: []repository.TopologyEdge{}}, nil
+	}
+	p, err := NewTopologyBrowseService(r2, topologyConf()).RoomPowerContext(context.Background(), "reader", model.EntityIdentity{SourceID: room.SourceID, EntityType: model.EntityRoom, StableID: room.StableID})
+	require.NoError(t, err)
+	require.True(t, p.Truncated)
+}
+
+func TestDeviceContextNetworkDeviceLinksToPeers(t *testing.T) {
+	switchA := contextNode(model.EntityDevice, "switch-a")
+	switchA.Properties = map[string]any{"parent_type_id": int64(54)}
+	switchB := contextNode(model.EntityDevice, "switch-b")
+	switchB.Properties = map[string]any{"parent_type_id": int64(54)}
+	portA, portB := contextNode(model.EntityInterface, "port-a"), contextNode(model.EntityInterface, "port-b")
+	peers := map[model.EntityType]repository.TopologyNode{
+		model.EntityCabinet: contextNode(model.EntityCabinet, "cab"), model.EntityDataCenter: contextNode(model.EntityDataCenter, "dc"),
+		model.EntityRoom: contextNode(model.EntityRoom, "room"),
+		model.EntityRPP:  contextNode(model.EntityRPP, "1"), model.EntityUPSGroup: contextNode(model.EntityUPSGroup, "2"),
+		model.EntityTransformer: contextNode(model.EntityTransformer, "3"), model.EntityUPS: contextNode(model.EntityUPS, "4"),
+		model.EntityPod: contextNode(model.EntityPod, "pod"),
+	}
+	r := &contextReadStub{root: &switchA}
+	r.read = func(_ context.Context, i model.EntityIdentity, q repository.TopologyNeighborQuery) (*repository.TopologyNeighborhood, error) {
+		require.Equal(t, 50, q.Limit)
+		fromType, toType := i.EntityType, q.PeerEntityType
+		if q.Direction == "in" {
+			fromType, toType = toType, fromType
+		}
+		require.True(t, (model.RelationSpec{EdgeType: q.EdgeType, Kind: q.RelationKind, From: fromType, To: toType}).Valid())
+		// 网络设备分流：GPU、服务器上联与端口互联均由 SceneNetworkPeers 批量读取。
+		require.NotEqual(t, model.RelationContainsGPU, q.RelationKind, "网络设备不查询GPU上联")
+		require.NotEqual(t, model.RelationServerUplink, q.RelationKind, "网络设备不查询服务器上联")
+		require.NotEqual(t, model.RelationGPUUplink, q.RelationKind)
+		require.NotEqual(t, model.RelationLinksTo, q.RelationKind)
+		root := contextNode(i.EntityType, i.StableID)
+		peer := peers[q.PeerEntityType]
+		from, to := root.ID, peer.ID
+		if q.Direction == "in" {
+			from, to = to, from
+		}
+		return &repository.TopologyNeighborhood{Root: &root, Nodes: []repository.TopologyNode{peer}, Edges: []repository.TopologyEdge{{ID: fmt.Sprintf("%s/%s/%s", from, to, q.RelationKind), From: from, To: to, Rank: "1", EdgeType: string(q.EdgeType), RelationKind: string(q.RelationKind)}}}, nil
+	}
+	r.networkPeers = func(_ context.Context, seeds []repository.TopologyNode, limit int) (*repository.TopologyNeighborhood, error) {
+		require.Equal(t, []repository.TopologyNode{switchA}, seeds)
+		require.Equal(t, topologyContextEdges, limit)
+		return &repository.TopologyNeighborhood{Nodes: []repository.TopologyNode{portA, portB, switchB}, Edges: []repository.TopologyEdge{
+			{ID: "own-a", From: switchA.ID, To: portA.ID, Rank: "1", EdgeType: string(model.EdgeComposition), RelationKind: string(model.RelationOwnsInterface)},
+			{ID: "link", From: portA.ID, To: portB.ID, Rank: "1", EdgeType: string(model.EdgeNetwork), RelationKind: string(model.RelationLinksTo)},
+			{ID: "own-b", From: switchB.ID, To: portB.ID, Rank: "1", EdgeType: string(model.EdgeComposition), RelationKind: string(model.RelationOwnsInterface)},
+		}}, nil
+	}
+	s := NewTopologyBrowseService(r, topologyConf())
+	p, err := s.DeviceContext(context.Background(), "reader", model.EntityIdentity{SourceID: switchA.SourceID, EntityType: model.EntityDevice, StableID: switchA.StableID})
+	require.NoError(t, err)
+	require.Empty(t, p.Warnings)
+	ids := map[string]bool{}
+	for _, n := range p.Nodes {
+		ids[n.ID] = true
+	}
+	require.Contains(t, ids, portA.ID, "本机端口必须出现")
+	require.Contains(t, ids, portB.ID, "对端端口必须出现")
+	require.Contains(t, ids, switchB.ID, "对端网络设备必须出现")
+	links, owned := 0, 0
+	for _, e := range p.Edges {
+		require.True(t, ids[e.From])
+		require.True(t, ids[e.To])
+		if e.RelationKind == string(model.RelationLinksTo) {
+			links++
+			require.Equal(t, portA.ID, e.From)
+			require.Equal(t, portB.ID, e.To)
+		}
+		if e.RelationKind == string(model.RelationOwnsInterface) {
+			owned++
+		}
+	}
+	require.Equal(t, 1, links)
+	require.Equal(t, 2, owned, "本机与对端端口的归属都要展示")
 }
 
 func TestDeviceContextActualQueryBudgetPreservesCompletedPaths(t *testing.T) {

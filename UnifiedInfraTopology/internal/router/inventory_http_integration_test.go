@@ -90,11 +90,11 @@ func TestInventoryManagementRealHTTPPersistence(t *testing.T) {
 	require.Equal(t, "queued", persisted.Status)
 	var phases []model.SyncRoundPhase
 	require.NoError(t, db.Where("round_id = ?", id).Order("position").Find(&phases).Error)
-	require.Len(t, phases, 15)
+	require.Len(t, phases, len(model.SyncRoundPhaseNames()))
 	call("POST", "/sync-rounds", body, operator, "http-round-2", 409)
 	call("GET", "/sync-rounds?limit=2", "", reader, "", 200)
 	detail, _ := call("GET", "/sync-rounds/"+id, "", reader, "", 200)
-	require.Contains(t, detail, `"total_phases":15`)
+	require.Contains(t, detail, `"total_phases":16`)
 	require.Contains(t, detail, `"completed_phases":0`)
 	require.NoError(t, db.Table("sync_diagnostics").Create(map[string]any{"id": strings.Repeat("b", 32), "round_id": id, "source_id": source, "resource": "spatial_relations", "severity": "warning", "code": "missing_reference", "object_ref": "test-device", "detail": "private-diagnostic-detail", "created_at": time.Now().UTC().Truncate(time.Microsecond)}).Error)
 	diagnostic, _ := call("GET", "/sync-rounds/"+id+"/diagnostics", "", reader, "", 200)

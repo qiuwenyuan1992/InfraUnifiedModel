@@ -2,9 +2,13 @@
 
 在平级 `UnifiedInfraWeb` 的“拓扑浏览”中直接选择“数据中心”或“POD”目录，不再选择来源。后台恰好一个启用CMDB来源时自动使用；零个或多个时提示配置问题，不任意选择。
 
-- 数据中心→机柜→设备：按实际空间边下钻，目录有分页和面包屑。
+- 数据中心→房间→机柜→设备：按实际空间边下钻，目录有分页和面包屑。房间UUID为稳定身份；楼栋和模组仅保留属性，旧机柜→IDC关系仍保留但不跳过房间目录。
+- 数据中心与房间卡片展示来源计数快照（机柜/服务器/网络设备数量，来自CMDB `cabinet_num`/`server_num`/`network_device_num`），机柜卡片展示设备计数快照（设备/服务器/网络设备数量，来自CMDB `device_num`/`server_num`/`network_device_num`），不向用户展示UUID；计数缺失时显示 —，不猜测为0，也不与图边数对比。
+- 设备卡片展示SN、设备类型（按 `docs/cmdb/dict_device_type.md` 字典解析 `device_type_id`，未知ID显示“类型 N”）、IP列表（最多展示2个，更多显示总数）与角色（仅网络设备 `parent_type_id=54` 展示 `role`，如 T0/T1；其他设备角色语义未确认不展示）。
 - POD→成员设备：按device→pod/member_of去重列举，不能通过机柜POD标签推导成员。
 - 选择设备后自动展示机柜、A/B列头柜、UPS组/UPS成员、变压器、GPU与已同步网络上联；供电沿真实机柜路径，UPS为旁支成员，不生成服务器直连电力边。
+- 网络设备（`parent_type_id=54`）与服务器分流遍历：网络设备不查询GPU上联与服务器上联（各1次空查询），端口归属、`links_to` 端口互联与对端网络设备归属由仅互联批量读取（`SceneNetworkPeers`）一次完成，不逐端口查询；服务器路径不进入该批量读取。网络互联节点预算上限为400。
+- 房间卡片提供“供电”入口（`GET /inventory/topology/room-power`）：从房间批量遍历主供电链（房间内机柜与列头柜→UPS组→变压器，附带UPS成员，`SceneRoomPower` 五阶段批量读取，默认链不含备用关系），以关系图展示。机柜→列头柜 `power_upstream` 常因来源未维护而缺失：房间内列头柜直接作为主链起点；无供电出边的机柜在 `power_missing` 中如实列出并醒目提示，不猜测补边，可用作供电维护完整性检查。
 - 设备SN快捷定位保留；其他节点的手动一跳与属性查看也保留。不执行CMDB采集，不写图，没有名称模糊搜索或全图库加载。
 
 | 类型 | 输入的稳定身份 |
@@ -12,7 +16,7 @@
 | device | 设备SN，例如 `A514359X5413481` |
 | gpu | GPU实际parts_sn，例如 `1750125024470` |
 | interface | CMDB port_uuid，不是端口名称 |
-| cabinet / data_center / pod | CMDB uuid |
+| cabinet / data_center / room / pod | CMDB uuid |
 | transformer / ups_group / ups / rpp | 正整数inst_id |
 
 ## 只读API
@@ -41,7 +45,7 @@ GET /v1/inventory/topology/children?source_id=<来源ID>&entity_type=data_center
 GET /v1/inventory/topology/device-context?source_id=<来源ID>&stable_id=<设备SN>
 ```
 
-目录children只接受data_center、cabinet、pod父类型；响应items、next_after，下一页传 `after=<next_after>`。分页单位是子节点，POD双plane关系不产生重复设备项。游标签名绑定用户、来源、父身份和类型，不能跨目录复用；limit默认50最大100。
+目录children只接受data_center、room、cabinet、pod父类型；响应items、next_after，下一页传 `after=<next_after>`。分页单位是子节点，POD双plane关系不产生重复设备项。游标签名绑定用户、来源、父身份和类型，不能跨目录复用；limit默认50最大100。
 
 设备上下文固定追踪关系，不进行通用递归；每步50边、200节点/400边，最多40次实际图库请求。请求内复用已验证节点，预算耗尽保留完成路径并返回truncated/warnings；不读取同柜其他设备、同UPS组其他RPP或端口上其他服务器/GPU。A/B双边保留，UPS成员不是串联层。数据缺关系或采集未覆盖时明确提示，不能据此认定现实没有供电。
 
@@ -53,6 +57,14 @@ GET /v1/inventory/topology/device-context?source_id=<来源ID>&stable_id=<设备
 - 网络、空间、组成、电力用不同颜色，箭头遵循图存储方向。物理links_to为互联语义，存储排序方向不代表流量；备用关系不等于实际供电切换。
 - 不从空上联补造节点，不把BAD_TYPE解释为正常资产属性。资产不存在返回404，图库不可用返回503。
 - 当前读取的是同步图状态，不证明跨接口原子快照；旧边清理尚未实施，历史关系可能残留，需结合synced_at判断。
+
+## 房间接入验收
+
+独立审批已新增room Tag/索引及RPP.idc_room属性，未清图。实际同步IDC1030可用房间32条、RPP房间属性417条；空间发布验收room→IDC32、cabinet→room2668、RPP→room417。4条找不到房间的引用诊断跳过，无占位节点。
+
+独立只读核对room.inst_id=3101：90个机柜、22个已同步RPP，含机柜A4_204-A2-03和RPP10934。这里只证明空间同房间，不生成机柜供电边。全仓测试/race/vet/三个入口构建和Web125测试/构建通过。新增整轮16阶段，旧任务DTO展示原创建时阶段，旧排队计划遇到新增阶段会明确失败并要求新任务，不改写历史。
+
+重启API和worker并刷新Web后进入IDC→房间→机柜下钻。原房间证据保留；接口整理见 `docs/cmdb/space_room.md`。本次未重跑完整GPU/物理连接同步，未提交。
 
 ## 开发验收
 

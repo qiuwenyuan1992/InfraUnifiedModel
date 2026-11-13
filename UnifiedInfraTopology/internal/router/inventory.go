@@ -60,6 +60,7 @@ func InitInventoryRouter(deps RouterDeps, r *gin.RouterGroup) {
 		g.GET("/topology/roots", topology.Roots)
 		g.GET("/topology/children", topology.Children)
 		g.GET("/topology/device-context", topology.DeviceContext)
+		g.GET("/topology/room-power", topology.RoomPower)
 		g.GET("/topology/scene", topology.Scene)
 	}
 }
