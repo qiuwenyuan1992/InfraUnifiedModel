@@ -1,4 +1,4 @@
-export type EntityType = 'device' | 'gpu' | 'interface' | 'cabinet' | 'data_center' | 'pod' | 'transformer' | 'ups_group' | 'ups' | 'rpp'
+export type EntityType = 'device' | 'gpu' | 'interface' | 'cabinet' | 'room' | 'data_center' | 'pod' | 'transformer' | 'ups_group' | 'ups' | 'rpp'
 export type EdgeType = 'spatial_relation' | 'composition_relation' | 'network_relation' | 'power_relation'
 export type Direction = 'in' | 'out' | 'both'
 export type PropertyValue = string | number | boolean | null | PropertyValue[] | { [key: string]: PropertyValue }
@@ -32,6 +32,7 @@ export interface TopologyRootQuery extends TopologyPageQuery { source_id: string
 export interface TopologyChildQuery extends TopologyIdentity, TopologyPageQuery {}
 export interface DeviceContext extends Neighborhood { warnings: string[] }
 export interface DeviceContextQuery { source_id: string; stable_id: string }
+export interface RoomPowerContext extends Neighborhood { warnings: string[]; power_missing: string[] }
 export interface NeighborQuery extends TopologyIdentity { direction: Direction; edge_type?: EdgeType | '' }
 export interface TopologyGraph { nodes: TopologyNode[]; edges: TopologyEdge[] }
 export type TopologySelection = { kind: 'node'; id: string } | { kind: 'edge'; id: string }

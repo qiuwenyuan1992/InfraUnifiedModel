@@ -35,7 +35,7 @@ async function submit() {
   <el-dialog :model-value="props.modelValue" title="创建完整同步任务" width="min(560px, 94vw)"
     :close-on-click-modal="false" :close-on-press-escape="!loading" :show-close="!loading"
     @update:model-value="emit('update:modelValue', $event)">
-    <p class="dialog-intro">选择已启用的数据来源，手动入队一轮固定 15 阶段同步。</p>
+    <p class="dialog-intro">选择已启用的数据来源，手动入队一轮完整同步，阶段总数以任务 API 返回值为准。</p>
     <el-form label-position="top" @submit.prevent="submit">
       <el-form-item label="数据来源" required>
         <el-select v-model="sourceId" placeholder="请选择已启用来源" filterable :disabled="loading" style="width: 100%">

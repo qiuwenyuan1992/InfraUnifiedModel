@@ -57,9 +57,10 @@ watch(selectedNode, async node => {
     if (version === detailsGeneration && !owner.signal.aborted) detailsLoading.value = false
   }
 }, { flush: 'sync' })
-const networkCount = computed(() => data.value.nodes.filter(isSpatialNetworkDevice).length)
+const networkNode = (node: TopologyNode) => isSpatialNetworkDevice(node, data.value.networkLevels)
+const networkCount = computed(() => data.value.nodes.filter(networkNode).length)
 const cabinetCount = computed(() => data.value.nodes.filter(node => node.entity_type === 'cabinet').length)
-const deviceCount = computed(() => data.value.nodes.filter(node => node.entity_type === 'device' && !isSpatialNetworkDevice(node)).length)
+const deviceCount = computed(() => data.value.nodes.filter(node => node.entity_type === 'device' && !networkNode(node)).length)
 watch([sourceId, available, rootType], () => {
   history.value = []; currentAfter.value = undefined; selection.value = null
   if (available.value) void loadRoots(sourceId.value, rootType.value)
@@ -125,19 +126,19 @@ onScopeDispose(() => { detailsGeneration++; detailsController?.abort(); detailsC
       <SpatialThreeCanvas :layout="layout" :selection="selection" :mode="mode" @select="selection = $event" />
       <aside class="spatial-inspector">
         <label class="spatial-node-picker">定位已加载对象
-          <select v-model="selection" aria-label="定位三维对象"><option :value="null">在画布中点选</option><option v-for="item in layout.placements" :key="item.node.id" :value="item.node.id">{{ isSpatialNetworkDevice(item.node) ? '网络设备' : entityLabels[item.node.entity_type] }} · {{ topologyDisplayName(item.node) }} · {{ item.node.stable_id }}</option></select>
+          <select v-model="selection" aria-label="定位三维对象"><option :value="null">在画布中点选</option><option v-for="item in layout.placements" :key="item.node.id" :value="item.node.id">{{ networkNode(item.node) ? '网络设备' : entityLabels[item.node.entity_type] }} · {{ topologyDisplayName(item.node) }} · {{ item.node.stable_id }}</option></select>
         </label>
         <template v-if="selectedNode">
           <span class="spatial-kicker">真实资产</span><h3>{{ topologyDisplayName(selectedNode) }}</h3>
-          <dl><dt>类型</dt><dd>{{ isSpatialNetworkDevice(selectedNode) ? '网络设备' : entityLabels[selectedNode.entity_type] }}</dd><dt>稳定ID</dt><dd class="mono">{{ selectedNode.stable_id }}</dd><dt>role</dt><dd>{{ property(selectedNode.properties.role) }}</dd><dt>同步时间</dt><dd>{{ formatTime(selectedNode.synced_at) }}</dd></dl>
-          <el-button v-if="isSpatialNetworkDevice(selectedNode)" type="primary" :disabled="loading" @click="expandNetwork(selectedNode)">展开真实网络连接</el-button>
+          <dl><dt>类型</dt><dd>{{ networkNode(selectedNode) ? '网络设备' : entityLabels[selectedNode.entity_type] }}</dd><dt>稳定ID</dt><dd class="mono">{{ selectedNode.stable_id }}</dd><dt>role</dt><dd>{{ property(selectedNode.properties.role) }}</dd><dt>同步时间</dt><dd>{{ formatTime(selectedNode.synced_at) }}</dd></dl>
+          <el-button v-if="networkNode(selectedNode)" type="primary" :disabled="loading" @click="expandNetwork(selectedNode)">展开真实网络连接</el-button>
           <p v-if="cabinetNextAfter[selectedNode.id]">该机柜还有设备未加载</p>
-          <p v-if="data.assignmentStatus?.[selectedNode.id]">归属状态：{{ ({missing: '未发现有效归属', ambiguous: '多个归属待核验', truncated: '归属尚未完整读取'} as Record<string, string>)[data.assignmentStatus[selectedNode.id]!] }}</p>
+          <p v-if="data.assignmentStatus?.[selectedNode.id]">归属状态：{{ ({missing: '未发现有效归属', ambiguous: '多个归属待核验', truncated: '归属尚未完整读取', unknown: '手动展开层级未确认，请重载场景'} as Record<string, string>)[data.assignmentStatus[selectedNode.id]!] }}</p>
           <p v-if="detailsLoading" class="muted">正在读取完整资产属性</p>
           <el-alert v-if="detailsError" :title="detailsError" type="error" :closable="false" />
           <details v-if="detailNode"><summary>原始属性</summary><dl><template v-for="(value, key) in detailNode.properties" :key="key"><dt>{{ key }}</dt><dd>{{ property(value) }}</dd></template></dl></details>
         </template>
-        <template v-else><span class="spatial-kicker">场景说明</span><h3>点选机柜或设备</h3><p>拖拽旋转，滚轮缩放，右键平移；点击对象查看真实属性。</p><p v-if="mode === 'network'">按 CMDB role：T2 高层、T1 中层、T0 接入层；未知角色单列，不根据名称推断。</p><p v-else>机柜位置为示意行列，柜内仅展示已校验归属的设备，不表示真实U位。</p></template>
+        <template v-else><span class="spatial-kicker">场景说明</span><h3>点选机柜或设备</h3><p>拖拽旋转，滚轮缩放，右键平移；点击对象查看真实属性。</p><p v-if="mode === 'network'">按后端场景层级布局，保留原始 role 标签；未分类设备单列，不根据名称或关系推断层级。</p><p v-else>机柜位置为示意行列，柜内仅展示已校验归属的设备，不表示真实U位。</p></template>
         <p class="spatial-notice">所有数量仅为本页已加载，不是全IDC/POD统计。POD不是机柜包含层级；远端网络设备的空间归属未自动推导。</p>
       </aside>
     </div>

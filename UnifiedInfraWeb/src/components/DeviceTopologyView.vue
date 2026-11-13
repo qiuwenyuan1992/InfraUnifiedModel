@@ -19,7 +19,7 @@ function nodeVisible(item: DeviceViewNode) {
   if (item.group === 'gpu') return filters.value.composition_relation
   if (item.group === 'power') return filters.value.power_relation
   if (item.group === 'interface' || item.group === 'network') return filters.value.network_relation
-  if (['data_center', 'pod'].includes(item.node.entity_type)) return filters.value.spatial_relation
+  if (['data_center', 'room', 'pod'].includes(item.node.entity_type)) return filters.value.spatial_relation
   return true
 }
 const visibleNodes = computed(() => {
@@ -141,10 +141,10 @@ onBeforeUnmount(() => endPan())
             </g>
           </g>
           <g v-for="(item, index) in visibleNodes" :key="item.node.id" data-selectable="node" :data-node-id="item.node.id" :data-group="item.group" :transform="`translate(${item.x} ${item.y})`" role="button" tabindex="0"
-            :aria-label="`${entityLabels[item.node.entity_type]} ${item.node.label} ${item.node.stable_id} ${model(item.node)}`" class="device-node" :class="[item.group, { 'idc-metadata': item.node.entity_type === 'data_center', highlighted: nodeHighlighted(item.node.id), selected: selection?.kind === 'node' && selection.id === item.node.id, muted: selection && !nodeHighlighted(item.node.id) }]"
+            :aria-label="`${entityLabels[item.node.entity_type]} ${item.node.label} ${item.node.stable_id} ${model(item.node)}`" class="device-node" :class="[item.group, { 'idc-metadata': ['data_center', 'room'].includes(item.node.entity_type), highlighted: nodeHighlighted(item.node.id), selected: selection?.kind === 'node' && selection.id === item.node.id, muted: selection && !nodeHighlighted(item.node.id) }]"
             @click.stop="select({ kind: 'node', id: item.node.id })" @keydown.enter.prevent="selectKeyboard({ kind: 'node', id: item.node.id })" @keydown.space.prevent="selectKeyboard({ kind: 'node', id: item.node.id })">
             <title>{{ entityLabels[item.node.entity_type] }} · {{ item.node.label }} · {{ item.node.stable_id }} · {{ model(item.node) }}</title>
-            <rect v-if="item.node.entity_type !== 'data_center'" :width="item.width" :height="item.height" rx="10" />
+            <rect v-if="!['data_center', 'room'].includes(item.node.entity_type)" :width="item.width" :height="item.height" rx="10" />
             <g :clip-path="`url(#${markerId}-card-${index})`">
               <text class="node-type" x="12" y="20">{{ entityLabels[item.node.entity_type] }}{{ item.group === 'server' ? ' / SERVER' : '' }}</text>
               <text class="node-name" x="12" y="42">{{ shorten(item.node.label || item.node.stable_id, item.group === 'server' ? 52 : 22) }}</text>

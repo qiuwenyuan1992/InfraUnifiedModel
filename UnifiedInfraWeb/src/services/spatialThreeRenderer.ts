@@ -1,13 +1,13 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { isSpatialNetworkDevice, type SpatialPlacement, type SpatialSceneLayout } from './spatialScene'
+import type { SpatialPlacement, SpatialSceneLayout } from './spatialScene'
 
 export type SpatialMode = 'space' | 'network'
 export function networkRoleColor(role: string): string {
   return ({ T2: '#a78bfa', T1: '#60a5fa', T0: '#2dd4bf' } as Record<string, string>)[role.trim().toUpperCase()] || '#94a3b8'
 }
 export function spatialObjectLabel(placement: SpatialPlacement): string {
-  if (isSpatialNetworkDevice(placement.node)) return `网络设备 ${placement.role.trim() || '未分类'} · ${placement.node.stable_id}`
+  if (placement.kind === 'network' && placement.node.entity_type === 'device') return `网络设备 ${placement.role || '未分类'} · ${placement.node.stable_id}`
   if (placement.node.entity_type === 'gpu') return `GPU卡 · ${placement.node.stable_id}`
   if (placement.node.entity_type === 'interface') return `端口 · ${placement.node.label || placement.node.stable_id}`
   return placement.node.label || placement.node.stable_id
@@ -236,26 +236,26 @@ export function createSpatialThreeRenderer(container: HTMLElement, onSelect: (id
       }
     }
     if (mode === 'network') {
-      const layers = new Map<string, SpatialPlacement[]>()
-      for (const placement of layout.placements.filter(item => isSpatialNetworkDevice(item.node))) {
-        const rawRole = placement.role.trim().toUpperCase()
-        const role = ['T2', 'T1', 'T0'].includes(rawRole) ? rawRole : 'unknown'
-        const layer = layers.get(role) || []
+      const layers = new Map<number | null, SpatialPlacement[]>()
+      for (const placement of layout.placements.filter(item => item.kind === 'network' && item.node.entity_type === 'device' && item.tier !== undefined)) {
+        const tier = placement.tier!
+        const layer = layers.get(tier) || []
         layer.push(placement)
-        layers.set(role, layer)
+        layers.set(tier, layer)
       }
       const tierNodes = [...layers.values()].flat()
       const tierMinX = Math.min(...tierNodes.map(item => item.x), 0) - 2
       const tierMinZ = Math.min(...tierNodes.map(item => item.z), 0) - 2
       const tierMaxX = Math.max(...tierNodes.map(item => item.x), 0) + 2
       const tierMaxZ = Math.max(...tierNodes.map(item => item.z), 0) + 2
-      for (const [role, placements] of layers) {
+      for (const placements of layers.values()) {
+        const role = [...new Set(placements.map(item => item.role || '未分类'))].join(' · ')
         const y = placements.reduce((sum, item) => sum + item.y, 0) / placements.length - 0.3
         const plane = new THREE.Mesh(new THREE.PlaneGeometry(tierMaxX - tierMinX, tierMaxZ - tierMinZ), new THREE.MeshBasicMaterial({ color: networkRoleColor(role), transparent: true, opacity: 0.035, side: THREE.DoubleSide, depthWrite: false }))
         plane.rotation.x = -Math.PI / 2
         plane.position.set((tierMinX + tierMaxX) / 2, y, (tierMinZ + tierMaxZ) / 2)
         decoration.add(plane)
-        const label = labelSprite(container.ownerDocument, role === 'unknown' ? '未知角色' : role, networkRoleColor(role))
+        const label = labelSprite(container.ownerDocument, role, networkRoleColor(role))
         if (label) { label.position.set(tierMinX - 1, y + 0.5, (tierMinZ + tierMaxZ) / 2); decoration.add(label) }
       }
     }

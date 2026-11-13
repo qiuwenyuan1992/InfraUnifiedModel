@@ -7,7 +7,10 @@ export interface SpatialSceneData {
   root: TopologyNode | null
   truncated: boolean
   warnings: string[]
-  assignmentStatus?: Record<string, 'missing' | 'ambiguous' | 'truncated'>
+  assignmentStatus?: Record<string, 'missing' | 'ambiguous' | 'truncated' | 'unknown'>
+  cabinetAssignments?: Record<string, string>
+  componentOwners?: Record<string, string>
+  networkLevels?: Record<string, { role: string; level: number | null }>
 }
 export interface SpatialPlacement {
   node: TopologyNode
@@ -17,6 +20,7 @@ export interface SpatialPlacement {
   kind: 'cabinet' | 'device' | 'network' | 'gpu' | 'background'
   parentId?: string
   role: string
+  tier?: number | null
 }
 export interface SpatialSceneLayout {
   placements: SpatialPlacement[]
@@ -29,8 +33,8 @@ export interface SpatialSceneLayout {
 export function spatialDeviceRole(node: TopologyNode): string {
   return typeof node.properties.role === 'string' ? node.properties.role.trim() : ''
 }
-export function isSpatialNetworkDevice(node: TopologyNode): boolean {
-  return node.entity_type === 'device' && String(node.properties.parent_type_id) === '54'
+export function isSpatialNetworkDevice(node: TopologyNode, networkLevels: SpatialSceneData['networkLevels']): boolean {
+  return node.entity_type === 'device' && Object.hasOwn(networkLevels || {}, node.id)
 }
 
 export function buildSpatialScene(data: SpatialSceneData, mode: SpatialSceneMode): SpatialSceneLayout {
@@ -39,24 +43,10 @@ export function buildSpatialScene(data: SpatialSceneData, mode: SpatialSceneMode
   const warnings = [...data.warnings]
   const placements: SpatialPlacement[] = []
   const byId = new Map<string, SpatialPlacement>()
-  const cabinetOf = new Map<string, string>()
-  const ownerOf = new Map<string, string>()
-  const ambiguous = new Set<string>()
-  function assign(map: Map<string, string>, child: string, parent: string) {
-    if (ambiguous.has(child)) return
-    if (map.has(child) && map.get(child) !== parent) {map.delete(child); ambiguous.add(child); warnings.push('存在多个机柜或组件归属：未任意选择父设备，保留独立展示。'); return}
-    map.set(child, parent)
-  }
+  const cabinetOf = new Map(Object.entries(data.cabinetAssignments || {}))
+  const ownerOf = new Map(Object.entries(data.componentOwners || {}))
+  const networkLevels = new Map(Object.entries(data.networkLevels || {}))
   const actualEdges = data.edges.filter(edge => nodes.has(edge.from) && nodes.has(edge.to) && edge.source_id === nodes.get(edge.from)!.source_id && edge.source_id === nodes.get(edge.to)!.source_id)
-  for (const edge of actualEdges) {
-    const from = nodes.get(edge.from)!
-    const to = nodes.get(edge.to)!
-    if (edge.edge_type === 'spatial_relation' && edge.relation_kind === 'located_in'
-      && from.entity_type === 'device' && to.entity_type === 'cabinet' && !data.assignmentStatus?.[from.id]) assign(cabinetOf, from.id, to.id)
-    if (edge.edge_type === 'composition_relation' && from.entity_type === 'device'
-      && ((edge.relation_kind === 'contains_gpu' && to.entity_type === 'gpu')
-        || (edge.relation_kind === 'owns_interface' && to.entity_type === 'interface')) && !data.assignmentStatus?.[to.id]) assign(ownerOf, to.id, from.id)
-  }
   function add(placement: SpatialPlacement) {
     placements.push(placement)
     byId.set(placement.node.id, placement)
@@ -69,23 +59,24 @@ export function buildSpatialScene(data: SpatialSceneData, mode: SpatialSceneMode
   let unknownCount = 0
   const devices = [...nodes.values()].filter(node => node.entity_type === 'device').sort((a, b) => a.id.localeCompare(b.id))
   const roleIndexes = new Map<string, number>()
-  const networkColumns = Math.max(1, Math.ceil(Math.sqrt(devices.filter(isSpatialNetworkDevice).length)))
+  const networkColumns = Math.max(1, Math.ceil(Math.sqrt(devices.filter(node => networkLevels.has(node.id)).length)))
   for (const node of devices) {
     const parentId = cabinetOf.get(node.id)
     const cabinet = parentId ? byId.get(parentId) : undefined
     const index = cabinet ? deviceIndexes.get(cabinet.node.id) || 0 : orphanIndex++
     if (cabinet) deviceIndexes.set(cabinet.node.id, index + 1)
-    const role = spatialDeviceRole(node)
-    const network = isSpatialNetworkDevice(node)
-    const tier = role.toUpperCase()
-    if (network && !['T0', 'T1', 'T2'].includes(tier)) unknownCount++
+    const classification = networkLevels.get(node.id)
+    const role = classification ? classification.role : spatialDeviceRole(node)
+    const network = !!classification
+    const tier = classification?.level ?? null
+    if (network && tier === null) unknownCount++
     const layered = mode === 'network' && network
-    const layer = ['T0', 'T1', 'T2'].includes(tier) ? tier : 'unknown'
+    const layer = JSON.stringify([role, tier])
     const layerIndex = roleIndexes.get(layer) || 0
     if (layered) roleIndexes.set(layer, layerIndex + 1)
-    const y = layered ? ({ T2: 24, T1: 16, T0: 8 }[tier] ?? 4) : cabinet ? 1 + index * 1.1 : 1
-    // 网络层使用统一网格，不继承机柜坐标；机柜归属仍由原始关系保留。
-    add({ node, kind: network ? 'network' : 'device', role, ...(cabinet && !layered ? { parentId: cabinet.node.id } : {}),
+    const y = layered ? tier === null ? 4 : 8 + tier * 8 : cabinet ? 1 + index * 1.1 : 1
+    // 网络层只使用后端级别，角色仅作为原始分组标签。
+    add({ node, kind: network ? 'network' : 'device', role, ...(network ? { tier } : {}), ...(cabinet && !layered ? { parentId: cabinet.node.id } : {}),
       x: layered ? layerIndex % networkColumns * 8 : cabinet ? cabinet.x : columns * 10 + 10 + index % 5 * 8,
       y, z: layered ? Math.floor(layerIndex / networkColumns) * 6 : cabinet ? cabinet.z : Math.floor(index / 5) * 6 })
   }
@@ -109,12 +100,14 @@ export function buildSpatialScene(data: SpatialSceneData, mode: SpatialSceneMode
     add({ node, kind: node.entity_type === 'gpu' ? 'gpu' : 'network', role: '', parentId: owner.node.id,
       x: owner.x + 1.5 + index % 4 * 0.55, y: owner.y + (node.entity_type === 'gpu' ? 0.45 : 0), z: owner.z + Math.floor(index / 4) * 0.55 })
   }
-  if (data.root) add({ node: data.root, kind: 'background', role: '', x: -7, y: 0, z: -7 })
+  const backgrounds = [...nodes.values()].filter(node => node.id === data.root?.id || node.entity_type === 'room').sort((a, b) => a.id.localeCompare(b.id))
+  backgrounds.forEach((node, index) => add({ node, kind: 'background', role: '', x: -7 - index * 8, y: 0, z: -7 }))
   if (orphanIndex) {
     const unresolved = devices.filter(node => !cabinetOf.has(node.id))
     if (unresolved.some(node => data.assignmentStatus?.[node.id] === 'truncated')) warnings.push('部分设备归属尚未完整读取，放在待核验区域；不代表没有机柜关系。')
     if (unresolved.some(node => data.assignmentStatus?.[node.id] === 'ambiguous')) warnings.push('部分设备有多个机柜归属，暂不分组。')
-    if (unresolved.some(node => !data.assignmentStatus?.[node.id] || data.assignmentStatus[node.id] === 'missing')) warnings.push('无机柜关系：已读取设备中存在缺少有效机柜关系的记录，不推断其归属。')
+    if (unresolved.some(node => !data.assignmentStatus?.[node.id] || data.assignmentStatus[node.id] === 'unknown')) warnings.push('部分设备机柜归属未核验，独立展示，不推断其归属。')
+    if (unresolved.some(node => data.assignmentStatus?.[node.id] === 'missing')) warnings.push('无机柜关系：后端已确认未读取到有效机柜关系。')
   }
   if (unknownCount) warnings.push('未分类网络设备：保留原始 role，不按名称推断 T0/T1/T2。')
   if (unresolvedPorts) warnings.push('端口设备归属未核验：单独展示真实互联端点，不推断所属设备。')

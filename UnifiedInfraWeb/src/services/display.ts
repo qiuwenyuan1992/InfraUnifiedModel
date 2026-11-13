@@ -5,7 +5,7 @@ export const statuses: Record<string, string> = {
   succeeded: '已成功', failed: '已失败', canceled: '已取消', not_run: '未执行',
 }
 export const phaseNames: Record<string, string> = {
-  data_center: '数据中心', cabinet: '机柜', device: '设备', transformer: '变压器',
+  data_center: '数据中心', room: '房间', cabinet: '机柜', device: '设备', transformer: '变压器',
   ups_group: 'UPS 组', ups: 'UPS 设备', rpp: '列头柜', pod: 'POD', interface: '网络端口',
   power_relations: '供电关系', pod_membership: 'POD 归属', spatial_relations: '空间关系',
   gpu_sync: 'GPU 同步', server_uplinks: '服务器上联', links_to: '物理连接',

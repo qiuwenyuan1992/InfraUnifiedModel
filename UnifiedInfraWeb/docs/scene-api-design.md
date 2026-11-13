@@ -6,7 +6,7 @@
 
 GET `/v1/inventory/topology/scene` 参数为 `source_id`、`entity_type=data_center|pod`、`stable_id`、`limit`（默认5，最多10）、`after`。主分页在IDC下按机柜、POD下按成员设备；每柜设备首批20条，其他设备以机柜next_after提示未加载，不宣称全量。
 
-响应包含 root、cabinets（node/devices/next_after）、unassigned（missing/ambiguous/truncated）、network_levels（role/level/nodes）、nodes、edges、next_after、truncated、warnings。节点精简为ID/类型/名称/稳定ID/role/网络分类及同步时间，完整属性点击后使用原node接口读取。
+响应包含 root、cabinets（node/devices/next_after）、unassigned（missing/ambiguous/truncated）、component_owners（parent_id/child_ids）、network_levels（role/level/nodes）、nodes、edges、next_after、truncated、warnings。节点精简为ID/类型/名称/稳定ID/role/网络分类及同步时间，完整属性点击后使用原node接口读取。
 
 机柜分组必须依据真实located_in，POD设备依据member_of；多归属不任意择一，未加载或预算截断不等于来源无归属。网络T2/T1/T0来自role，未知角色保持未分类。网络模式统一角色网格，仅高度随层级变化，不沿用机柜位置导致层级错开；机柜真实归属仍保存在原关系中。画布和详情明确标注网络设备，GPU卡仅对应gpu实体。网络端点和实际边ID保留，不以机柜为网络端点，不从属性构造连接。
 
@@ -17,6 +17,14 @@ GET `/v1/inventory/topology/scene` 参数为 `source_id`、`entity_type=data_cen
 此前版本前端106条测试通过，真实场景样本约9–11秒。最新优化把网络的逐设备/逐端口读取改为最多5条边批量查询与3条端点批量查询（双向物理互联分别从已知VID入向/出向展开），仍验证来源、VID、rank、关系矩阵和归属完整性。实测数据中心首批5机柜场景约1.28秒、POD首批场景约0.84秒；这是单次本地样本，不是全量性能承诺。后端全仓/race/vet/三个入口build通过，前端108条测试及构建通过。浏览器两页场景分别一次请求，0次初始neighbors请求，网络模式切换无新增查询，画布正常。
 
 审查发现交换机自身端口和入向物理边漏读已补回归；手动展开时截断端口归属也保留状态，不把单条已返回边当完整归属。没有修改图库、触发同步、清理数据或提交。
+
+## 第二批职责收敛
+
+当前后端是场景层级的唯一来源：机柜设备分组读取cabinets，组件归属读取component_owners，网络角色/层级读取network_levels。前端只验证引用、来源及契约一致性，转换成布局输入，不再从边推导父节点或由role字符串重新定级。
+
+component_owners仅输出已核验的唯一父节点；缺失、歧义、截断不补猜。机柜自身归属未确认不会阻止已确认的柜内设备显示。没有状态的远端节点是“未核验”，不是“无机柜”。手动展开的新增端点未在后端场景契约中确认时独立展示，原始连接仍保留。
+
+本批新增字段，不新增路由、不改变请求参数/权限/分页或错误优先级。后端需先升级重启，再刷新Web；不提供旧字段兼容回退。前端119条测试和构建通过；真实POD248只读API约311毫秒，原始边及截断状态保留。历史测速不是本批性能改善承诺。
 
 ## POD248超时修复
 

@@ -10,7 +10,7 @@ vi.mock('../api/topology', () => ({ topologyApi: { node: calls.node } }))
 vi.mock('../composables/useSpatialScene', () => ({ useSpatialScene: () => ({
   rootItems: shallowRef([]), rootsNextAfter: ref(calls.fixture?.directoryAfter || null), selectedRoot: shallowRef(calls.fixture?.data.root || null), loading: ref(false), error: ref(''),
   sceneNextAfter: ref(calls.fixture?.sceneAfter || null), sceneHistory: ref(calls.fixture?.sceneHistory || []), cabinetNextAfter: shallowRef({}),
-  data: shallowRef(calls.fixture?.data || { nodes: [], edges: [], root: null, truncated: false, warnings: [] }), mode: ref('space'),
+  data: shallowRef(calls.fixture?.data || { nodes: [], edges: [], root: null, truncated: false, warnings: [], cabinetAssignments: {}, componentOwners: {}, networkLevels: {} }), mode: ref('space'),
   loadRoots: calls.load, reset: calls.reset, selectRoot: vi.fn(), nextScenePage: vi.fn(), previousScenePage: vi.fn(), expandNetwork: vi.fn(),
 }) }))
 vi.mock('./SpatialThreeCanvas.vue', () => ({ default: { render: () => null } }))
@@ -39,7 +39,7 @@ it('does not choose an arbitrary source when multiple CMDB sources are active', 
 const node = (id: string): TopologyNode => ({ id, source_id: 's', stable_id: id, entity_type: 'device', label: id, properties: { role: '' }, synced_at: null, created_at: null })
 const props = () => ({ sources: [{ id: 's', name: 'CMDB', enabled: true, adapter_kind: 'cmdb' }], sourcesLoaded: true, sourcesLoading: false, sourcesError: '' })
 function mountInspector() {
-  calls.fixture = { data: { nodes: [node('first'), node('second')], edges: [], root: null, truncated: false, warnings: [] } }
+  calls.fixture = { data: { nodes: [node('first'), node('second')], edges: [], root: null, truncated: false, warnings: [], cabinetAssignments: {}, componentOwners: {}, networkLevels: {} } }
   const scope = effectScope()
   const setup = (SpatialBrowser as unknown as { setup: (p: unknown, c: unknown) => {
     selection: Ref<string | null>; detailNode: Ref<TopologyNode | null>; detailsError: Ref<string>; detailsLoading: Ref<boolean>
@@ -94,7 +94,7 @@ it('rejects foreign full details and clears the cache when the source changes', 
 })
 it('renders separate directory and scene pagination without revealing opaque cursors', async () => {
   const root = { ...node('dc'), entity_type: 'data_center' as const }
-  calls.fixture = { data: { nodes: [root], root, edges: [], truncated: true, warnings: [] }, directoryAfter: 'private-directory', sceneAfter: 'private-scene', sceneHistory: [undefined] }
+  calls.fixture = { data: { nodes: [root], root, edges: [], truncated: true, warnings: [], cabinetAssignments: {}, componentOwners: {}, networkLevels: {} }, directoryAfter: 'private-directory', sceneAfter: 'private-scene', sceneHistory: [undefined] }
   const app = createSSRApp({ render: () => h(SpatialBrowser, props()) })
   app.component('el-button', defineComponent({ setup(_props, { slots }) { return () => h('button', slots.default?.()) } }))
   app.component('el-alert', { render: () => null })
@@ -103,4 +103,19 @@ it('renders separate directory and scene pagination without revealing opaque cur
   expect(html).toContain('目录第 1 页'); expect(html).toContain('场景第 2 页')
   expect(html).toContain('下一场景页'); expect(html).toContain('上一场景页')
   expect(html).not.toContain('private-directory'); expect(html).not.toContain('private-scene')
+})
+it('uses backend classification for object labels and counts instead of parent_type properties', async () => {
+  const root = { ...node('dc'), entity_type: 'data_center' as const }
+  const confirmed = { ...node('confirmed'), properties: { parent_type_id: 1, role: 'T2' } }
+  const unclassified = { ...node('unclassified'), properties: { parent_type_id: 54, role: 'T2' } }
+  calls.fixture = { data: { nodes: [root, confirmed, unclassified], root, edges: [], truncated: false, warnings: [], cabinetAssignments: {}, componentOwners: {}, networkLevels: { confirmed: { role: 'BACKEND', level: 0 } } } }
+  const app = createSSRApp({ render: () => h(SpatialBrowser, props()) })
+  app.component('el-button', defineComponent({ setup(_props, { slots }) { return () => h('button', slots.default?.()) } }))
+  app.component('el-alert', { render: () => null })
+  app.directive('loading', { getSSRProps: () => ({}) })
+  const html = await renderToString(app)
+  expect(html).toContain('网络设备 · confirmed')
+  expect(html).not.toContain('网络设备 · unclassified')
+  expect(html).toMatch(/<span[^>]*>已加载网络设备<\/span><strong[^>]*>1<\/strong>/)
+  expect(html).toMatch(/<span[^>]*>已加载业务设备<\/span><strong[^>]*>1<\/strong>/)
 })

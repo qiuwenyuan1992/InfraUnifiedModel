@@ -18,7 +18,7 @@ export function useTopologyDirectory(sourceId: Readonly<Ref<string>>, api: Pick<
   const path = computed(() => frames.value.flatMap(value => value.parent ? [value.parent] : []))
   const pageIndex = computed(() => frame.value?.pageIndex || 0)
   const nextAfter = computed(() => frame.value?.next_after || null)
-  const itemType = computed(() => frame.value?.parent ? frame.value.parent.entity_type === 'data_center' ? 'cabinet' : 'device' : tab.value)
+  const itemType = computed(() => frame.value?.parent ? frame.value.parent.entity_type === 'data_center' ? 'room' : frame.value.parent.entity_type === 'room' ? 'cabinet' : 'device' : tab.value)
   let controller: AbortController | undefined
   let generation = 0
   let disposed = false

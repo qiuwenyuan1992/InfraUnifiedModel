@@ -27,7 +27,7 @@ export function buildDeviceView(graph: TopologyGraph, rootId: string): DeviceVie
     if (!from || !to || from.source_id !== to.source_id || edge.source_id !== from.source_id) continue
     let parent: TopologyNode | undefined, child: TopologyNode | undefined
     if (edge.edge_type === 'spatial_relation' && edge.relation_kind === 'located_in' &&
-      ((from.entity_type === 'device' && to.entity_type === 'cabinet') || (from.entity_type === 'cabinet' && to.entity_type === 'data_center'))) {
+      ((from.entity_type === 'device' && to.entity_type === 'cabinet') || (from.entity_type === 'cabinet' && ['data_center', 'room'].includes(to.entity_type)) || (from.entity_type === 'room' && to.entity_type === 'data_center'))) {
       parent = to; child = from
     } else if (edge.edge_type === 'composition_relation' && from.entity_type === 'device' &&
       ((edge.relation_kind === 'contains_gpu' && to.entity_type === 'gpu') || (edge.relation_kind === 'owns_interface' && to.entity_type === 'interface'))) {
@@ -36,6 +36,8 @@ export function buildDeviceView(graph: TopologyGraph, rootId: string): DeviceVie
       parent = to; child = from
     }
     if (!parent || !child) continue
+    // IDC和房间是并存的背景归属，不参与容器多父判定。
+    if (['data_center', 'room'].includes(parent.entity_type)) continue
     const parents = candidates.get(child.id) || new Map<string, string[]>()
     parents.set(parent.id, [...(parents.get(parent.id) || []), edge.id])
     candidates.set(child.id, parents)
@@ -47,9 +49,7 @@ export function buildDeviceView(graph: TopologyGraph, rootId: string): DeviceVie
     if (parents.size > 1) {
       warnings.push(`节点 ${node.id} 存在多个容器父节点：${[...parents.keys()].sort(compare).join('、')}，未进行分组。`)
     } else {
-      const parent = parents.keys().next().value!
-      // IDC 仅提供背景元数据，保留关系记录但不建立空间容器。
-      if (originalById.get(parent)!.entity_type !== 'data_center') parentOf.set(node.id, parent)
+      parentOf.set(node.id, parents.keys().next().value!)
     }
   }
   // 即使以后扩展关系矩阵，也不能让异常数据触发递归环。
@@ -93,7 +93,7 @@ export function buildDeviceView(graph: TopologyGraph, rootId: string): DeviceVie
     const cached = sizes.get(node.id)
     if (cached) return cached
     const owned = children.get(node.id) || []
-    if (!owned.length && (node.id !== rootId || ['data_center', 'pod'].includes(node.entity_type))) {
+    if (!owned.length && (node.id !== rootId || ['data_center', 'room', 'pod'].includes(node.entity_type))) {
       const size = { width: cardWidth, height: cardHeight }; sizes.set(node.id, size); return size
     }
     const width = Math.max(280, owned.reduce((sum, child) => sum + measure(child).width, 0) + Math.max(0, owned.length - 1) * gap + gap * 2)
@@ -105,7 +105,7 @@ export function buildDeviceView(graph: TopologyGraph, rootId: string): DeviceVie
   const containers: DeviceViewContainer[] = []
   const place = (node: TopologyNode, x: number, y: number, depth = 0) => {
     const size = sizes.get(node.id)!, owned = children.get(node.id) || [], group = groupOf(node)
-    const isContainer = !['data_center', 'pod'].includes(node.entity_type) && (owned.length > 0 || node.id === rootId)
+    const isContainer = !['data_center', 'room', 'pod'].includes(node.entity_type) && (owned.length > 0 || node.id === rootId)
     placed.set(node.id, { node, group, x: x + (isContainer ? gap : 0), y: y + (isContainer ? gap : 0), width: isContainer ? size.width - gap * 2 : size.width, height: cardHeight })
     if (!isContainer) return
     containers.push({ id: node.id, group, x, y, ...size, depth, relationIds: relationIds.get(node.id) || [] })
@@ -118,7 +118,7 @@ export function buildDeviceView(graph: TopologyGraph, rootId: string): DeviceVie
   let rootTree = rootId
   while (parentOf.has(rootTree)) rootTree = parentOf.get(rootTree)!
   const roots = originals.filter(node => !parentOf.has(node.id))
-  const top = roots.filter(node => ['data_center', 'pod'].includes(node.entity_type))
+  const top = roots.filter(node => ['data_center', 'room', 'pod'].includes(node.entity_type))
   const topIds = new Set(top.map(node => node.id))
   const baseY = top.length ? 180 : 80
   const transformers = roots.filter(node => node.id !== rootTree && node.entity_type === 'transformer')

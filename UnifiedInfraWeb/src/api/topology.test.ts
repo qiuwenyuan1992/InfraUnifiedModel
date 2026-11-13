@@ -38,7 +38,7 @@ it('uses only GET exact identity queries, envelope data, optional edge enum, and
   expect((calls[0]![1].headers as Record<string, string>).Authorization).toBeUndefined()
 })
 it('reads compact scenes once via GET with limit five by default and an opaque cursor', async () => {
-  const data = { root: null, cabinets: [], unassigned: [], network_levels: [], nodes: [], edges: [], next_after: '', truncated: false, warnings: [] }
+  const data = { root: null, cabinets: [], unassigned: [], component_owners: [], network_levels: [], nodes: [], edges: [], next_after: '', truncated: false, warnings: [] }
   const fetcher = vi.fn(async () => new Response(JSON.stringify({ code: 0, data })))
   vi.stubGlobal('fetch', fetcher)
   const controller = new AbortController()
@@ -51,6 +51,20 @@ it('reads compact scenes once via GET with limit five by default and an opaque c
   expect(Object.fromEntries(urls[0]!.searchParams)).toEqual({ ...identity, limit: '5' })
   expect(Object.fromEntries(urls[1]!.searchParams)).toEqual({ ...identity, limit: '10', after: 'opaque+/==' })
   expect(calls.every(([, init]) => init.method === 'GET' && init.signal === controller.signal)).toBe(true)
+})
+it('accepts UUID room identity for children, graph node and supported scene root using GET only', async () => {
+  const fetcher = vi.fn(async () => new Response(JSON.stringify({ code: 0, data: {} })))
+  vi.stubGlobal('fetch', fetcher)
+  const identity = { source_id: 's', entity_type: 'room' as const, stable_id: 'room-uuid' }
+  await topologyDirectoryApi.children({ ...identity, limit: 50 })
+  await topologyApi.node(identity)
+  await topologySceneApi.scene(identity)
+  const calls = fetcher.mock.calls as unknown as [string, RequestInit][]
+  expect(calls).toHaveLength(3)
+  for (const [url, init] of calls) {
+    expect(Object.fromEntries(new URL(url, 'http://localhost').searchParams)).toMatchObject(identity)
+    expect(init.method).toBe('GET')
+  }
 })
 it('does not swallow missing nodes, BAD_TYPE, auth, or unavailable graph errors', async () => {
   for (const status of [400, 401, 403, 404, 503]) {

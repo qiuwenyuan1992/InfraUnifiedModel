@@ -103,6 +103,17 @@ it('places only exact directed interface owners in the network column', () => {
   expect(layout.edges.map(item => item.edge.id).sort()).toEqual(graph.edges.map(item => item.id).sort())
 })
 
+it('keeps room context above cabinets without making a room container or synthetic power edges', () => {
+  const graph: TopologyGraph = { nodes: [node('server'), node('room', 'room'), node('dc', 'data_center'), node('cab', 'cabinet')],
+    edges: [edge('server-cab', 'server', 'cab', 'located_in', 'spatial_relation'), edge('cab-room', 'cab', 'room', 'located_in', 'spatial_relation'), edge('room-dc', 'room', 'dc', 'located_in', 'spatial_relation')] }
+  const layout = buildDeviceView(graph, 'server')
+  expect(layout.containers.map(item => item.id).sort()).toEqual(['cab', 'server'])
+  expect(layout.nodes.find(item => item.node.id === 'room')!.y).toBeLessThan(layout.containers.find(item => item.id === 'cab')!.y)
+  expect(layout.edges.map(item => item.edge.id)).toEqual(graph.edges.map(item => item.id).sort())
+  expect(layout.edges.some(item => item.edge.edge_type === 'power_relation')).toBe(false)
+  expect(buildDeviceView(graph, 'room').containers.some(item => item.id === 'room')).toBe(false)
+})
+
 it('puts actual DC/POD background above the server and returns empty when root is absent', () => {
   const graph: TopologyGraph = { nodes: [node('server'), node('dc', 'data_center'), node('pod', 'pod')], edges: [] }
   const layout = buildDeviceView(graph, 'server')

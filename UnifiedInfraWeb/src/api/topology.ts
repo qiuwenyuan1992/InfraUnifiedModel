@@ -1,6 +1,6 @@
 import { inventoryRequest } from './inventory'
 import type { SceneQuery, SceneResponse } from './newSceneTypes'
-import type { DeviceContext, DeviceContextQuery, Neighborhood, NeighborQuery, TopologyChildQuery, TopologyDirectoryPage, TopologyIdentity, TopologyNode, TopologyRootQuery } from './topologyTypes'
+import type { DeviceContext, DeviceContextQuery, Neighborhood, NeighborQuery, RoomPowerContext, TopologyChildQuery, TopologyDirectoryPage, TopologyIdentity, TopologyNode, TopologyRootQuery } from './topologyTypes'
 
 function query(identity: Partial<TopologyIdentity>, options: Record<string, string | number | undefined> = {}) {
   const params = new URLSearchParams()
@@ -17,6 +17,8 @@ export const topologyDirectoryApi = {
     inventoryRequest<TopologyDirectoryPage>(`/topology/children?${query(identity, { limit: identity.limit, after: identity.after })}`, { method: 'GET', signal }),
   deviceContext: (identity: DeviceContextQuery, signal?: AbortSignal) =>
     inventoryRequest<DeviceContext>(`/topology/device-context?${query(identity)}`, { method: 'GET', signal }),
+  roomPower: (identity: DeviceContextQuery, signal?: AbortSignal) =>
+    inventoryRequest<RoomPowerContext>(`/topology/room-power?${query(identity)}`, { method: 'GET', signal }),
 }
 export const topologySceneApi = {
   scene: (identity: SceneQuery, signal?: AbortSignal) =>

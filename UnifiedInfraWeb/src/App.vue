@@ -72,7 +72,7 @@ const summary = computed(() => [
             </el-table>
             <div class="pagination"><span class="muted">第 {{ history.length + 1 }} 页 · 本页 {{ items.length }} 条 · 游标分页</span><el-button :disabled="!history.length || loading" @click="previous(filters)">上一页</el-button><el-button :disabled="!nextCursor || loading" @click="next(filters)">下一页</el-button></div>
           </section>
-          <p class="page-footnote">完整同步执行来源配置内的固定 15 阶段；成功阶段数不等于对象采集比例，失败或取消不会回滚已写入图数据。</p>
+          <p class="page-footnote">完整同步执行来源配置内的全部阶段，阶段总数以任务 API 返回值为准；成功阶段数不等于对象采集比例，失败或取消不会回滚已写入图数据。</p>
         </template>
         <section v-else-if="section === 'sources'" class="panel">
           <div class="panel-title"><div><h2>来源清单</h2><span class="muted">{{ sourcesLoaded && !sourcesError ? `已读取 ${sources.length} 个真实来源` : '从后端分页读取完整来源清单' }}</span></div><el-button :icon="Refresh" :loading="sourcesLoading" @click="loadSources">刷新来源</el-button></div>

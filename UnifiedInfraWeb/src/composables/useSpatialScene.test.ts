@@ -7,30 +7,38 @@ import { useSpatialScene } from './useSpatialScene'
 
 const node = (id: string, entity_type: TopologyNode['entity_type'] = 'device'): TopologyNode => ({ id, entity_type, source_id: 's', stable_id: id, label: id, properties: {}, created_at: null, synced_at: null })
 const compact = (id: string, entity_type: TopologyNode['entity_type'] = 'device') => ({ id, entity_type, source_id: 's', stable_id: id, label: id, role: '', parent_type_id: null, synced_at: '2026-11-09T00:00:00Z' })
-const response = (root = compact('dc', 'data_center')) => ({ root, cabinets: [], unassigned: [], network_levels: [], nodes: [root], edges: [], next_after: '', truncated: false, warnings: [] })
+const response = (root = compact('dc', 'data_center')) => ({ root, cabinets: [], unassigned: [], component_owners: [], network_levels: [], nodes: [root], edges: [], next_after: '', truncated: false, warnings: [] })
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const scopes: ReturnType<typeof effectScope>[] = []
 function setup(scene: (query: SceneQuery, signal?: AbortSignal) => Promise<SceneResponse> = vi.fn(async () => response())) {
   const root = node('dc', 'data_center')
   const api = { roots: vi.fn(async () => ({ items: [root], next_after: 'directory-cursor' })), scene,
-    children: vi.fn(async () => ({ items: [], next_after: null })), neighbors: vi.fn(), node: vi.fn() }
+    neighbors: vi.fn() }
   const scope = effectScope(); scopes.push(scope)
   return { state: scope.run(() => useSpatialScene(api))!, api, root, scope }
 }
-afterEach(() => scopes.splice(0).forEach(scope => scope.stop()))
+afterEach(() => { scopes.splice(0).forEach(scope => scope.stop()); vi.unstubAllGlobals() })
 
 describe('compact spatial scenes', () => {
   it('lists 20 roots and selects a root with exactly one scene request, no initial N+1 reads', async () => {
-    const { state, api, root } = setup()
+    const root = node('dc', 'data_center')
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 0, message: '', data: { items: [root], next_after: null } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 0, message: '', data: response() })))
+    vi.stubGlobal('fetch', fetcher)
+    const scope = effectScope(); scopes.push(scope)
+    const state = scope.run(() => useSpatialScene())!
     await state.loadRoots('s', 'data_center')
-    expect(api.roots).toHaveBeenCalledWith({ source_id: 's', entity_type: 'data_center', limit: 20 }, expect.any(AbortSignal))
-    expect(api.scene).not.toHaveBeenCalled()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher).toHaveBeenLastCalledWith('/v1/inventory/topology/roots?source_id=s&entity_type=data_center&limit=20', expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) }))
+    fetcher.mockClear()
     await state.selectRoot(root)
-    expect(api.scene).toHaveBeenCalledTimes(1)
-    expect(api.scene).toHaveBeenCalledWith({ source_id: 's', entity_type: 'data_center', stable_id: 'dc', limit: 5 }, expect.any(AbortSignal))
-    expect(api.children).not.toHaveBeenCalled(); expect(api.neighbors).not.toHaveBeenCalled()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher).toHaveBeenCalledWith('/v1/inventory/topology/scene?source_id=s&entity_type=data_center&stable_id=dc&limit=5', expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) }))
+    expect(state.data.value.nodes.map(item => item.id)).toEqual(['dc'])
+    expect(state.data.value).toMatchObject({ cabinetAssignments: {}, componentOwners: {}, networkLevels: {} })
     state.mode.value = 'network'
-    expect(api.scene).toHaveBeenCalledTimes(1)
+    expect(fetcher).toHaveBeenCalledTimes(1)
   })
   it('preserves hierarchy for devices beyond 16, actual edge IDs, roles and cabinet pagination', async () => {
     const root = compact('dc', 'data_center'), rack = compact('rack', 'cabinet')
@@ -61,26 +69,37 @@ describe('compact spatial scenes', () => {
   })
   it('keeps scene pagination separate and replaces rather than merges pages', async () => {
     const page = { ...response(), nodes: [compact('dc', 'data_center'), compact('first')], next_after: 'opaque-next' }
-    const scene = vi.fn(async (query: unknown) => (query as { after?: string }).after ? { ...response(), nodes: [compact('dc', 'data_center'), compact('second')] } : page)
+    const scene = vi.fn(async (query: SceneQuery) => query.after === 'opaque-third'
+      ? { ...response(), nodes: [compact('dc', 'data_center'), compact('third')] }
+      : query.after === 'opaque-next'
+        ? { ...response(), nodes: [compact('dc', 'data_center'), compact('second')], next_after: 'opaque-third' }
+        : page)
     const { state, root } = setup(scene)
     await state.loadRoots('s', 'data_center'); await state.selectRoot(root); await state.nextScenePage()
     expect(scene.mock.calls[1]?.[0]).toMatchObject({ after: 'opaque-next', limit: 5 })
     expect(state.sceneHistory.value).toEqual([undefined])
     expect(state.rootsNextAfter.value).toBe('directory-cursor')
     expect(state.data.value.nodes.map(item => item.id)).toEqual(['dc', 'second'])
+    await state.nextScenePage()
+    expect(state.sceneHistory.value).toEqual([undefined, 'opaque-next'])
+    expect(state.data.value.nodes.map(item => item.id)).toEqual(['dc', 'third'])
     await state.previousScenePage()
+    expect(scene.mock.calls[3]?.[0]).toMatchObject({ after: 'opaque-next', limit: 5 })
+    expect(state.data.value.nodes.map(item => item.id)).toEqual(['dc', 'second'])
+    await state.previousScenePage()
+    expect(scene.mock.calls[4]?.[0]).not.toHaveProperty('after')
     expect(state.data.value.nodes.map(item => item.id)).toEqual(['dc', 'first'])
     expect(state.sceneHistory.value).toEqual([])
   })
-  it('validates root identity and both node/edge sources without fabricating missing edges', async () => {
+  it('rejects foreign nodes and invalid root identity without retaining partial data', async () => {
     const foreign = { ...compact('foreign'), source_id: 'other' }
     const page = { ...response(), cabinets: [{ node: compact('rack', 'cabinet'), devices: [compact('device')], next_after: '' }],
       nodes: [compact('dc', 'data_center'), foreign], edges: [{ id: 'foreign-edge', source_id: 'other', edge_type: 'spatial_relation' as const, relation_kind: 'located_in', from: 'device', to: 'rack', rank: '' }] }
     const { state, root } = setup(vi.fn(async () => page))
     await state.loadRoots('s', 'data_center'); await state.selectRoot(root)
-    expect(state.data.value.nodes.every(item => item.source_id === 's')).toBe(true)
+    expect(state.error.value).not.toBe('')
     expect(state.data.value.edges).toEqual([])
-    expect(state.data.value.nodes.map(item => item.id)).toEqual(['dc', 'rack', 'device'])
+    expect(state.data.value.nodes).toEqual([])
     const invalid = setup(vi.fn(async () => response({ ...compact('dc', 'data_center'), source_id: 'other' })))
     await invalid.state.loadRoots('s', 'data_center'); await invalid.state.selectRoot(invalid.root)
     expect(invalid.state.error.value).not.toBe('')
@@ -109,7 +128,7 @@ describe('compact spatial scenes', () => {
   })
   it('keeps explicit network expansion bounded, source validated and based on real port edges', async () => {
     const device = { ...compact('switch'), parent_type_id: 54, role: 'T1' }
-    const { state, root, api } = setup(vi.fn(async () => ({ ...response(), nodes: [compact('dc', 'data_center'), device] })))
+    const { state, root, api } = setup(vi.fn(async () => ({ ...response(), nodes: [compact('dc', 'data_center'), device], network_levels: [{ role: 'T1', level: 1, nodes: [device] }] })))
     const local = Array.from({ length: 10 }, (_, i) => node(`p${i}`))
     const remote = Array.from({ length: 10 }, (_, i) => node(`r${i}`))
     local.forEach(port => { port.entity_type = 'interface' }); remote.forEach(port => { port.entity_type = 'interface' })
@@ -124,12 +143,17 @@ describe('compact spatial scenes', () => {
     await state.loadRoots('s', 'data_center'); await state.selectRoot(root)
     expect(api.neighbors).not.toHaveBeenCalled()
     await state.expandNetwork(state.data.value.nodes.find(item => item.id === 'switch')!)
-    expect(api.neighbors).toHaveBeenCalledTimes(15)
+    expect(api.neighbors).toHaveBeenCalledTimes(8)
     expect(state.data.value.edges.filter(item => item.edge_type === 'network_relation')).toHaveLength(7)
     expect(state.data.value.edges.some(item => item.from === 'switch' && item.to === 'owner')).toBe(false)
-    expect(state.data.value.assignmentStatus?.r0).toBe('truncated')
+    expect(state.data.value.assignmentStatus?.r0).toBe('unknown')
+    expect(state.data.value.assignmentStatus?.p0).toBe('unknown')
+    expect(state.data.value.componentOwners).toEqual({})
+    expect(state.data.value.cabinetAssignments).toEqual({})
+    expect(state.data.value.networkLevels).toEqual({ switch: { role: 'T1', level: 1 } })
+    expect(state.data.value.nodes.some(item => item.id === 'owner')).toBe(false)
     expect(buildSpatialScene(state.data.value, 'network').placements.find(item => item.node.id === 'r0')?.parentId).toBeUndefined()
-    expect(state.data.value.warnings.join(' ')).toContain('远端设备')
+    expect(state.data.value.warnings.join(' ')).toContain('手动展开端点层级未确认，请重载')
     expect(state.data.value.truncated).toBe(true)
   })
 })

@@ -53,7 +53,7 @@ function rendererFixture() {
 describe('spatial Three.js lifecycle', () => {
   it('labels real network equipment by role and SN, not GPU', () => {
     const n = placement('210235A53L5264L100BY', 'network', 0, 8, 0)
-    n.node.properties.parent_type_id = 54; n.role = 'T0'; n.node.label = 'ZQZ11_F403-F-02_POD249_T0_CLD_047-GDR'
+    n.node.properties.parent_type_id = 1; n.tier = 2; n.role = 'T0'; n.node.label = 'ZQZ11_F403-F-02_POD249_T0_CLD_047-GDR'
     expect(spatialObjectLabel(n)).toContain('网络设备 T0')
     expect(spatialObjectLabel(n)).toContain(n.node.stable_id)
     expect(spatialObjectLabel(n)).not.toContain('GPU')
@@ -137,19 +137,21 @@ describe('spatial Three.js review regressions', () => {
     renderer.dispose()
   })
 
-  it('groups tier planes only from real network devices, not interfaces or lookalike roles', () => {
+  it('groups planes by supplied numeric tier rather than raw role or node properties', () => {
     const { renderer, callbacks } = rendererFixture()
     const t2 = placement('t2', 'network', 0, 24)
-    t2.role = 'T2'; t2.node.properties.parent_type_id = 54
+    t2.role = 'T0'; t2.tier = 2; t2.node.properties.parent_type_id = 1
     const t0 = placement('t0', 'network', 5, 8)
-    t0.role = 'T0'; t0.node.properties.parent_type_id = '54'
+    t0.role = 'T2'; t0.tier = 0; t0.node.properties.parent_type_id = 1
     const unknown = placement('unknown', 'network', 10, 4)
-    unknown.role = 'customT2'; unknown.node.properties.parent_type_id = 54
+    unknown.role = 'customT2'; unknown.tier = null; unknown.node.properties.parent_type_id = 1
+    const sameTier = placement('same-tier', 'network', 15, 24)
+    sameTier.role = 'CUSTOM'; sameTier.tier = 2
     const port = placement('port', 'network', 1.5, 24, 0, 't2')
-    port.node.entity_type = 'interface'; port.role = ''; port.node.properties.parent_type_id = 54
+    port.node.entity_type = 'interface'; port.role = ''; port.tier = 2; port.node.properties.parent_type_id = 54
     const impostor = placement('server', 'network', 15, 16)
-    impostor.node.properties.parent_type_id = 1
-    renderer.update(layout([t2, t0, unknown, port, impostor]), 'network')
+    impostor.node.properties.parent_type_id = 54
+    renderer.update(layout([t2, t0, unknown, sameTier, port, impostor]), 'network')
     callbacks[0]!(0)
     const planes: THREE.Mesh[] = []
     ;(runtime.scene as THREE.Scene).traverse(object => {

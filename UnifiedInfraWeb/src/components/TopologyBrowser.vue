@@ -4,7 +4,7 @@ import type { Source } from '../api/types'
 import type { TopologyNode, TopologySelection } from '../api/topologyTypes'
 import { useTopology } from '../composables/useTopology'
 import { useTopologyDirectory } from '../composables/useTopologyDirectory'
-import { edgeColors, edgeLabels, entityLabels, validIdentity, topologyDisplayName } from '../services/topology'
+import { edgeColors, edgeLabels, entityLabels, validIdentity, topologyDisplayName, directoryCountSummary, deviceCardSummary } from '../services/topology'
 import TopologyCanvas from './TopologyCanvas.vue'
 import TopologyDetails from './TopologyDetails.vue'
 import DeviceTopologyView from './DeviceTopologyView.vue'
@@ -12,7 +12,7 @@ import DeviceTopologyView from './DeviceTopologyView.vue'
 const props = defineProps<{ sources: Source[]; sourcesLoading: boolean; sourcesLoaded: boolean; sourcesError: string }>()
 const {
   sourceId, stableId, direction, edgeType, graph, selection, selectedNode, selectedEdge,
-  rootId, loading, error, notice, warnings, contextNotice, loadDeviceContext, expand, reset,
+  rootId, loading, error, notice, warnings, contextNotice, powerMissing, powerView, loadRoomPower, loadDeviceContext, expand, reset,
 } = useTopology()
 const enabledSources = computed(() => props.sources.filter(source => source.enabled && source.adapter_kind === 'cmdb'))
 const sourceStatus = computed(() => {
@@ -53,9 +53,19 @@ function warningText(code: string) {
     node_budget_exhausted: '已达到设备视图节点预算，当前展示不是完整依赖',
     edge_budget_exhausted: '已达到设备视图关系预算，当前展示不是完整依赖',
     step_truncated: '部分路径读取已截断，请手动缩小范围后继续展开',
+    room_power_truncated: '房间供电链读取已截断，当前展示不是完整供电拓扑',
   }
   return messages[code] || code
 }
+// 供电缺失机柜：按节点 ID 解析名称，供警示条展示。
+const powerMissingNodes = computed(() => powerMissing.value
+  .map(id => graph.value.nodes.find(node => node.id === id))
+  .filter((node): node is TopologyNode => !!node))
+const powerMissingText = computed(() => {
+  if (!powerView.value || !powerMissingNodes.value.length) return ''
+  const names = powerMissingNodes.value.map(node => topologyDisplayName(node))
+  return `供电关系缺失机柜 ${names.length} 个（${names.slice(0, 3).join('、')}${names.length > 3 ? ' 等' : ''}）：来源未维护 A/B 路列头柜引用，如实标记，不猜测补边。`
+})
 function backToDirectory() { showGraph.value = false; reset() }
 function breadcrumb(depth: number) { backToDirectory(); directory.back(depth) }
 async function openItem(item: TopologyNode) {
@@ -67,6 +77,13 @@ async function openItem(item: TopologyNode) {
     backToDirectory()
     await directory.open(item)
   }
+}
+async function viewRoomPower(item: TopologyNode) {
+  if (!sourceEnabled.value || directoryLoading.value || loading.value || item.entity_type !== 'room') return
+  // 供电视图用关系图展示：主链 spatial+power 边与缺失标记。
+  viewMode.value = 'graph'
+  showGraph.value = true
+  await loadRoomPower(item.stable_id)
 }
 async function submit() {
   if (!canLocate.value) return
@@ -104,16 +121,22 @@ async function reloadDirectory() { backToDirectory(); await directory.reload() }
         <el-button v-else @click="backToDirectory">返回目录</el-button>
       </div>
       <template v-if="!showGraph">
-        <p class="muted topology-directory-description">{{ path.length ? itemType === 'cabinet' ? '选择机柜，继续查看柜内设备' : tab === 'pod' ? 'POD 直接成员设备，不通过机柜标签推导' : '选择柜内设备，查看业务关联' : `选择${entityLabels[tab]}，逐层浏览设备` }} · 每页最多 50 项</p>
+        <p class="muted topology-directory-description">{{ path.length ? itemType === 'room' ? '选择房间，继续查看机柜' : itemType === 'cabinet' ? '选择机柜，继续查看柜内设备' : tab === 'pod' ? 'POD 直接成员设备，不通过机柜标签推导' : '选择柜内设备，查看业务关联' : `选择${entityLabels[tab]}，逐层浏览设备` }} · 每页最多 50 项</p>
         <el-alert v-if="directoryError" :title="directoryError" type="error" :closable="false" show-icon class="spaced" />
         <div v-loading="directoryLoading" class="topology-directory-list" aria-label="业务目录列表">
-          <button v-for="item in items" :key="item.id" class="topology-directory-card" :disabled="directoryLoading || !sourceEnabled" @click="openItem(item)">
-            <span class="topology-card-type">{{ entityLabels[item.entity_type] }}</span>
-            <strong>{{ displayName(item) }}</strong>
-            <span class="muted">{{ item.entity_type === 'device' ? 'SN' : 'UUID' }} · {{ item.stable_id }}</span>
-            <span class="topology-card-action">{{ item.entity_type === 'device' ? '查看关联拓扑' : '查看下级' }} →</span>
-          </button>
-          <el-empty v-if="!items.length" :description="directoryLoading ? '正在读取目录' : directoryError ? '目录读取失败，请刷新重试' : sourceStatus ? '等待唯一 CMDB 来源配置' : '当前目录没有已同步条目'" :image-size="90" />
+          <div v-for="item in items" :key="item.id" class="topology-directory-item">
+            <button class="topology-directory-card" :disabled="directoryLoading || !sourceEnabled" @click="openItem(item)">
+              <span class="topology-card-type">{{ entityLabels[item.entity_type] }}</span>
+              <strong>{{ displayName(item) }}</strong>
+              <span v-if="item.entity_type === 'device'" class="muted">SN {{ item.stable_id }}</span>
+              <span v-if="item.entity_type === 'device'" class="muted">{{ deviceCardSummary(item) }}</span>
+              <span v-else-if="item.entity_type === 'data_center' || item.entity_type === 'room' || item.entity_type === 'cabinet'" class="muted">{{ directoryCountSummary(item) }}</span>
+              <span v-else class="muted">UUID · {{ item.stable_id }}</span>
+              <span class="topology-card-action">{{ item.entity_type === 'device' ? '查看关联拓扑' : '查看下级' }} →</span>
+            </button>
+            <button v-if="item.entity_type === 'room'" class="topology-card-power" :disabled="directoryLoading || !sourceEnabled" @click="viewRoomPower(item)">供电</button>
+          </div>
+          <el-empty v-if="!items.length" :description="directoryLoading ? '正在读取目录' : directoryError ? '目录读取失败，请刷新重试' : sourceStatus ? '等待唯一 CMDB 来源配置' : `当前目录没有已同步${entityLabels[itemType]}`" :image-size="90" />
         </div>
         <div class="topology-pagination" aria-label="业务目录分页">
           <el-button :disabled="directoryLoading || !sourceEnabled || pageIndex === 0" @click="directory.previous">上一页</el-button>
@@ -126,29 +149,30 @@ async function reloadDirectory() { backToDirectory(); await directory.reload() }
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="spaced" />
       <el-alert v-if="contextNotice" :title="contextNotice" type="warning" :closable="false" show-icon class="spaced" />
       <el-alert v-for="(warning, index) in warnings" :key="index" :title="warningText(warning)" type="warning" :closable="false" show-icon class="spaced" />
+      <el-alert v-if="powerMissingText" :title="powerMissingText" type="warning" :closable="false" show-icon class="spaced" />
       <el-alert v-if="notice && notice !== contextNotice" :title="notice" :type="notice.includes('截断') ? 'warning' : 'info'" :closable="false" show-icon class="spaced" />
       <section class="panel topology-workspace">
         <div class="topology-toolbar">
-          <div><h2>设备业务关联拓扑</h2><span class="muted">{{ graph.nodes.length }} / 500 节点 · {{ graph.edges.length }} / 1000 关系</span></div>
-          <div class="topology-tabs" role="tablist" aria-label="拓扑展示方式">
+          <div><h2>{{ powerView ? '房间供电拓扑' : '设备业务关联拓扑' }}</h2><span class="muted">{{ graph.nodes.length }} / 500 节点 · {{ graph.edges.length }} / 1000 关系</span></div>
+          <div v-if="!powerView" class="topology-tabs" role="tablist" aria-label="拓扑展示方式">
             <button role="tab" :aria-selected="viewMode === 'device'" :class="{ active: viewMode === 'device' }" @click="viewMode = 'device'">设备视图</button>
             <button role="tab" :aria-selected="viewMode === 'graph'" :class="{ active: viewMode === 'graph' }" @click="viewMode = 'graph'">关系图</button>
           </div>
           <el-select v-model="edgeType" placeholder="全部关系领域" aria-label="展开关系领域"><el-option label="全部关系领域" value="" /><el-option v-for="(label, type) in edgeLabels" :key="type" :label="label" :value="type" /></el-select>
           <el-select v-model="direction" aria-label="展开方向"><el-option label="双向邻居" value="both" /><el-option label="入向邻居" value="in" /><el-option label="出向邻居" value="out" /></el-select>
           <el-button type="primary" plain :disabled="!selectedNode || !sourceEnabled" :loading="loading" @click="expand">展开选中节点一跳</el-button>
-          <el-button :disabled="!canLocate" :loading="loading" @click="submit">重新读取设备关联</el-button>
+          <el-button v-if="!powerView" :disabled="!canLocate" :loading="loading" @click="submit">重新读取设备关联</el-button>
           <el-button v-if="(compact || viewMode === 'device') && selection" @click="detailsOpen = true">查看详情</el-button>
         </div>
         <p class="muted topology-selection">{{ selectedNode ? `选中：${selectedNode.label || selectedNode.stable_id}` : selectedEdge ? '已选中关系；请选择节点后展开' : '点击节点选择，点击关系查看属性' }} · 筛选仅作用于下一次手动读取，不删除已展示关系。</p>
         <p class="muted">原始真实图，不生成供电直连。缺失关系与截断会明确提示，不能据此认定设备没有依赖。</p>
-        <div class="topology-layout" :style="viewMode === 'device' ? { gridTemplateColumns: 'minmax(0, 1fr)' } : undefined">
+        <div class="topology-layout" :style="viewMode === 'device' && !powerView ? { gridTemplateColumns: 'minmax(0, 1fr)' } : undefined">
           <div v-loading="loading" class="topology-graph-area">
-            <DeviceTopologyView v-if="graph.nodes.length && viewMode === 'device'" :graph="graph" :selection="selection" :root-id="rootId" @select="select" />
+            <DeviceTopologyView v-if="graph.nodes.length && viewMode === 'device' && !powerView" :graph="graph" :selection="selection" :root-id="rootId" @select="select" />
             <TopologyCanvas v-else-if="graph.nodes.length" :graph="graph" :selection="selection" :root-id="rootId" @select="select" />
-            <el-empty v-else :description="loading ? '正在读取设备关联路径' : '未展示设备，请核对 SN 或服务状态后重试'" :image-size="100" />
+            <el-empty v-else :description="loading ? (powerView ? '正在读取房间供电链' : '正在读取设备关联路径') : '未展示设备，请核对 SN 或服务状态后重试'" :image-size="100" />
           </div>
-          <aside v-if="!compact && viewMode === 'graph'" class="topology-detail-sidebar"><TopologyDetails :node="selectedNode" :edge="selectedEdge" :source-name="sourceName" /></aside>
+          <aside v-if="!compact && (viewMode === 'graph' || powerView)" class="topology-detail-sidebar"><TopologyDetails :node="selectedNode" :edge="selectedEdge" :source-name="sourceName" /></aside>
         </div>
         <div class="topology-legend" aria-label="关系图例"><span v-for="(label, type) in edgeLabels" :key="type"><i :style="{ background: edgeColors[type] }" />{{ label }}</span><span>箭头保留存储方向 · A/B 路径及 UPS 成员旁支保留 · 可拖拽 / 滚轮缩放</span></div>
       </section>

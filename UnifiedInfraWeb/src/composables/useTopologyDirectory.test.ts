@@ -14,20 +14,26 @@ function fixture() {
   return { source, api, scope, state }
 }
 
-it('starts with bounded DC roots and drills DC → cabinets → devices using full parent identities', async () => {
+it('starts with bounded DC roots and drills DC → rooms → cabinets → devices without skipping rooms', async () => {
   const { api, scope, state } = fixture()
   try {
     await tick()
     expect(state.items.value[0]?.entity_type).toBe('data_center')
     expect(api.roots).toHaveBeenCalledWith({ source_id: 's', entity_type: 'data_center', limit: 50 }, expect.any(AbortSignal))
+    api.children.mockResolvedValueOnce(page(node('room', 'room-uuid')))
+    await state.open(state.items.value[0]!)
+    expect(state.itemType.value).toBe('room')
+    expect(state.items.value[0]?.stable_id).toBe('room-uuid')
     api.children.mockResolvedValueOnce(page(node('cabinet', 'cab')))
     await state.open(state.items.value[0]!)
+    expect(api.children).toHaveBeenLastCalledWith({ source_id: 's', entity_type: 'room', stable_id: 'room-uuid', limit: 50 }, expect.any(AbortSignal))
+    expect(state.itemType.value).toBe('cabinet')
     expect(state.items.value[0]?.entity_type).toBe('cabinet')
     api.children.mockResolvedValueOnce(page(node('device', 'SN')))
     await state.open(state.items.value[0]!)
     expect(state.items.value[0]?.stable_id).toBe('SN')
     expect(api.children).toHaveBeenLastCalledWith({ source_id: 's', entity_type: 'cabinet', stable_id: 'cab', limit: 50 }, expect.any(AbortSignal))
-    expect(state.path.value.map(item => item.stable_id)).toEqual(['dc', 'cab'])
+    expect(state.path.value.map(item => item.stable_id)).toEqual(['dc', 'room-uuid', 'cab'])
   } finally { scope.stop() }
 })
 it('POD reads direct device members and never traverses cabinet tags', async () => {
@@ -55,12 +61,12 @@ it('keeps opaque cursors isolated by parent, supports previous page, breadcrumb 
     api.roots.mockResolvedValueOnce(page(node('data_center', 'dc3')))
     await state.next()
     expect(api.roots).toHaveBeenLastCalledWith({ source_id: 's', entity_type: 'data_center', limit: 50, after: 'signed+root/==' }, expect.any(AbortSignal))
-    api.children.mockResolvedValueOnce({ items: [node('cabinet', 'cab')], next_after: 'signed-cabinet' })
+    api.children.mockResolvedValueOnce({ items: [node('room', 'room')], next_after: 'signed-room' })
     await state.open(state.items.value[0]!)
     expect(api.children).toHaveBeenLastCalledWith({ source_id: 's', entity_type: 'data_center', stable_id: 'dc3', limit: 50 }, expect.any(AbortSignal))
-    api.children.mockResolvedValueOnce(page(node('cabinet', 'cab2')))
+    api.children.mockResolvedValueOnce(page(node('room', 'room2')))
     await state.next()
-    expect(api.children).toHaveBeenLastCalledWith({ source_id: 's', entity_type: 'data_center', stable_id: 'dc3', limit: 50, after: 'signed-cabinet' }, expect.any(AbortSignal))
+    expect(api.children).toHaveBeenLastCalledWith({ source_id: 's', entity_type: 'data_center', stable_id: 'dc3', limit: 50, after: 'signed-room' }, expect.any(AbortSignal))
     state.back(0)
     expect(state.items.value[0]?.stable_id).toBe('dc3')
     expect(state.pageIndex.value).toBe(1)
