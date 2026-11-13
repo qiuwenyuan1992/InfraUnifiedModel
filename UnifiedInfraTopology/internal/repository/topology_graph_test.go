@@ -51,6 +51,29 @@ func (f *topologyGraphFake) ExecuteParameter(ctx context.Context, statement stri
 
 func (f *topologyGraphFake) Close() {}
 
+func TestTopologyRoomSchemaAndTypedReferences(t *testing.T) {
+	schema, ok := topologyEntitySchemas[model.EntityType("room")]
+	require.True(t, ok)
+	require.Equal(t, "uuid", schema.stableField)
+	for _, field := range []string{"inst_id", "idc_id", "idc_module_id", "phy_building_id", "status"} {
+		require.Equal(t, topologyInteger, schema.properties[field])
+	}
+	for _, field := range []string{"full_name", "room_full_name", "name"} {
+		require.Equal(t, topologyString, schema.properties[field])
+	}
+	require.Equal(t, topologyInteger, topologyEntitySchemas[model.EntityRPP].properties["idc_room"])
+	require.Equal(t, topologyInteger, topologyEntitySchemas[model.EntityCabinet].properties["phy_room_id"])
+	// 来源计数快照仅作目录展示，不参与身份或关系语义。
+	for _, entity := range []model.EntityType{model.EntityRoom, model.EntityDataCenter} {
+		for _, field := range []string{"cabinet_num", "server_num", "network_device_num"} {
+			require.Equal(t, topologyInteger, topologyEntitySchemas[entity].properties[field], "%s.%s", entity, field)
+		}
+	}
+	for _, field := range []string{"device_num", "server_num", "network_device_num"} {
+		require.Equal(t, topologyInteger, topologyEntitySchemas[model.EntityCabinet].properties[field], "cabinet.%s", field)
+	}
+}
+
 func TestTopologySourceCleanupLockWaitsForWrites(t *testing.T) {
 	unlockWrite := lockTopologySourceWrite("cmdb-primary")
 	acquired := make(chan struct{})

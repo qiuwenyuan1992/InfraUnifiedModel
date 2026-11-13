@@ -198,7 +198,7 @@ func validateSyncRoundSelections(conf *viper.Viper, ref string) error {
 	}
 	prefix := "inventory.cmdb.sources." + ref + "."
 	idc := conf.GetInt(prefix + "device_condition.idc_id")
-	for _, key := range []string{"cabinet_condition.idc_id", "data_center_condition.inst_id", "interface_condition.idc_id", "transformer_condition.idc", "ups_group_condition.idc", "ups_condition.idc", "rpp_condition.idc"} {
+	for _, key := range []string{"room_condition.idc_id", "cabinet_condition.idc_id", "data_center_condition.inst_id", "interface_condition.idc_id", "transformer_condition.idc", "ups_group_condition.idc", "ups_condition.idc", "rpp_condition.idc"} {
 		if idc <= 0 || conf.GetInt(prefix+key) != idc {
 			return errors.New("round requires compatible positive IDC selections for every entity")
 		}

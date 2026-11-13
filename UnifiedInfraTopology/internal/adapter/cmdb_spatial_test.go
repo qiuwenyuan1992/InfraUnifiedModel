@@ -38,6 +38,12 @@ func spatialTestCollector(t *testing.T, f *spatialFixture) (*CMDB, *viper.Viper)
 		case "idc":
 			require.Equal(t, map[string]any{"inst_id": float64(7)}, req.Condition)
 			require.Equal(t, dataCenterFields, req.Fields)
+		case "room":
+			require.Equal(t, map[string]any{"idc_id": float64(7), "status": float64(1)}, req.Condition)
+			require.Equal(t, roomFields, req.Fields)
+		case "idc_RPP":
+			require.Equal(t, map[string]any{"idc": float64(7)}, req.Condition)
+			require.Equal(t, rppFields, req.Fields)
 		case "pod":
 			require.Empty(t, req.Condition)
 			require.Equal(t, podFields, req.Fields)
@@ -77,6 +83,79 @@ func spatialBaseFixture() *spatialFixture {
 		"pod":         {{"inst_id": 20, "uuid": " P "}},
 	}}
 }
+func TestCollectSpatialRoomRelations(t *testing.T) {
+	f := spatialBaseFixture()
+	f.items["room"] = []map[string]any{{"inst_id": 30, "uuid": "ROOM", "idc_id": 7, "status": 1}}
+	f.items["cabinet"][0]["phy_room_id"] = 30
+	f.items["idc_RPP"] = []map[string]any{{"inst_id": 40, "idc": 7, "idc_room": 30}}
+	c, _ := spatialTestCollector(t, f)
+	got, err := c.CollectSpatial(context.Background(), model.Source{ID: "s", ConfigRef: "test"})
+	require.NoError(t, err)
+	require.Len(t, got.Relations, 6)
+	roomEdges := map[string]string{}
+	for _, relation := range got.Relations {
+		if relation.Identity.From.EntityType == "room" || relation.Identity.To.EntityType == "room" {
+			roomEdges[string(relation.Identity.From.EntityType)+"/"+string(relation.Identity.To.EntityType)] = relation.Identity.From.StableID + "/" + relation.Identity.To.StableID
+		}
+	}
+	require.Equal(t, map[string]string{"room/data_center": "ROOM/IDC", "cabinet/room": "C/ROOM", "rpp/room": "40/ROOM"}, roomEdges)
+	f.items["room"] = nil
+	missing, err := c.CollectSpatial(context.Background(), model.Source{ID: "s", ConfigRef: "test"})
+	require.NoError(t, err)
+	require.Len(t, missing.Relations, 3)
+	require.Equal(t, 2, missing.Reasons["missing_room"])
+}
+
+func TestCollectSpatialRoomAmbiguityAndScope(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		mutate  func(*spatialFixture, *viper.Viper)
+		reason  string
+		failure bool
+	}{
+		{"duplicate room numeric ID", func(f *spatialFixture, _ *viper.Viper) {
+			f.items["room"] = append(f.items["room"], map[string]any{"inst_id": 30, "uuid": "OTHER", "idc_id": 7, "status": 1})
+		}, "ambiguous_room", false},
+		{"duplicate room UUID", func(f *spatialFixture, _ *viper.Viper) {
+			f.items["room"] = append(f.items["room"], map[string]any{"inst_id": 31, "uuid": "ROOM", "idc_id": 7, "status": 1})
+		}, "ambiguous_room", false},
+		{"empty room IDC has no selection fallback", func(f *spatialFixture, _ *viper.Viper) { delete(f.items["room"][0], "idc_id") }, "empty_data_center_reference", false},
+		{"room outside IDC", func(f *spatialFixture, _ *viper.Viper) { f.items["room"][0]["idc_id"] = 8 }, "", true},
+		{"room outside status", func(f *spatialFixture, _ *viper.Viper) { f.items["room"][0]["status"] = 2 }, "", true},
+		{"room condition conflict", func(_ *spatialFixture, c *viper.Viper) {
+			c.Set("inventory.cmdb.sources.test.room_condition", map[string]any{"idc_id": 8})
+		}, "", true},
+		{"narrow room directory", func(_ *spatialFixture, c *viper.Viper) {
+			c.Set("inventory.cmdb.sources.test.room_condition", map[string]any{"idc_module_id": 133})
+		}, "", true},
+		{"rpp condition conflict", func(_ *spatialFixture, c *viper.Viper) {
+			c.Set("inventory.cmdb.sources.test.rpp_condition", map[string]any{"idc": 8})
+		}, "", true},
+		{"room count drift", func(f *spatialFixture, _ *viper.Viper) {
+			f.mutate = func(o string, _ int, p map[string]any) {
+				if o == "room" {
+					p["count"] = 2
+				}
+			}
+		}, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := spatialBaseFixture()
+			f.items["room"] = []map[string]any{{"inst_id": 30, "uuid": "ROOM", "idc_id": 7, "status": 1}}
+			f.items["cabinet"][0]["phy_room_id"] = 30
+			c, conf := spatialTestCollector(t, f)
+			tc.mutate(f, conf)
+			got, err := c.CollectSpatial(context.Background(), model.Source{ID: "s", ConfigRef: "test"})
+			if tc.failure {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Positive(t, got.Reasons[tc.reason])
+		})
+	}
+}
+
 func TestCollectSpatialThreeCombinationsAndDeterministicDigest(t *testing.T) {
 	f := spatialBaseFixture()
 	c, _ := spatialTestCollector(t, f)
@@ -85,7 +164,8 @@ func TestCollectSpatialThreeCombinationsAndDeterministicDigest(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got.Relations, 3)
 	require.Equal(t, 2, got.Objects)
-	require.Zero(t, got.Skipped)
+	require.Equal(t, map[string]int{"empty_room_reference": 1}, got.Reasons)
+	require.Equal(t, 1, got.Skipped)
 	combos := map[string]bool{}
 	for _, r := range got.Relations {
 		require.NoError(t, model.ValidateRelation(r))

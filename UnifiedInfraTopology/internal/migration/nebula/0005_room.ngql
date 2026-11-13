@@ -1,0 +1,27 @@
+-- 手动增量迁移：仅用于执行过 0001–0004 的既有图；应用启动不会执行 DDL。
+-- 与最新 0001 基线二选一；基线已有 rpp.idc_room 时不得重复 ADD。
+-- cabinet.phy_room_id INT NULL 在既有基线中已存在，保留，不改变身份或旧关系。
+USE unified_infra_topology;
+
+CREATE TAG IF NOT EXISTS room (
+  source_id STRING NOT NULL,
+  uuid STRING NOT NULL,
+  inst_id INT NULL,
+  full_name STRING NULL,
+  room_full_name STRING NULL,
+  name STRING NULL,
+  idc_id INT NULL,
+  idc_module_id INT NULL,
+  phy_building_id INT NULL,
+  status INT NULL,
+  cabinet_num INT NULL,
+  server_num INT NULL,
+  network_device_num INT NULL,
+  source_created_at DATETIME NULL,
+  source_updated_at DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
+CREATE TAG INDEX IF NOT EXISTS idx_room_identity ON room (source_id(64), uuid(192));
+ALTER TAG rpp ADD (idc_room INT NULL);

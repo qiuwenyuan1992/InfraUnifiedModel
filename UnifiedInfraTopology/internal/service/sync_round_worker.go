@@ -122,6 +122,22 @@ func (w *SyncRoundWorker) ProcessNext(ctx context.Context) (bool, error) {
 		}
 		return true, &recordedRoundFailure{message: fmt.Sprintf("round %s stopped at %s; status=%s; prior graph writes remain", round.ID, phase, status)}
 	}
+	stored, phases, planErr := w.repo.Get(execution, round.ID)
+	planValid := planErr == nil && stored != nil && stored.ID == round.ID && stored.SourceID == source.ID && stored.Status == "running" && len(phases) == len(model.SyncRoundPhaseNames())
+	if planValid {
+		for i, name := range model.SyncRoundPhaseNames() {
+			if phases[i].RoundID != round.ID || phases[i].Name != name || phases[i].Position != i+1 || phases[i].Status != "queued" {
+				planValid = false
+				break
+			}
+		}
+	}
+	if !planValid {
+		if err := finish("failed", "round_phase_plan_changed"); err != nil {
+			return true, errors.New("round phase plan failure could not be recorded")
+		}
+		return true, &recordedRoundFailure{message: "round phase plan changed; create a new round for the current room stage"}
+	}
 	for _, phase := range model.SyncRoundPhaseNames() {
 		if e := execution.Err(); e != nil {
 			return failed(phase, e)

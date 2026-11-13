@@ -89,6 +89,26 @@ CREATE TAG IF NOT EXISTS pod (
   synced_at DATETIME NOT NULL
 );
 
+CREATE TAG IF NOT EXISTS room (
+  source_id STRING NOT NULL,
+  uuid STRING NOT NULL,
+  inst_id INT NULL,
+  full_name STRING NULL,
+  room_full_name STRING NULL,
+  name STRING NULL,
+  idc_id INT NULL,
+  idc_module_id INT NULL,
+  phy_building_id INT NULL,
+  status INT NULL,
+  cabinet_num INT NULL,
+  server_num INT NULL,
+  network_device_num INT NULL,
+  source_created_at DATETIME NULL,
+  source_updated_at DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  synced_at DATETIME NOT NULL
+);
+
 CREATE TAG IF NOT EXISTS cabinet (
   source_id STRING NOT NULL,
   uuid STRING NOT NULL,
@@ -108,6 +128,9 @@ CREATE TAG IF NOT EXISTS cabinet (
   pod_ids STRING NULL,
   row_switch_id_a INT NULL,
   row_switch_id_b INT NULL,
+  device_num INT NULL,
+  server_num INT NULL,
+  network_device_num INT NULL,
   source_created_at DATETIME NULL,
   source_updated_at DATETIME NULL,
   created_at DATETIME NOT NULL,
@@ -122,6 +145,9 @@ CREATE TAG IF NOT EXISTS data_center (
   cn_name STRING NULL,
   address STRING NULL,
   location STRING NULL,
+  cabinet_num INT NULL,
+  server_num INT NULL,
+  network_device_num INT NULL,
   source_created_at DATETIME NULL,
   source_updated_at DATETIME NULL,
   created_at DATETIME NOT NULL,
@@ -135,6 +161,7 @@ CREATE TAG IF NOT EXISTS rpp (
   idc_id INT NULL,
   ups_group_id INT NULL,
   transformer_group_a_id INT NULL,
+  idc_room INT NULL,
   source_created_at DATETIME NULL,
   source_updated_at DATETIME NULL,
   created_at DATETIME NOT NULL,
@@ -232,6 +259,7 @@ CREATE TAG INDEX IF NOT EXISTS idx_device_identity ON device (source_id(64), dev
 CREATE TAG INDEX IF NOT EXISTS idx_interface_identity ON interface (source_id(64), port_uuid(192));
 CREATE TAG INDEX IF NOT EXISTS idx_gpu_identity ON gpu (source_id(64), parts_sn(192));
 CREATE TAG INDEX IF NOT EXISTS idx_pod_identity ON pod (source_id(64), uuid(192));
+CREATE TAG INDEX IF NOT EXISTS idx_room_identity ON room (source_id(64), uuid(192));
 CREATE TAG INDEX IF NOT EXISTS idx_cabinet_identity ON cabinet (source_id(64), uuid(192));
 CREATE TAG INDEX IF NOT EXISTS idx_data_center_identity ON data_center (source_id(64), uuid(192));
 CREATE TAG INDEX IF NOT EXISTS idx_rpp_identity ON rpp (source_id(64), inst_id);

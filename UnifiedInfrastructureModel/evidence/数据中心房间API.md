@@ -17,7 +17,8 @@
         "sort": "inst_id"
     },
     "condition":{
-        "status":1
+        "status":1,
+        "idc_id":1030
     }
 
 }
@@ -39,7 +40,9 @@
         "rules":
         [
             {
-                "field": "tree_idc_id",
+                "field": "tree_idc
+                
+                _id",
                 "value":
                 [],
                 "operator": "in"

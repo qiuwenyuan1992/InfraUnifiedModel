@@ -74,7 +74,7 @@ func persistenceGraphQuery(entity model.EntityType, current, count bool) (string
 		identity = "device_sn"
 	case model.EntityInterface:
 		identity = "port_uuid"
-	case model.EntityDataCenter, model.EntityCabinet, model.EntityPod:
+	case model.EntityDataCenter, model.EntityRoom, model.EntityCabinet, model.EntityPod:
 	case model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP:
 		identity = "inst_id"
 	default:
@@ -92,6 +92,8 @@ func persistenceGraphQuery(entity model.EntityType, current, count bool) (string
 	query += ", " + tag + "." + identity + " AS identity, toString(" + tag + ".created_at) AS created_at, toString(" + tag + ".synced_at) AS synced_at"
 	if entity == model.EntityInterface {
 		query += ", interface.port_name AS code, interface.port_speed AS port_speed, interface.port_operation_status AS port_operation_status, interface.port_type AS port_type"
+	} else if entity == model.EntityRoom {
+		query += ", room.full_name AS code"
 	} else if entity == model.EntityPod {
 		query += ", pod.basic_code AS code"
 	} else if entity != model.EntityDevice {
@@ -181,6 +183,8 @@ func verifyPersistence(ctx context.Context, conf *viper.Viper, sourceID string, 
 		r.Resource = "devices"
 	case model.EntityDataCenter:
 		r.Resource = "data_centers"
+	case model.EntityRoom:
+		r.Resource = "rooms"
 	case model.EntityCabinet:
 		r.Resource = "cabinets"
 	case model.EntityInterface:

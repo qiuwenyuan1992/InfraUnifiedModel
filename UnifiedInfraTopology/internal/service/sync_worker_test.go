@@ -1128,7 +1128,7 @@ func TestSyncWorkerSelectedEntityVerticalFlow(t *testing.T) {
 						if entity == model.EntityUPS {
 							require.ElementsMatch(t, []string{"inst_id", "code", "idc", "ups_group", "transformer_id_up", "ups_brand", "ups_type", "ups_capacity", "create_time", "last_time"}, body.Fields)
 						} else {
-							require.ElementsMatch(t, []string{"inst_id", "code", "idc", "ups_group", "transformer_group_a", "create_time", "last_time"}, body.Fields)
+							require.ElementsMatch(t, []string{"inst_id", "code", "idc", "idc_room", "ups_group", "transformer_group_a", "create_time", "last_time"}, body.Fields)
 						}
 						fmt.Fprint(w, `{"result":true,"error_code":0,"data":{"count":1,"info":[{"inst_id":101,"uuid":"UUID-101","code":"code-101","idc":1030,"ups_group":1156,"transformer_id_up":1588,"transformer_group_a":1588,"ups_brand":"brand","ups_type":"model","ups_capacity":500,"create_time":"2024-08-13T14:53:29.417+08:00","last_time":"2024-09-03T13:26:35.408+08:00","building":404}]}}`)
 					} else if entity == model.EntityUPSGroup {
@@ -1246,6 +1246,7 @@ func TestSyncWorkerSelectedEntityVerticalFlow(t *testing.T) {
 						want["transformer_id_up"], want["brand"], want["model"], want["rated_capacity"] = int64(1588), "brand", "model", int64(500)
 					} else {
 						want["transformer_group_a_id"] = int64(1588)
+						want["idc_room"] = nil
 					}
 					require.Equal(t, want, vertex.Properties)
 				} else if entity == model.EntityUPSGroup {

@@ -7,6 +7,7 @@ const (
 	EntityInterface   EntityType = "interface"
 	EntityGPU         EntityType = "gpu"
 	EntityPod         EntityType = "pod"
+	EntityRoom        EntityType = "room"
 	EntityCabinet     EntityType = "cabinet"
 	EntityDataCenter  EntityType = "data_center"
 	EntityRPP         EntityType = "rpp"
@@ -21,6 +22,7 @@ func (t EntityType) Valid() bool {
 		EntityInterface,
 		EntityGPU,
 		EntityPod,
+		EntityRoom,
 		EntityCabinet,
 		EntityDataCenter,
 		EntityRPP,

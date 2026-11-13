@@ -49,6 +49,10 @@ inventory:
           idc_id: 1030
         data_center_condition:
           inst_id: 1030
+        # 房间按IDC和可用状态读取，UUID为身份；楼栋/模组暂作属性。
+        room_condition:
+          idc_id: 1030
+          status: 1
         cabinet_condition:
           idc_id: 1030
         # 端口按 IDC 内网络设备逐台追加 sn 查询；不限制类型，包含物理口和聚合口。

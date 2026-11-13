@@ -142,7 +142,7 @@ func (c *CMDB) CollectServerUplinkDiagnostics(ctx context.Context, source model.
 				for _, name := range names {
 					row := ref
 					if name != nil {
-						row.PortName = strings.TrimSpace(*name)
+						row.PortName = NormalizePortName(*name)
 					}
 					row.TorInstanceID = resolved.instanceID
 					row.PortUUID = resolved.ports[row.PortName]
@@ -238,6 +238,7 @@ func (c *CMDB) collectDiagnosticToR(ctx context.Context, cfg cmdbConfig, tor str
 			if err != nil {
 				return result, err
 			}
+			name = NormalizePortName(name)
 			uuid, err := uplinkText(item, "port_uuid")
 			if err != nil {
 				return result, err

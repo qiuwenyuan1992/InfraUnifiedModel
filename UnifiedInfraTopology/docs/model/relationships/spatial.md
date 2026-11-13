@@ -28,6 +28,9 @@ tagged_with
 | `located_in` | `device(device_sn)` | `cabinet(uuid)` | `device.cabinet_uuid → cabinet.uuid` | 无 |
 | `located_in` | `cabinet(uuid)` | `data_center(uuid)` | `cabinet.idc_id → data_center.inst_id → data_center.uuid` | 无 |
 | `tagged_with` | `cabinet(uuid)` | `pod(uuid)` | 逐项解析 `cabinet.pod_ids[] → pod.inst_id → pod.uuid` | 无 |
+| `located_in` | `room(uuid)` | `data_center(uuid)` | `room.idc_id → data_center.inst_id → data_center.uuid` | 无 |
+| `located_in` | `cabinet(uuid)` | `room(uuid)` | `cabinet.phy_room_id → room.inst_id → room.uuid` | 无 |
+| `located_in` | `rpp(inst_id)` | `room(uuid)` | `rpp.idc_room → room.inst_id → room.uuid` | 无 |
 
 ## 3. 关系表达
 
@@ -73,7 +76,7 @@ pod
 
 1. 使用 `cabinet.idc_id → data_center.inst_id` 解析目标 UUID。
 2. `phy_idc_id` 不参与关系解析。
-3. 当前数据中心关系只在机柜层建立。
+3. 保留机柜到数据中心的直接关系，ROOM 同时根据自身 `idc_id` 建立到数据中心的关系。
 4. RPP、UPS 组、UPS 和变压器不建立到数据中心的直接关系。
 
 ### 4.4 机柜关联 POD 标签
@@ -82,6 +85,12 @@ pod
 2. `pod_id` 单值字段不进入当前关系模型。
 3. 该关系表示 CMDB 标签或规划归属，不证明机柜内所有设备都属于该 POD。
 4. 不从 `cabinet → pod` 推导 `device → pod`；设备 POD 关系必须使用设备自身来源证据。
+
+### 4.5 ROOM 与房间引用
+
+完整采集选定 IDC 的 `room_condition={idc_id, status: 1}` 和 `rpp_condition={idc}`，配置 IDC 冲突或额外窄化条件阻止采集。
+ROOM 稳定身份必须为 UUID；`inst_id` 只解析 `cabinet.phy_room_id` 与 `rpp.idc_room`，两种目录身份任一冲突均禁止任意选择，记录 `ambiguous_room`；缺失或空引用记录 `missing_room` / `empty_room_reference`。
+ROOM 的 `idc_id` 必须解析实际数据中心目录，不使用所选 IDC 伪造边。新增关系不替代既有关系，不推导子房间树。
 
 ## 5. 属性
 
@@ -133,7 +142,7 @@ RETURN p;
 
 ## 8. 延后范围
 
-当前不建立楼栋、房间、模组、机柜列和逻辑 IDC 节点，也不建立它们之间的空间层级关系。
+当前不建立楼栋、模组、机柜列和逻辑 IDC 节点，不建立子房间树或未证实的空间层级。ROOM 只使用已确认的三种 `located_in` 组合。
 
 ## 9. 来源实体
 
@@ -141,3 +150,5 @@ RETURN p;
 - [cabinet.md](../entities/cabinet.md)
 - [data_center.md](../entities/data_center.md)
 - [pod.md](../entities/pod.md)
+- [room.md](../entities/room.md)
+- [rpp.md](../entities/rpp.md)

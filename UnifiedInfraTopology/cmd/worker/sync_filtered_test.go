@@ -21,6 +21,7 @@ func TestSyncFilteredRejectsUnsafeRequestsBeforeConnections(t *testing.T) {
 		{source: strings.Repeat("a", 32), entity: model.EntityPod, want: "filtered sync requires the configured MySQL control database"},
 		{source: strings.Repeat("a", 32), entity: model.EntityDevice, want: "filtered sync requires the configured MySQL control database"},
 		{source: strings.Repeat("a", 32), entity: model.EntityCabinet, want: "filtered sync requires the configured MySQL control database"},
+		{source: strings.Repeat("a", 32), entity: model.EntityRoom, want: "filtered sync requires the configured MySQL control database"},
 		{source: strings.Repeat("a", 32), entity: model.EntityUPSGroup, want: "filtered sync requires the configured MySQL control database"},
 		{source: strings.Repeat("a", 32), entity: model.EntityUPS, want: "filtered sync requires the configured MySQL control database"},
 		{source: strings.Repeat("a", 32), entity: model.EntityRPP, want: "filtered sync requires the configured MySQL control database"},

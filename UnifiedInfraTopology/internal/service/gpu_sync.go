@@ -84,6 +84,12 @@ func (w *GPUSyncWorker) Run(ctx context.Context, source model.Source, snapshot t
 	started, stageStarted := time.Now(), time.Now()
 	stage := "source_collect"
 	runID, _ := ctx.Value(syncRunIDKey{}).(string)
+	logUnmatched := func(record adapter.GPUUnmatched) {
+		if w == nil || w.logger == nil {
+			return
+		}
+		w.logger.Warn("GPU uplink unmatched", zap.String("run_id", runID), zap.String("source_id", source.ID), zap.String("server_sn", record.ServerSN), zap.String("gpu_sn", record.GPUSN), zap.String("gpu_port", record.GPUPort), zap.String("tor_sn", record.ToRSN), zap.String("tor_port", record.ToRPort), zap.String("raw_tor_port", record.RawToRPort), zap.String("source_relation_id", record.UUID), zap.String("reason", record.Reason))
+	}
 	logStage := func(name string, since time.Time) {
 		if w == nil || w.logger == nil {
 			return
@@ -135,6 +141,9 @@ func (w *GPUSyncWorker) Run(ctx context.Context, source model.Source, snapshot t
 	for reason, count := range collected.Reasons {
 		result.Reasons[reason] = count
 	}
+	for _, record := range collected.Unmatched {
+		logUnmatched(record)
+	}
 	if err != nil {
 		return result, err
 	}
@@ -178,6 +187,7 @@ func (w *GPUSyncWorker) Run(ctx context.Context, source model.Source, snapshot t
 			result.Skipped++
 			result.MissingEndpoints++
 			result.Reasons["gpu_parent_missing_or_invalid"]++
+			logUnmatched(adapter.GPUUnmatched{ServerSN: card.ServerSN, GPUSN: card.Identity.StableID, Reason: "gpu_parent_missing_or_invalid"})
 			continue
 		}
 		cards = append(cards, card)
@@ -211,6 +221,9 @@ func (w *GPUSyncWorker) Run(ctx context.Context, source model.Source, snapshot t
 			result.Skipped++
 			result.MissingEndpoints++
 			result.Reasons["gpu_uplink_endpoint_missing_or_invalid"]++
+			gpuPort, _ := candidate.Properties["gpu_port"].(string)
+			torPort, _ := candidate.Properties["tor_port"].(string)
+			logUnmatched(adapter.GPUUnmatched{ServerSN: candidate.ServerSN, GPUSN: candidate.Identity.From.StableID, GPUPort: gpuPort, ToRSN: candidate.ToRSN, ToRPort: torPort, RawToRPort: candidate.RawToRPort, UUID: candidate.Identity.SourceRelationID, Reason: "gpu_uplink_endpoint_missing_or_invalid"})
 			continue
 		}
 		relation := model.Relation{Identity: candidate.Identity, Properties: candidate.Properties, CreatedAt: snapshot, SyncedAt: snapshot}

@@ -76,6 +76,61 @@ func uplinkServer(raw any) map[string]any {
 }
 func uplinkManifest(ports ...string) any { return []map[string]any{{"sn": "tor-a", "ports": ports}} }
 
+func TestCollectServerUplinkPageNormalizesPortNames(t *testing.T) {
+	for _, tc := range []struct{ requested, recorded string }{
+		{"FHGigabitEthernet 0/35", "FHGigabitEthernet0/35"},
+		{"FHGigabitEthernet0/35", "FHGigabitEthernet\t0/35"},
+		{"FHGigabitEthernet\u00a00/35", "FHGigabitEthernet0/\u300035"},
+	} {
+		t.Run(tc.requested+"/"+tc.recorded, func(t *testing.T) {
+			server := uplinkServer(uplinkManifest(tc.requested))
+			server["device_sn"] = "server a"
+			c := uplinkTestCMDB(t, []map[string]any{server}, []map[string]any{{"inst_id": 1, "port_uuid": "port uuid", "port_name": tc.recorded}}, nil)
+			page, err := c.CollectServerUplinkPage(context.Background(), model.Source{ID: "source id", ConfigRef: "test"}, 0)
+			if err != nil || len(page.Links) != 1 || page.Skipped != 0 {
+				t.Fatalf("normalized port did not match: %+v %v", page, err)
+			}
+			if page.Links[0].From.StableID != "server a" || page.Links[0].To.StableID != "port uuid" || page.Links[0].SourceID != "source id" {
+				t.Fatalf("non-port identity changed: %+v", page.Links[0])
+			}
+		})
+	}
+}
+
+func TestCollectUplinkToRPortsNormalizesSharedLookupAndRejectsAmbiguity(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ports []map[string]any
+		want map[string]string
+	}{
+		{"normalized", []map[string]any{{"inst_id": 1, "port_name": "FHGigabitEthernet\u00a00/35", "port_uuid": "port-a"}}, map[string]string{"FHGigabitEthernet0/35": "port-a"}},
+		{"collision_different_uuid", []map[string]any{{"inst_id": 1, "port_name": "Ethernet 1", "port_uuid": "a"}, {"inst_id": 2, "port_name": "Ethernet\t1", "port_uuid": "b"}}, map[string]string{"Ethernet1": ""}},
+		{"collision_same_uuid", []map[string]any{{"inst_id": 1, "port_name": "Ethernet 1", "port_uuid": "a"}, {"inst_id": 2, "port_name": "Ethernet\t1", "port_uuid": "a"}}, map[string]string{"Ethernet1": ""}},
+		{"uuid_aliases", []map[string]any{{"inst_id": 1, "port_name": "Ethernet 1", "port_uuid": "a"}, {"inst_id": 2, "port_name": "Ethernet\t2", "port_uuid": "a"}}, map[string]string{"Ethernet1": "", "Ethernet2": ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := uplinkTestCMDB(t, nil, tc.ports, nil)
+			cfg, err := c.configFor(model.Source{ConfigRef: "test"})
+			if err != nil { t.Fatal(err) }
+			got, err := c.collectUplinkToRPorts(context.Background(), cfg, "tor-a")
+			if err != nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("shared server/GPU lookup = %v, want %v, err %v", got, tc.want, err)
+			}
+		})
+	}
+}
+
+func TestCollectServerUplinkPageSkipsNormalizedNameCollisions(t *testing.T) {
+	c := uplinkTestCMDB(t, []map[string]any{uplinkServer(uplinkManifest("Ethernet 1", "Ethernet1"))}, []map[string]any{
+		{"inst_id": 1, "port_name": "Ethernet 1", "port_uuid": "a"},
+		{"inst_id": 2, "port_name": "Ethernet\t1", "port_uuid": "b"},
+	}, nil)
+	page, err := c.CollectServerUplinkPage(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, 0)
+	if err != nil || len(page.Links) != 0 || page.Skipped != 2 {
+		t.Fatalf("normalized collision selected a port: %+v %v", page, err)
+	}
+}
+
 func TestCollectServerUplinkIncludesAggregationPort(t *testing.T) {
 	c := uplinkTestCMDB(t, []map[string]any{uplinkServer(uplinkManifest("Bridge-Aggregation10"))}, []map[string]any{{"inst_id": 1, "port_uuid": "aggregate-a", "port_name": "Bridge-Aggregation10", "port_type": "virtual", "local_device_sn": "tor-a"}}, nil)
 	page, err := c.CollectServerUplinkPage(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, 0)

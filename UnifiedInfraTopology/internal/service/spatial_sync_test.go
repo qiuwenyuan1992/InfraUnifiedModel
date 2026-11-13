@@ -33,6 +33,8 @@ func spatialWorkerFixture(t *testing.T, graph *uplinkGraph, mutate func(string, 
 			rows = []map[string]any{{"inst_id": 10, "uuid": "C", "idc_id": 7, "pod_ids": []int{20, 20}}}
 		case "idc":
 			rows = []map[string]any{{"inst_id": 7, "uuid": "IDC"}}
+		case "room", "idc_RPP":
+			rows = []map[string]any{}
 		case "pod":
 			rows = []map[string]any{{"inst_id": 20, "uuid": "P"}, {"inst_id": 21, "uuid": "unused"}}
 		default:
@@ -66,7 +68,8 @@ func TestSpatialSyncWorkerWritesOnlyNormalizedEdgesWithSharedTime(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, 4, got.Edges)
 	require.Equal(t, 3, got.Objects)
-	require.Zero(t, got.Skipped)
+	require.Equal(t, 1, got.Skipped)
+	require.Equal(t, 1, got.Reasons["empty_room_reference"])
 	require.Len(t, graph.checks, 5)
 	previous := ""
 	for _, r := range graph.writes {
@@ -96,7 +99,7 @@ func TestSpatialSyncWorkerCountsUniqueMissingEndpoints(t *testing.T) {
 	got, err := spatialWorkerFixture(t, graph, nil).Run(context.Background(), model.Source{ID: "s", ConfigRef: "test"}, time.Now())
 	require.NoError(t, err)
 	require.Zero(t, got.Edges)
-	require.Equal(t, 4, got.Skipped)
+	require.Equal(t, 5, got.Skipped)
 	require.Equal(t, 1, got.MissingEndpoints)
 	require.Equal(t, 4, got.Reasons["missing_endpoint"])
 	require.Len(t, graph.checks, 5)

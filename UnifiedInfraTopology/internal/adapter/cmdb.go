@@ -116,7 +116,7 @@ func (c *CMDB) configFor(source model.Source) (cmdbConfig, error) {
 		cfg.EntityType = model.EntityType(strings.TrimSpace(value))
 	}
 	if !supportedCMDBEntity(cfg.EntityType) && cfg.EntityType != model.EntityGPU {
-		return cmdbConfig{}, fmt.Errorf("%w: unsupported entity_type; supported: device, data_center, cabinet, interface, transformer, ups_group, ups, rpp", ErrCMDBConfig)
+		return cmdbConfig{}, fmt.Errorf("%w: unsupported entity_type; supported: device, data_center, room, cabinet, interface, transformer, ups_group, ups, rpp, pod, gpu", ErrCMDBConfig)
 	}
 	if _, err := c.conditionFor(source, cfg.EntityType); err != nil {
 		return cmdbConfig{}, err
@@ -125,7 +125,7 @@ func (c *CMDB) configFor(source model.Source) (cmdbConfig, error) {
 }
 
 func supportedCMDBEntity(entity model.EntityType) bool {
-	return entity == model.EntityDevice || entity == model.EntityDataCenter || entity == model.EntityCabinet || entity == model.EntityInterface || entity == model.EntityTransformer || entity == model.EntityUPSGroup || entity == model.EntityUPS || entity == model.EntityRPP || entity == model.EntityPod
+	return entity == model.EntityRoom || entity == model.EntityDevice || entity == model.EntityDataCenter || entity == model.EntityCabinet || entity == model.EntityInterface || entity == model.EntityTransformer || entity == model.EntityUPSGroup || entity == model.EntityUPS || entity == model.EntityRPP || entity == model.EntityPod
 }
 
 func (c *CMDB) SelectedEntity(source model.Source) (model.EntityType, error) {
@@ -149,23 +149,31 @@ func (c *CMDB) CoversFullSource(source model.Source, entity model.EntityType) (b
 
 func (c *CMDB) conditionFor(source model.Source, entity model.EntityType) (map[string]any, error) {
 	if !supportedCMDBEntity(entity) && entity != model.EntityGPU {
-		return nil, fmt.Errorf("%w: unsupported entity_type; supported: device, data_center, cabinet, interface, transformer, ups_group, ups, rpp", ErrCMDBConfig)
+		return nil, fmt.Errorf("%w: unsupported entity_type; supported: device, data_center, room, cabinet, interface, transformer, ups_group, ups, rpp, pod, gpu", ErrCMDBConfig)
 	}
 	key := "inventory.cmdb.sources." + source.ConfigRef + "." + string(entity) + "_condition"
 	if !c.conf.IsSet(key) {
+		if entity == model.EntityRoom {
+			return map[string]any{"status": 1}, nil
+		}
 		return map[string]any{}, nil
 	}
 	switch value := c.conf.Get(key).(type) {
 	case map[string]any, map[string]string:
-		return c.conf.GetStringMap(key), nil
 	case map[any]any:
 		for key := range value {
 			if _, ok := key.(string); !ok {
 				return nil, fmt.Errorf("%w: condition keys must be strings", ErrCMDBConfig)
 			}
 		}
-		return c.conf.GetStringMap(key), nil
 	default:
 		return nil, fmt.Errorf("%w: condition must be an object", ErrCMDBConfig)
 	}
+	condition := c.conf.GetStringMap(key)
+	if entity == model.EntityRoom {
+		if _, ok := condition["status"]; !ok {
+			condition["status"] = 1
+		}
+	}
+	return condition, nil
 }

@@ -17,8 +17,13 @@ import (
 
 var _ EntityPageCollector = (*CMDB)(nil)
 
+const roomEndpoint = "/pub/api/v3/find/instance/object/room"
+
+var roomFields = []string{"inst_id", "uuid", "full_name", "room_full_name", "name", "idc_id", "idc_module_id", "phy_building_id", "status", "cabinet_num", "server_num", "network_device_num", "created_at", "updated_at", "last_time"}
+
 var dataCenterFields = []string{
 	"inst_id", "uuid", "code", "cn_name", "address", "location",
+	"cabinet_num", "server_num", "network_device_num",
 	"created_at", "updated_at", "last_time",
 }
 
@@ -26,7 +31,8 @@ var cabinetFields = []string{
 	"inst_id", "uuid", "code", "dc_colo_rack", "isp_rack_code", "rack",
 	"rack_column_code", "rack_row", "idc_id", "phy_building_id", "phy_room_id",
 	"idc_module_id", "idc_building_structure_id", "idc_rows_code", "pod_ids",
-	"row_switch_id_A", "row_switch_id_B", "created_at", "updated_at", "last_time",
+	"row_switch_id_A", "row_switch_id_B", "device_num", "server_num", "network_device_num",
+	"created_at", "updated_at", "last_time",
 }
 
 var transformerFields = []string{
@@ -44,7 +50,7 @@ var upsFields = []string{
 }
 
 var rppFields = []string{
-	"inst_id", "code", "idc", "ups_group", "transformer_group_a", "create_time", "last_time",
+	"inst_id", "code", "idc", "idc_room", "ups_group", "transformer_group_a", "create_time", "last_time",
 }
 
 var podFields = []string{"inst_id", "uuid", "basic_code", "name", "full_name", "plane", "mode", "rdma", "phy_building_id", "idc_logic_id", "is_delete", "is_sync", "created_at", "create_time", "updated_at", "last_time"}
@@ -73,7 +79,7 @@ type cmdbEntityData struct {
 
 func (c *CMDB) CollectEntityPage(ctx context.Context, source model.Source, entity model.EntityType, start int) (EntityPage, error) {
 	if start < 0 || !supportedCMDBEntity(entity) || entity == model.EntityDevice {
-		return EntityPage{}, fmt.Errorf("%w: entity_type must be data_center, cabinet, interface, transformer, ups_group, ups, or rpp; offset must be nonnegative", ErrCMDBConfig)
+		return EntityPage{}, fmt.Errorf("%w: entity_type must be data_center, room, cabinet, interface, transformer, ups_group, ups, rpp, or pod; offset must be nonnegative", ErrCMDBConfig)
 	}
 	cfg, err := c.configFor(source)
 	if err != nil {
@@ -88,7 +94,9 @@ func (c *CMDB) CollectEntityPage(ctx context.Context, source model.Source, entit
 
 func (c *CMDB) collectEntityPage(ctx context.Context, cfg cmdbConfig, condition map[string]any, entity model.EntityType, start int) (EntityPage, error) {
 	endpoint, fields := "/pub/api/v3/find/instance/object/idc", dataCenterFields
-	if entity == model.EntityCabinet {
+	if entity == model.EntityRoom {
+		endpoint, fields = roomEndpoint, roomFields
+	} else if entity == model.EntityCabinet {
 		endpoint, fields = "/pub/api/v3/find/instance/object/cabinet", cabinetFields
 	} else if entity == model.EntityInterface {
 		endpoint, fields = "/pub/api/v3/find/instance/object/port_view", interfaceFields
@@ -188,13 +196,22 @@ func cmdbEntityRecord(item map[string]json.RawMessage, entity model.EntityType) 
 	properties := make(map[string]any)
 	textFields := []string{"uuid", "code", "cn_name", "address", "location"}
 	integerFields := []string{"inst_id"}
+	if entity == model.EntityRoom {
+		textFields = []string{"uuid", "full_name", "room_full_name", "name"}
+		integerFields = append(integerFields, "idc_id", "idc_module_id", "phy_building_id", "status", "cabinet_num", "server_num", "network_device_num")
+	}
+	if entity == model.EntityDataCenter {
+		// 来源计数快照仅作目录展示；缺失保持空值，不猜测为 0。
+		integerFields = append(integerFields, "cabinet_num", "server_num", "network_device_num")
+	}
 	if entity == model.EntityPod {
 		textFields = []string{"uuid", "basic_code", "name", "full_name", "mode"}
 		integerFields = append(integerFields, "plane", "rdma", "phy_building_id", "idc_logic_id", "is_delete", "is_sync")
 	}
 	if entity == model.EntityCabinet {
 		textFields = []string{"uuid", "code", "dc_colo_rack", "isp_rack_code", "rack", "rack_column_code", "rack_row"}
-		integerFields = append(integerFields, "idc_id", "phy_building_id", "phy_room_id", "idc_module_id", "idc_building_structure_id", "idc_rows_code", "row_switch_id_A", "row_switch_id_B")
+		// 来源计数快照仅作目录展示；缺失保持空值，不猜测为 0。
+		integerFields = append(integerFields, "idc_id", "phy_building_id", "phy_room_id", "idc_module_id", "idc_building_structure_id", "idc_rows_code", "row_switch_id_A", "row_switch_id_B", "device_num", "server_num", "network_device_num")
 	}
 	for _, field := range textFields {
 		var value *string
@@ -268,7 +285,7 @@ func cmdbUPSRPPRecord(item map[string]json.RawMessage, entity model.EntityType) 
 	refs := []struct{ source, target string }{{"ups_group", "ups_group_id"}}
 	if entity == model.EntityRPP {
 		delete(properties, "transformer_id_up")
-		refs = append(refs, struct{ source, target string }{"transformer_group_a", "transformer_group_a_id"})
+		refs = append(refs, struct{ source, target string }{"transformer_group_a", "transformer_group_a_id"}, struct{ source, target string }{"idc_room", "idc_room"})
 	}
 	for _, field := range refs {
 		properties[field.target] = nil
@@ -416,6 +433,9 @@ func cmdbInterfaceRecord(item map[string]json.RawMessage) (EntityRecord, error) 
 		properties[target] = nil
 		if value != nil && strings.TrimSpace(*value) != "" {
 			properties[target] = strings.TrimSpace(*value)
+			if field == "port_name" {
+				properties[target] = NormalizePortName(*value)
+			}
 		}
 	}
 	identity, _ := properties["port_uuid"].(string)

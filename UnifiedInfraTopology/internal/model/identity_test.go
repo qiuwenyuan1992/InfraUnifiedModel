@@ -13,6 +13,7 @@ func TestTopologyEnumsAreClosed(t *testing.T) {
 		EntityInterface,
 		EntityGPU,
 		EntityPod,
+		EntityRoom,
 		EntityCabinet,
 		EntityDataCenter,
 		EntityRPP,
@@ -49,6 +50,23 @@ func TestTopologyEnumsAreClosed(t *testing.T) {
 		require.True(t, kind.Valid(), kind)
 	}
 	require.False(t, RelationKind("unknown").Valid())
+}
+
+func TestRoomUUIDIdentityAndSpatialMatrix(t *testing.T) {
+	identity := EntityIdentity{SourceID: "cmdb-primary", EntityType: EntityRoom, StableID: "9e2be1c5-ffe8-bbc6-6d61-d0a9b2ce5ee2"}
+	canonical, err := identity.CanonicalJSON()
+	require.NoError(t, err)
+	require.Equal(t, `["cmdb-primary","room","9e2be1c5-ffe8-bbc6-6d61-d0a9b2ce5ee2"]`, string(canonical))
+	vid, err := identity.VID()
+	require.NoError(t, err)
+	again, err := identity.VID()
+	require.NoError(t, err)
+	require.Equal(t, vid, again)
+	for _, spec := range []RelationSpec{{EdgeSpatial, RelationLocatedIn, EntityRoom, EntityDataCenter}, {EdgeSpatial, RelationLocatedIn, EntityCabinet, EntityRoom}, {EdgeSpatial, RelationLocatedIn, EntityRPP, EntityRoom}} {
+		require.True(t, spec.Valid())
+		require.False(t, (RelationSpec{spec.EdgeType, spec.Kind, spec.To, spec.From}).Valid())
+	}
+	require.Len(t, relationSpecs, 17)
 }
 
 func TestParsePlanePreservesUnknownValue(t *testing.T) {

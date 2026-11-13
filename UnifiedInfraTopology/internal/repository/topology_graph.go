@@ -230,6 +230,16 @@ var topologyEntitySchemas = map[model.EntityType]topologyEntitySchema{
 			"source_updated_at": topologyDateTime,
 		},
 	},
+	model.EntityRoom: {
+		stableField: "uuid",
+		properties: map[string]topologyPropertyType{
+			"inst_id": topologyInteger, "full_name": topologyString, "room_full_name": topologyString,
+			"name": topologyString, "idc_id": topologyInteger, "idc_module_id": topologyInteger,
+			"phy_building_id": topologyInteger, "status": topologyInteger,
+			"cabinet_num": topologyInteger, "server_num": topologyInteger, "network_device_num": topologyInteger,
+			"source_created_at": topologyDateTime, "source_updated_at": topologyDateTime,
+		},
+	},
 	model.EntityCabinet: {
 		stableField: "uuid",
 		properties: map[string]topologyPropertyType{
@@ -239,6 +249,7 @@ var topologyEntitySchemas = map[model.EntityType]topologyEntitySchema{
 			"phy_room_id": topologyInteger, "idc_module_id": topologyInteger,
 			"idc_building_structure_id": topologyInteger, "idc_rows_code": topologyInteger,
 			"pod_ids": topologyIntegerList, "row_switch_id_a": topologyInteger, "row_switch_id_b": topologyInteger,
+			"device_num": topologyInteger, "server_num": topologyInteger, "network_device_num": topologyInteger,
 			"source_created_at": topologyDateTime, "source_updated_at": topologyDateTime,
 		},
 	},
@@ -246,15 +257,16 @@ var topologyEntitySchemas = map[model.EntityType]topologyEntitySchema{
 		stableField: "uuid",
 		properties: map[string]topologyPropertyType{
 			"inst_id": topologyInteger, "code": topologyString, "cn_name": topologyString,
-			"address": topologyString, "location": topologyString, "source_created_at": topologyDateTime,
-			"source_updated_at": topologyDateTime,
+			"address": topologyString, "location": topologyString,
+			"cabinet_num": topologyInteger, "server_num": topologyInteger, "network_device_num": topologyInteger,
+			"source_created_at": topologyDateTime, "source_updated_at": topologyDateTime,
 		},
 	},
 	model.EntityRPP: {
 		stableField: "inst_id",
 		properties: map[string]topologyPropertyType{
 			"inst_id": topologyInteger, "code": topologyString, "idc_id": topologyInteger,
-			"ups_group_id": topologyInteger, "transformer_group_a_id": topologyInteger,
+			"ups_group_id": topologyInteger, "transformer_group_a_id": topologyInteger, "idc_room": topologyInteger,
 			"source_created_at": topologyDateTime, "source_updated_at": topologyDateTime,
 		},
 	},

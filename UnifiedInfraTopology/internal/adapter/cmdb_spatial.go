@@ -24,6 +24,7 @@ type spatialRecord struct {
 	ID                    int64
 	Identity, CabinetUUID string
 	IDC                   *int64
+	RoomID                *int64
 	PodIDs                []int64
 	PodState              string
 }
@@ -78,7 +79,7 @@ func (c *CMDB) CollectSpatial(ctx context.Context, source model.Source) (Spatial
 		return result, err
 	}
 	records := map[model.EntityType][]spatialRecord{}
-	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityCabinet, model.EntityDataCenter, model.EntityPod} {
+	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityCabinet, model.EntityDataCenter, model.EntityPod, model.EntityRoom, model.EntityRPP} {
 		rows, err := c.collectSpatialRecords(ctx, cfg, entity, conditions[entity], idc)
 		if err != nil {
 			return result, err
@@ -89,6 +90,9 @@ func (c *CMDB) CollectSpatial(ctx context.Context, source model.Source) (Spatial
 	cabinets := newSpatialDirectory(records[model.EntityCabinet])
 	centers := newSpatialDirectory(records[model.EntityDataCenter])
 	pods := newSpatialDirectory(records[model.EntityPod])
+	rooms := newSpatialDirectory(records[model.EntityRoom])
+	rpps := newSpatialDirectory(records[model.EntityRPP])
+	result.Objects += len(records[model.EntityRoom]) + len(records[model.EntityRPP])
 	// 设备 SN 相同且引用不同不能任意选择；相同事实在关系层确定性去重。
 	devices := map[string]string{}
 	ambiguousDevice := map[string]bool{}
@@ -166,6 +170,43 @@ func (c *CMDB) CollectSpatial(ctx context.Context, source model.Source) (Spatial
 			}
 		}
 	}
+	for _, r := range records[model.EntityRoom] {
+		switch {
+		case rooms.ambiguousID[r.ID] || rooms.ambiguousUUID[r.Identity]:
+			skip("ambiguous_room")
+		case r.IDC == nil || *r.IDC <= 0:
+			skip("empty_data_center_reference")
+		case centers.ambiguousID[*r.IDC]:
+			skip("ambiguous_data_center")
+		case centers.byID[*r.IDC].Identity == "":
+			skip("missing_data_center")
+		default:
+			if err := appendRelation(model.EntityRoom, r.Identity, model.RelationLocatedIn, model.EntityDataCenter, centers.byID[*r.IDC].Identity); err != nil {
+				return result, err
+			}
+		}
+	}
+	for _, entry := range []struct {
+		entity    model.EntityType
+		directory spatialDirectory
+	}{{model.EntityCabinet, cabinets}, {model.EntityRPP, rpps}} {
+		for _, r := range records[entry.entity] {
+			switch {
+			case entry.directory.ambiguousID[r.ID] || entry.directory.ambiguousUUID[r.Identity]:
+				skip("ambiguous_" + string(entry.entity))
+			case r.RoomID == nil || *r.RoomID <= 0:
+				skip("empty_room_reference")
+			case rooms.ambiguousID[*r.RoomID]:
+				skip("ambiguous_room")
+			case rooms.byID[*r.RoomID].Identity == "":
+				skip("missing_room")
+			default:
+				if err := appendRelation(entry.entity, r.Identity, model.RelationLocatedIn, model.EntityRoom, rooms.byID[*r.RoomID].Identity); err != nil {
+					return result, err
+				}
+			}
+		}
+	}
 	keys := make([]string, 0, len(relations))
 	for id := range relations {
 		keys = append(keys, id)
@@ -185,7 +226,7 @@ func (c *CMDB) CollectSpatial(ctx context.Context, source model.Source) (Spatial
 
 func (c *CMDB) spatialConditions(source model.Source) (map[model.EntityType]map[string]any, int64, error) {
 	conditions := map[model.EntityType]map[string]any{}
-	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityCabinet, model.EntityDataCenter, model.EntityPod} {
+	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityCabinet, model.EntityDataCenter, model.EntityPod, model.EntityRoom, model.EntityRPP} {
 		condition, err := c.conditionFor(source, entity)
 		if err != nil {
 			return nil, 0, err
@@ -224,6 +265,24 @@ func (c *CMDB) spatialConditions(source model.Source) (map[model.EntityType]map[
 	if len(conditions[model.EntityPod]) != 0 {
 		return nil, 0, fmt.Errorf("%w: spatial POD directory must be complete", ErrCMDBConfig)
 	}
+	for _, entity := range []model.EntityType{model.EntityRoom, model.EntityRPP} {
+		key := "idc_id"
+		if entity == model.EntityRPP {
+			key = "idc"
+		}
+		for field, value := range conditions[entity] {
+			if entity == model.EntityRoom && field == "status" && fmt.Sprint(value) == "1" {
+				continue
+			}
+			if field != key || fmt.Sprint(value) != strconv.FormatInt(idc, 10) {
+				return nil, 0, fmt.Errorf("%w: incompatible spatial %s directory condition", ErrCMDBConfig, entity)
+			}
+		}
+		conditions[entity] = map[string]any{key: idc}
+		if entity == model.EntityRoom {
+			conditions[entity]["status"] = 1
+		}
+	}
 	return conditions, idc, nil
 }
 
@@ -236,6 +295,10 @@ func (c *CMDB) collectSpatialRecords(ctx context.Context, cfg cmdbConfig, entity
 		endpoint, fields = "/pub/api/v3/find/instance/object/idc", dataCenterFields
 	case model.EntityPod:
 		endpoint, fields = "/pub/api/v3/find/instance/object/pod", podFields
+	case model.EntityRoom:
+		endpoint, fields = roomEndpoint, roomFields
+	case model.EntityRPP:
+		endpoint, fields = "/pub/api/v3/find/instance/object/idc_RPP", rppFields
 	}
 	rows := []spatialRecord{}
 	total, last := -1, int64(0)
@@ -289,10 +352,29 @@ func (c *CMDB) collectSpatialRecords(ctx context.Context, cfg cmdbConfig, entity
 					return nil, err
 				}
 				r.Identity = record.Identity
+				if entity == model.EntityRoom || entity == model.EntityRPP {
+					if value, ok := record.Properties["idc_id"].(int64); ok {
+						r.IDC = &value
+						if value > 0 && value != idc {
+							return nil, fmt.Errorf("%w: spatial %s outside IDC selection", ErrCMDBResponse, entity)
+						}
+					}
+					if entity == model.EntityRoom {
+						status, ok := record.Properties["status"].(int64)
+						if !ok || status != 1 {
+							return nil, fmt.Errorf("%w: spatial room outside status selection", ErrCMDBResponse)
+						}
+					} else if value, ok := record.Properties["idc_room"].(int64); ok {
+						r.RoomID = &value
+					}
+				}
 				if entity == model.EntityDataCenter && r.ID != idc {
 					return nil, fmt.Errorf("%w: spatial IDC outside selection", ErrCMDBResponse)
 				}
 				if entity == model.EntityCabinet {
+					if value, ok := record.Properties["phy_room_id"].(int64); ok {
+						r.RoomID = &value
+					}
 					if value, ok := record.Properties["idc_id"].(int64); ok {
 						r.IDC = &value
 						if value > 0 && value != idc {

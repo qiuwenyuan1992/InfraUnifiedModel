@@ -21,6 +21,9 @@ func TestSpatialGraphVerifiesAllKindsAndTypedPaths(t *testing.T) {
 		{SourceID: "source", EdgeType: model.EdgeSpatial, Kind: model.RelationLocatedIn, From: model.EntityIdentity{SourceID: "source", EntityType: model.EntityDevice, StableID: "device-sn"}, To: model.EntityIdentity{SourceID: "source", EntityType: model.EntityCabinet, StableID: "cabinet-uuid"}},
 		{SourceID: "source", EdgeType: model.EdgeSpatial, Kind: model.RelationLocatedIn, From: model.EntityIdentity{SourceID: "source", EntityType: model.EntityCabinet, StableID: "cabinet-uuid"}, To: model.EntityIdentity{SourceID: "source", EntityType: model.EntityDataCenter, StableID: "idc-uuid"}},
 		{SourceID: "source", EdgeType: model.EdgeSpatial, Kind: model.RelationTaggedWith, From: model.EntityIdentity{SourceID: "source", EntityType: model.EntityCabinet, StableID: "cabinet-uuid"}, To: model.EntityIdentity{SourceID: "source", EntityType: model.EntityPod, StableID: "pod-uuid"}},
+		{SourceID: "source", EdgeType: model.EdgeSpatial, Kind: model.RelationLocatedIn, From: model.EntityIdentity{SourceID: "source", EntityType: model.EntityRoom, StableID: "room-uuid"}, To: model.EntityIdentity{SourceID: "source", EntityType: model.EntityDataCenter, StableID: "idc-uuid"}},
+		{SourceID: "source", EdgeType: model.EdgeSpatial, Kind: model.RelationLocatedIn, From: model.EntityIdentity{SourceID: "source", EntityType: model.EntityCabinet, StableID: "cabinet-uuid"}, To: model.EntityIdentity{SourceID: "source", EntityType: model.EntityRoom, StableID: "room-uuid"}},
+		{SourceID: "source", EdgeType: model.EdgeSpatial, Kind: model.RelationLocatedIn, From: model.EntityIdentity{SourceID: "source", EntityType: model.EntityRPP, StableID: "42"}, To: model.EntityIdentity{SourceID: "source", EntityType: model.EntityRoom, StableID: "room-uuid"}},
 	}
 	for _, failure := range []string{"", "count", "orphan", "duplicate path", "duplicate edge", "source", "identity", "rank", "vid", "timestamp", "created", "wrong kind", "double tag", "UUID", "edge source"} {
 		t.Run(failure, func(t *testing.T) {
@@ -31,7 +34,7 @@ func TestSpatialGraphVerifiesAllKindsAndTypedPaths(t *testing.T) {
 				require.NotContains(t, q, "OPTIONAL")
 				require.NotContains(t, q, " AS go")
 				if strings.Contains(q, "count(*)") {
-					return 1, [][]any{{int64(3)}}
+					return 1, [][]any{{int64(len(identities))}}
 				}
 				var rows [][]any
 				for index, identity := range identities {
@@ -70,6 +73,12 @@ func TestSpatialGraphVerifiesAllKindsAndTypedPaths(t *testing.T) {
 					if !strings.Contains(q, pattern) {
 						continue
 					}
+					if identity.From.EntityType == model.EntityRPP {
+						require.Contains(t, q, "f.rpp.inst_id AS from_identity")
+					}
+					if identity.To.EntityType == model.EntityRoom {
+						require.Contains(t, q, "t.room.uuid AS to_identity")
+					}
 					if index == 0 && failure == "orphan" {
 						continue
 					}
@@ -93,9 +102,9 @@ func TestSpatialGraphVerifiesAllKindsAndTypedPaths(t *testing.T) {
 				}
 				return 10, rows
 			}}
-			expected := int64(3)
+			expected := int64(len(identities))
 			if failure == "count" {
-				expected = 4
+				expected++
 			}
 			report, err := verifySpatialGraph(context.Background(), client, "source", at, expected)
 			if failure != "" {
@@ -103,9 +112,9 @@ func TestSpatialGraphVerifiesAllKindsAndTypedPaths(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, int64(3), report.ValidEndpointCount)
-			require.Equal(t, map[string]int64{"located_in": 2, "tagged_with": 1}, report.KindCounts)
-			require.Equal(t, map[string]int64{"device_cabinet": 1, "cabinet_data_center": 1, "cabinet_pod": 1}, report.PathCounts)
+			require.Equal(t, int64(len(identities)), report.ValidEndpointCount)
+			require.Equal(t, map[string]int64{"located_in": 5, "tagged_with": 1}, report.KindCounts)
+			require.Equal(t, map[string]int64{"device_cabinet": 1, "cabinet_data_center": 1, "cabinet_pod": 1, "room_data_center": 1, "cabinet_room": 1, "rpp_room": 1}, report.PathCounts)
 		})
 	}
 }

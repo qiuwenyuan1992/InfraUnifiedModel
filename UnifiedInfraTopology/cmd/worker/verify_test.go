@@ -150,7 +150,7 @@ func TestValidatePowerPersistenceRequiresDecimalInstID(t *testing.T) {
 }
 
 func TestVerificationGraphQueriesAreReadOnlyAndParameterized(t *testing.T) {
-	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityDataCenter, model.EntityCabinet, model.EntityInterface, model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP} {
+	for _, entity := range []model.EntityType{model.EntityDevice, model.EntityDataCenter, model.EntityRoom, model.EntityCabinet, model.EntityInterface, model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP} {
 		for _, current := range []bool{false, true} {
 			for _, count := range []bool{false, true} {
 				query, err := persistenceGraphQuery(entity, current, count)
@@ -174,6 +174,10 @@ func TestVerificationGraphQueriesAreReadOnlyAndParameterized(t *testing.T) {
 						require.Contains(t, query, string(entity)+".inst_id AS identity")
 						require.NotContains(t, query, ".uuid")
 						require.Contains(t, query, string(entity)+".code")
+					} else if entity == model.EntityRoom {
+						require.Contains(t, query, "room.uuid")
+						require.Contains(t, query, "room.full_name AS code")
+						require.NotContains(t, query, "room.code")
 					} else {
 						require.Contains(t, query, string(entity)+".uuid")
 						require.Contains(t, query, string(entity)+".code")

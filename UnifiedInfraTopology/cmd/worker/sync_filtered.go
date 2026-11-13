@@ -27,7 +27,7 @@ import (
 var inventoryID = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 func syncFiltered(ctx context.Context, conf *viper.Viper, logger *log.Logger, sourceID string, entity model.EntityType, output io.Writer) (string, error) {
-	if !inventoryID.MatchString(sourceID) || (entity != model.EntityDevice && entity != model.EntityDataCenter && entity != model.EntityCabinet && entity != model.EntityInterface && entity != model.EntityTransformer && entity != model.EntityUPSGroup && entity != model.EntityUPS && entity != model.EntityRPP && entity != model.EntityPod) {
+	if !inventoryID.MatchString(sourceID) || (entity != model.EntityDevice && entity != model.EntityDataCenter && entity != model.EntityRoom && entity != model.EntityCabinet && entity != model.EntityInterface && entity != model.EntityTransformer && entity != model.EntityUPSGroup && entity != model.EntityUPS && entity != model.EntityRPP && entity != model.EntityPod) {
 		return "", errors.New("filtered sync requires a valid source ID and device, data_center, cabinet, interface, transformer, ups_group, ups, or rpp")
 	}
 	if conf.GetString("data.db.main.driver") != "mysql" {

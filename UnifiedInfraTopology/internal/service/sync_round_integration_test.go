@@ -77,7 +77,7 @@ func TestRoundAPIQueueToWorkerDurablePhases(t *testing.T) {
 	require.Equal(t, "succeeded", current.Status)
 	require.NotNil(t, current.SnapshotAt)
 	require.Nil(t, current.LeaseExpiresAt)
-	require.Len(t, phases, 15)
+	require.Len(t, phases, len(model.SyncRoundPhaseNames()))
 	for _, phase := range phases {
 		require.Equal(t, "succeeded", phase.Status)
 		require.NotEmpty(t, phase.RunID)
@@ -86,5 +86,5 @@ func TestRoundAPIQueueToWorkerDurablePhases(t *testing.T) {
 	}
 	diagnostics, err := management.Diagnostics(ctx, "operator", round.ID, true, InventoryQuery{Limit: 200})
 	require.NoError(t, err)
-	require.Len(t, diagnostics.Items, 15)
+	require.Len(t, diagnostics.Items, len(model.SyncRoundPhaseNames()))
 }

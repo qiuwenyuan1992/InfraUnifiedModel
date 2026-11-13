@@ -230,6 +230,9 @@ func (w *SyncWorker) executeClaimed(ctx context.Context, run *model.SyncRun, sou
 	case model.EntityDataCenter:
 		resource = "data_centers"
 		collectionErrorCode = "entity_collection_failed"
+	case model.EntityRoom:
+		resource = "rooms"
+		collectionErrorCode = "entity_collection_failed"
 	case model.EntityCabinet:
 		resource = "cabinets"
 		collectionErrorCode = "entity_collection_failed"

@@ -249,6 +249,8 @@ device(device_sn) -[composition_relation {relation_kind: "contains_gpu"}]-> gpu(
 规则：
 
 - 必须限定在 `tor_sn` 对应设备范围内匹配 `tor_port`，不能仅按端口名跨设备匹配。
+- 端口名匹配与保存统一去除Unicode空白（含内部空格、tab）；用于修正 `FHGigabitEthernet 0/35` 与 `FHGigabitEthernet0/35` 的接口格式差异。接口 `port_name`、上联 `tor_port/gpu_port` 与卡 `conn_ports` 使用相同规则，SN、UUID和槽位不变；规范化后重名仍判定歧义。
+- 每条未匹配GPU上联记录输出结构化日志，保留原始 `tor_port`、规范化名称、服务器/卡/ToR标识及固定原因码，便于重跑后核查，不打印凭据或原始CMDB负载。
 - `tor_sn` 或 `tor_port` 为空、目标接口不存在或匹配不唯一时，不生成上联边并记录同步诊断。
 - `tor_name`、`tor_role` 可用于展示或辅助核对，但不能替代 `tor_sn`。
 - `tor_ip` 当前样例多数为 `127.0.0.x`，按低质量来源值处理，不用于接口身份、查询或一致性校验。

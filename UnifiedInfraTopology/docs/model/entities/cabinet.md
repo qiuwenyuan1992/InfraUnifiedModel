@@ -112,6 +112,9 @@ source_id:cabinet:uuid
 | `pod_ids[]` | `cabinet.pod_ids` | 机柜 POD 标签数字 ID 列表，用于解析 `pod.inst_id` |
 | `row_switch_id_a` | `cabinet.row_switch_id_A` | A 路列头柜数字引用，用于解析 `rpp.inst_id` |
 | `row_switch_id_b` | `cabinet.row_switch_id_B` | B 路列头柜数字引用，用于解析 `rpp.inst_id` |
+| `device_num` | `cabinet.device_num` | 来源设备总数快照，仅目录展示，不替代图关系 |
+| `server_num` | `cabinet.server_num` | 来源服务器计数快照，仅目录展示 |
+| `network_device_num` | `cabinet.network_device_num` | 来源网络设备计数快照，仅目录展示 |
 | `source_created_at` | `cabinet.created_at` | 来源创建时间，与本项目 `created_at` 区分 |
 | `source_updated_at` | `cabinet.updated_at` 或 `cabinet.last_time` | 来源更新时间，不用于全量消失判断 |
 | `created_at` | 同步任务 | 本项目首次入图时间，只在首次创建时写入 |
@@ -174,9 +177,6 @@ code 非空 → code
 - `basic_code`
 - `building_full_name`
 - `room_full_name`
-- `device_num`
-- `server_num`
-- `network_device_num`
 - `gpu_device_num`
 - `external_num`
 - `other_num`

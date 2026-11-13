@@ -95,6 +95,34 @@ func TestNebulaSchemaContract(t *testing.T) {
 	}
 }
 
+func TestNebulaRoomAdditiveMigration(t *testing.T) {
+	raw, err := os.ReadFile("nebula/0005_room.ngql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	statements := splitNebulaStatements(string(raw))
+	if len(statements) != 4 || statements[0] != "USE unified_infra_topology" {
+		t.Fatalf("unexpected room migration statements: %v", statements)
+	}
+	name, fields := parseNebulaDefinition(t, statements[1], "TAG")
+	if name != "room" {
+		t.Fatalf("unexpected tag %s", name)
+	}
+	if diff := diffFieldMap(fields, expectedNebulaTags()["room"]); diff != "" {
+		t.Fatal(diff)
+	}
+	name, indexes := parseNebulaIndex(t, statements[2], "TAG")
+	if name != "room" || strings.Join(indexes, ",") != "source_id(64),uuid(192)" {
+		t.Fatalf("invalid room index: %s %v", name, indexes)
+	}
+	if statements[3] != "ALTER TAG rpp ADD (idc_room INT NULL)" {
+		t.Fatalf("unexpected rpp alteration: %s", statements[3])
+	}
+	if strings.Contains(strings.ToUpper(stripNebulaComments(string(raw))), "DROP ") {
+		t.Fatal("room migration must be additive")
+	}
+}
+
 func TestNebulaPowerInstIDIdentityMigration(t *testing.T) {
 	raw, err := os.ReadFile("nebula/0003_power_inst_id_identity.ngql")
 	if err != nil {
@@ -334,18 +362,22 @@ func expectedNebulaTags() map[string]map[string]nebulaField {
 			"mode": "STRING", "rdma": "INT", "phy_building_id": "INT", "idc_logic_id": "INT", "is_delete": "INT",
 			"is_sync": "INT", "source_created_at": "DATETIME", "source_updated_at": "DATETIME",
 		}),
+		"room": with(common("uuid"), map[string]string{
+			"inst_id": "INT", "full_name": "STRING", "room_full_name": "STRING", "name": "STRING", "idc_id": "INT", "idc_module_id": "INT", "phy_building_id": "INT", "status": "INT", "cabinet_num": "INT", "server_num": "INT", "network_device_num": "INT", "source_created_at": "DATETIME", "source_updated_at": "DATETIME",
+		}),
 		"cabinet": with(common("uuid"), map[string]string{
 			"inst_id": "INT", "code": "STRING", "dc_colo_rack": "STRING", "isp_rack_code": "STRING", "rack": "STRING",
 			"rack_column_code": "STRING", "rack_row": "STRING", "idc_id": "INT", "phy_building_id": "INT",
 			"phy_room_id": "INT", "idc_module_id": "INT", "idc_building_structure_id": "INT", "idc_rows_code": "INT",
-			"pod_ids": "STRING", "row_switch_id_a": "INT", "row_switch_id_b": "INT", "source_created_at": "DATETIME",
-			"source_updated_at": "DATETIME",
+			"pod_ids": "STRING", "row_switch_id_a": "INT", "row_switch_id_b": "INT", "device_num": "INT", "server_num": "INT", "network_device_num": "INT",
+			"source_created_at": "DATETIME", "source_updated_at": "DATETIME",
 		}),
 		"data_center": with(common("uuid"), map[string]string{
 			"inst_id": "INT", "code": "STRING", "cn_name": "STRING", "address": "STRING", "location": "STRING",
+			"cabinet_num": "INT", "server_num": "INT", "network_device_num": "INT",
 			"source_created_at": "DATETIME", "source_updated_at": "DATETIME",
 		}),
-		"rpp": with(common("inst_id"), map[string]string{"code": "STRING", "idc_id": "INT", "ups_group_id": "INT", "transformer_group_a_id": "INT",
+		"rpp": with(common("inst_id"), map[string]string{"code": "STRING", "idc_id": "INT", "idc_room": "INT", "ups_group_id": "INT", "transformer_group_a_id": "INT",
 			"source_created_at": "DATETIME", "source_updated_at": "DATETIME",
 		}),
 		"ups_group": with(common("inst_id"), map[string]string{"code": "STRING", "idc_id": "INT", "transformer_id_up": "INT",

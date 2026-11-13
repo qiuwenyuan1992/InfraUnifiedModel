@@ -1,0 +1,8 @@
+-- 手动增量迁移：仅用于执行过 0001–0005 的既有图；应用启动不会执行 DDL。
+-- 与最新 0001 基线二选一；基线已含这些属性时不得重复 ADD。
+-- 来源计数快照仅作目录展示，不参与身份或关系。
+USE unified_infra_topology;
+
+ALTER TAG room ADD (cabinet_num INT NULL, server_num INT NULL, network_device_num INT NULL);
+ALTER TAG data_center ADD (cabinet_num INT NULL, server_num INT NULL, network_device_num INT NULL);
+ALTER TAG cabinet ADD (device_num INT NULL, server_num INT NULL, network_device_num INT NULL);

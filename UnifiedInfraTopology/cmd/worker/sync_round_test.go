@@ -14,9 +14,9 @@ import (
 )
 
 func TestSyncRoundPhaseOrderAndFailureBoundary(t *testing.T) {
-	want := []string{"data_center", "cabinet", "device", "transformer", "ups_group", "ups", "rpp", "pod", "interface", "power_relations", "pod_membership", "spatial_relations", "gpu_sync", "server_uplinks", "links_to"}
+	want := []string{"data_center", "room", "cabinet", "device", "transformer", "ups_group", "ups", "rpp", "pod", "interface", "power_relations", "pod_membership", "spatial_relations", "gpu_sync", "server_uplinks", "links_to"}
 	require.Equal(t, want, syncRoundPhaseNames())
-	for _, failed := range []int{-1, 0, 10, 14} {
+	for _, failed := range []int{-1, 0, 11, len(want) - 1} {
 		t.Run(want[max(0, failed)], func(t *testing.T) {
 			conf := viper.New()
 			conf.Set("inventory.cmdb.sources.test.device_condition.idc_id", 238)
@@ -87,6 +87,19 @@ func TestSyncRoundRejectsInvalidSelectionBeforeStages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	require.Error(t, executeSyncRound(ctx, viper.New(), "00000000000000000000000000000238", time.Now(), nil, &out))
+}
+
+func TestSyncRoundSelectionsRequireCompatibleRoomIDC(t *testing.T) {
+	conf := viper.New()
+	prefix := "inventory.cmdb.sources.test."
+	for _, key := range []string{"device_condition.idc_id", "room_condition.idc_id", "cabinet_condition.idc_id", "data_center_condition.inst_id", "interface_condition.idc_id", "transformer_condition.idc", "ups_group_condition.idc", "ups_condition.idc", "rpp_condition.idc"} {
+		conf.Set(prefix+key, 238)
+	}
+	require.NoError(t, validateSyncRoundSelections(conf, "test"))
+	for _, idc := range []int{0, 1028} {
+		conf.Set(prefix+"room_condition.idc_id", idc)
+		require.Error(t, validateSyncRoundSelections(conf, "test"))
+	}
 }
 
 func TestRoundAndSpatialModesAreExclusive(t *testing.T) {

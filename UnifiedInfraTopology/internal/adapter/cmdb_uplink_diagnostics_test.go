@@ -20,6 +20,10 @@ func TestCollectServerUplinkDiagnosticsReasonsAndCollectorParity(t *testing.T) {
 		want     []string
 	}{
 		{"resolved_duplicates", uplinkManifest("Ethernet1", "Ethernet1"), []map[string]any{port(10, "Ethernet1", "port-a")}, nil, []string{"", ""}},
+		{"normalized_requested", uplinkManifest("Ethernet\u00a01"), []map[string]any{port(10, "Ethernet1", "port-a")}, nil, []string{""}},
+		{"normalized_recorded", uplinkManifest("Ethernet1"), []map[string]any{port(10, "Ethernet\t1", "port-a")}, nil, []string{""}},
+		{"normalized_collision", uplinkManifest("Ethernet 1", "Ethernet1"), []map[string]any{port(10, "Ethernet 1", "port-a"), port(11, "Ethernet\t1", "port-b")}, nil, []string{"cmdb_ambiguous_port_name", "cmdb_ambiguous_port_name"}},
+		{"normalized_uuid_aliases", uplinkManifest("Ethernet1", "Ethernet2"), []map[string]any{port(10, "Ethernet 1", "port-a"), port(11, "Ethernet\t2", "port-a")}, nil, []string{"cmdb_ambiguous_port_uuid", "cmdb_ambiguous_port_uuid"}},
 		{"missing_port", uplinkManifest("Ethernet2"), []map[string]any{port(10, "Ethernet1", "port-a")}, nil, []string{"cmdb_port_name_missing"}},
 		{"blank_port", uplinkManifest(" "), []map[string]any{}, nil, []string{"cmdb_blank_port_name"}},
 		{"null_port", []map[string]any{{"sn": "tor-a", "ports": []*string{nil}}}, []map[string]any{}, nil, []string{"cmdb_blank_port_name"}},

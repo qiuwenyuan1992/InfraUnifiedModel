@@ -42,7 +42,7 @@ func TestInventoryRoundLifecycleAndDiagnostics(t *testing.T) {
 	require.Equal(t, request.ID, created.ID)
 	_, phases, err := rounds.Get(ctx, created.ID)
 	require.NoError(t, err)
-	require.Len(t, phases, 15)
+	require.Len(t, phases, len(model.SyncRoundPhaseNames()))
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	round, source, err := rounds.ClaimNext(ctx, now)
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestInventoryRoundLifecycleAndDiagnostics(t *testing.T) {
 	}
 	var n int64
 	require.NoError(t, db.Table("sync_diagnostics").Count(&n).Error)
-	require.EqualValues(t, 15, n)
+	require.EqualValues(t, len(model.SyncRoundPhaseNames()), n)
 }
 
 func TestInventoryRoundChildOwnership(t *testing.T) {

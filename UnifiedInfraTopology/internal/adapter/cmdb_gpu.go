@@ -23,12 +23,18 @@ type GPUCard struct {
 type GPUUplink struct {
 	Identity        model.RelationIdentity
 	ServerSN, ToRSN string
+	RawToRPort      string
 	Properties      map[string]any
+}
+
+type GPUUnmatched struct {
+	ServerSN, GPUSN, GPUPort, ToRSN, ToRPort, RawToRPort, UUID, Reason string
 }
 
 type GPUCollection struct {
 	Cards            []GPUCard
 	Uplinks          []GPUUplink
+	Unmatched        []GPUUnmatched
 	Servers          []string
 	Objects, Skipped int
 	Reasons          map[string]int
@@ -75,7 +81,7 @@ func cmdbGPUCard(item map[string]json.RawMessage, sourceID, server string) (GPUC
 		if port == nil {
 			continue
 		}
-		value := strings.TrimSpace(*port)
+		value := NormalizePortName(*port)
 		if value != "" && !seen[value] {
 			ports = append(ports, value)
 			seen[value] = true
@@ -341,23 +347,6 @@ func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollecti
 				continue
 			}
 			linkSeen[uuid] = signature
-			gpuSN, err := uplinkText(raw, "gpu_sn")
-			if err != nil {
-				return out, err
-			}
-			if gpuSN == "" {
-				skip("gpu_uplink_missing_gpu_sn")
-				continue
-			}
-			if conflictingSNs[gpuSN] {
-				skip("gpu_uplink_conflicting_gpu_sn")
-				continue
-			}
-			card, ok := validCards[gpuSN]
-			if !ok {
-				skip("gpu_uplink_unknown_gpu_sn")
-				continue
-			}
 			values := map[string]string{}
 			for _, field := range append(append([]string{}, gpuUplinkFields...), "gpu_sn", "gpu_model", "gpu_vram", "tor_sn") {
 				value, err := uplinkText(raw, field)
@@ -366,8 +355,35 @@ func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollecti
 				}
 				values[field] = value
 			}
+			rawToRPort := ""
+			if value := raw["tor_port"]; len(value) > 0 {
+				// 字符串类型已校验；诊断保留规范化前的完整端口名称。
+				_ = json.Unmarshal(value, &rawToRPort)
+			}
+			values["gpu_port"] = NormalizePortName(values["gpu_port"])
+			values["tor_port"] = NormalizePortName(values["tor_port"])
+			unmatched := func(reason string) {
+				out.Unmatched = append(out.Unmatched, GPUUnmatched{ServerSN: sn, GPUSN: values["gpu_sn"], GPUPort: values["gpu_port"], ToRSN: values["tor_sn"], ToRPort: values["tor_port"], RawToRPort: rawToRPort, UUID: uuid, Reason: reason})
+			}
+			gpuSN := values["gpu_sn"]
+			if gpuSN == "" {
+				skip("gpu_uplink_missing_gpu_sn")
+				unmatched("gpu_uplink_missing_gpu_sn")
+				continue
+			}
+			if conflictingSNs[gpuSN] {
+				skip("gpu_uplink_conflicting_gpu_sn")
+				unmatched("gpu_uplink_conflicting_gpu_sn")
+				continue
+			}
+			card, ok := validCards[gpuSN]
+			if !ok {
+				skip("gpu_uplink_unknown_gpu_sn")
+				unmatched("gpu_uplink_unknown_gpu_sn")
+				continue
+			}
 			cardText := func(field string) string { value, _ := card.Properties[field].(string); return value }
-			conflict := false
+			conflicts := []string{}
 			if ports := card.Properties["conn_ports"].([]string); values["gpu_port"] != "" {
 				found := false
 				for _, port := range ports {
@@ -377,25 +393,27 @@ func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollecti
 				}
 				if !found {
 					out.Reasons["gpu_port_conflict"]++
-					conflict = true
+					conflicts = append(conflicts, "gpu_port_conflict")
 				}
 			}
 			if values["gpu_slot"] != "" && cardText("slot") != "" && values["gpu_slot"] != cardText("slot") {
 				out.Reasons["gpu_slot_conflict"]++
-				conflict = true
+				conflicts = append(conflicts, "gpu_slot_conflict")
 			}
 			for _, pair := range [][3]string{{"gpu_model", "model", "gpu_model_difference"}, {"gpu_vram", "vram", "gpu_vram_difference"}} {
 				if values[pair[0]] != "" && cardText(pair[1]) != "" && values[pair[0]] != cardText(pair[1]) {
 					out.Reasons[pair[2]]++
 				}
 			}
-			if conflict {
+			if len(conflicts) > 0 {
 				out.Skipped++
+				unmatched(strings.Join(conflicts, ","))
 				continue
 			}
 			tor, name := values["tor_sn"], values["tor_port"]
 			if tor == "" || name == "" {
 				skip("tor_reference_missing")
+				unmatched("tor_reference_missing")
 				continue
 			}
 			ports, ok := torPorts[tor]
@@ -411,6 +429,7 @@ func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollecti
 			port := ports[name]
 			if port == "" {
 				skip("tor_port_not_unique")
+				unmatched("tor_port_not_unique")
 				continue
 			}
 			if previous, ok := portOwners[port]; ok && previous != tor {
@@ -424,7 +443,7 @@ func (c *CMDB) CollectGPU(ctx context.Context, source model.Source) (GPUCollecti
 					properties[field] = values[field]
 				}
 			}
-			link := GPUUplink{ServerSN: sn, ToRSN: tor, Properties: properties, Identity: model.RelationIdentity{SourceID: source.ID, EdgeType: model.EdgeNetwork, Kind: model.RelationGPUUplink, SourceRelationID: uuid, From: card.Identity, To: model.EntityIdentity{SourceID: source.ID, EntityType: model.EntityInterface, StableID: port}}}
+			link := GPUUplink{ServerSN: sn, ToRSN: tor, RawToRPort: rawToRPort, Properties: properties, Identity: model.RelationIdentity{SourceID: source.ID, EdgeType: model.EdgeNetwork, Kind: model.RelationGPUUplink, SourceRelationID: uuid, From: card.Identity, To: model.EntityIdentity{SourceID: source.ID, EntityType: model.EntityInterface, StableID: port}}}
 			resolved, _ := json.Marshal(link)
 			digest.Write(resolved)
 			out.Uplinks = append(out.Uplinks, link)

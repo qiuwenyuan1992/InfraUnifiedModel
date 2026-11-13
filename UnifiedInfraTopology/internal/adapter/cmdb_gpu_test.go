@@ -472,6 +472,22 @@ func TestGPUCardRejectsIdentityAndWrongSourceTypes(t *testing.T) {
 	}
 }
 
+func TestGPUCardNormalizesOnlyPortNames(t *testing.T) {
+	card, err := cmdbGPUCard(gpuRaw(t, map[string]any{
+		"device_sn": "server a", "parts_sn": "parts a", "uuid": "uuid a",
+		"conn_ports": []any{" i\tb\n8\u00a0", "ib8", "\u2003", nil, "ib\u30009"},
+	}), "source a", "server a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := card.Properties["conn_ports"]; !reflect.DeepEqual(got, []string{"ib8", "ib9"}) {
+		t.Fatalf("normalized port deduplication: %v", got)
+	}
+	if card.Identity.StableID != "parts a" || card.ServerSN != "server a" || card.Identity.SourceID != "source a" {
+		t.Fatalf("non-port identity normalized: %+v", card)
+	}
+}
+
 func TestGPUCardUsesSNWithoutCMDBUUID(t *testing.T) {
 	item := map[string]any{"device_sn": "server-a", "parts_sn": "parts-a"}
 	card, err := cmdbGPUCard(gpuRaw(t, item), "s", "server-a")

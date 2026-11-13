@@ -89,7 +89,7 @@ func verifySpatialGraph(ctx context.Context, client graphclient.Client, source s
 	if err != nil {
 		return nil, err
 	}
-	r := &SpatialGraphReport{Total: total, KindCounts: map[string]int64{"located_in": 0, "tagged_with": 0}, PathCounts: map[string]int64{"device_cabinet": 0, "cabinet_data_center": 0, "cabinet_pod": 0}, Samples: []SpatialGraphSample{}}
+	r := &SpatialGraphReport{Total: total, KindCounts: map[string]int64{"located_in": 0, "tagged_with": 0}, PathCounts: map[string]int64{"device_cabinet": 0, "cabinet_data_center": 0, "cabinet_pod": 0, "room_data_center": 0, "cabinet_room": 0, "rpp_room": 0}, Samples: []SpatialGraphSample{}}
 	if at.IsZero() {
 		return r, nil
 	}
@@ -127,6 +127,9 @@ func verifySpatialGraph(ctx context.Context, client graphclient.Client, source s
 		{"device_cabinet", model.EntityDevice, model.EntityCabinet, model.RelationLocatedIn, "device_sn", "uuid"},
 		{"cabinet_data_center", model.EntityCabinet, model.EntityDataCenter, model.RelationLocatedIn, "uuid", "uuid"},
 		{"cabinet_pod", model.EntityCabinet, model.EntityPod, model.RelationTaggedWith, "uuid", "uuid"},
+		{"room_data_center", model.EntityRoom, model.EntityDataCenter, model.RelationLocatedIn, "uuid", "uuid"},
+		{"cabinet_room", model.EntityCabinet, model.EntityRoom, model.RelationLocatedIn, "uuid", "uuid"},
+		{"rpp_room", model.EntityRPP, model.EntityRoom, model.RelationLocatedIn, "inst_id", "uuid"},
 	}
 	matched := map[string]bool{}
 	matchedKinds := map[string]int64{}

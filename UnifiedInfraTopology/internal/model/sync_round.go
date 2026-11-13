@@ -40,5 +40,5 @@ type SyncRoundPhase struct {
 func (SyncRoundPhase) TableName() string { return "sync_round_phases" }
 
 func SyncRoundPhaseNames() []string {
-	return []string{"data_center", "cabinet", "device", "transformer", "ups_group", "ups", "rpp", "pod", "interface", "power_relations", "pod_membership", "spatial_relations", "gpu_sync", "server_uplinks", "links_to"}
+	return []string{"data_center", "room", "cabinet", "device", "transformer", "ups_group", "ups", "rpp", "pod", "interface", "power_relations", "pod_membership", "spatial_relations", "gpu_sync", "server_uplinks", "links_to"}
 }

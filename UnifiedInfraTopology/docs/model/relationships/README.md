@@ -27,7 +27,7 @@ power_relation
 
 - **4 个 Edge Type**。
 - **11 个领域内关系语义项**，其中 `member_of` 分别存在于空间领域和电力领域。
-- **14 个合法端点组合**。
+- **17 个合法端点组合**。
 
 `relation_kind` 只在所属 Edge Type 内解释，不要求全局唯一。例如：
 
@@ -57,6 +57,9 @@ power_relation.relation_kind   = "member_of"
 | `spatial_relation` | `located_in` | `device → cabinet` | 设备位于机柜 |
 | `spatial_relation` | `located_in` | `cabinet → data_center` | 机柜位于数据中心 |
 | `spatial_relation` | `tagged_with` | `cabinet → pod` | 机柜带有 POD 标签 |
+| `spatial_relation` | `located_in` | `room → data_center` | 房间位于数据中心 |
+| `spatial_relation` | `located_in` | `cabinet → room` | 机柜位于房间 |
+| `spatial_relation` | `located_in` | `rpp → room` | RPP 位于房间 |
 
 ### 3.2 资源组成领域
 

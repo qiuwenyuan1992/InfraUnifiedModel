@@ -15,6 +15,121 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCMDBRoomRecordAndSelection(t *testing.T) {
+	var item map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(`{"inst_id":3094,"uuid":" room-uuid ","full_name":"ZWU11_101","room_full_name":"A4_101","name":"101","idc_id":1030,"idc_module_id":133,"phy_building_id":1036,"status":1}`), &item))
+	room := model.EntityType("room")
+	require.True(t, room.Valid())
+	record, err := cmdbEntityRecord(item, room)
+	require.NoError(t, err)
+	require.Equal(t, "room-uuid", record.Identity)
+	require.Equal(t, int64(3094), record.SourceInstanceID)
+	require.Equal(t, "A4_101", record.Properties["room_full_name"])
+	require.Equal(t, int64(1030), record.Properties["idc_id"])
+	require.Equal(t, int64(1), record.Properties["status"])
+	conf := cmdbTestConfig("https://example.test", nil)
+	conf.Set("inventory.cmdb.sources.primary.entity_type", "room")
+	collector := NewCMDB(conf)
+	selected, err := collector.SelectedEntity(model.Source{ConfigRef: "primary"})
+	require.NoError(t, err)
+	require.Equal(t, room, selected)
+	condition, err := collector.conditionFor(model.Source{ConfigRef: "primary"}, room)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"status": 1}, condition)
+	item = nil
+	for _, bad := range []string{`{"inst_id":1}`, `{"uuid":"u"}`, `{"inst_id":0,"uuid":"u"}`, `{"inst_id":1,"uuid":9}`, `{"inst_id":1,"uuid":"u","idc_id":"1030"}`} {
+		require.NoError(t, json.Unmarshal([]byte(bad), &item))
+		_, err := cmdbEntityRecord(item, room)
+		require.ErrorIs(t, err, ErrCMDBRecord)
+		item = nil
+	}
+}
+
+func TestCMDBRoomPageFieldsConditionAndCoverage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, roomEndpoint, r.URL.Path)
+		var request cmdbEntityRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+		require.Equal(t, roomFields, request.Fields)
+		require.Equal(t, map[string]any{"idc_id": float64(1030), "status": float64(1)}, request.Condition)
+		require.Equal(t, "inst_id", request.Page.Sort)
+		fmt.Fprint(w, entityResponse(`{"inst_id":3094,"uuid":"room-uuid","idc_id":1030,"status":1}`, 1))
+	}))
+	defer server.Close()
+	conf := cmdbTestConfig(server.URL, nil)
+	conf.Set("inventory.cmdb.sources.primary.room_condition", map[string]any{"idc_id": 1030})
+	c := NewCMDBWithClient(conf, server.Client())
+	s := model.Source{ConfigRef: "primary"}
+	page, err := c.CollectEntityPage(context.Background(), s, model.EntityRoom, 0)
+	require.NoError(t, err)
+	require.Equal(t, "room-uuid", page.Records[0].Identity)
+	full, err := c.CoversFullSource(s, model.EntityRoom)
+	require.NoError(t, err)
+	require.False(t, full)
+	conf.Set("inventory.cmdb.sources.primary.room_condition", map[string]any{"status": 2})
+	condition, err := c.conditionFor(s, model.EntityRoom)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"status": 2}, condition)
+}
+
+func TestCMDBDirectoryRecordsCarrySourceCounts(t *testing.T) {
+	var item map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(`{"inst_id":3101,"uuid":"room-uuid","idc_id":1030,"cabinet_num":90,"server_num":36,"network_device_num":54}`), &item))
+	room, err := cmdbEntityRecord(item, model.EntityRoom)
+	require.NoError(t, err)
+	require.Equal(t, int64(90), room.Properties["cabinet_num"])
+	require.Equal(t, int64(36), room.Properties["server_num"])
+	require.Equal(t, int64(54), room.Properties["network_device_num"])
+	item = nil
+	require.NoError(t, json.Unmarshal([]byte(`{"inst_id":451,"uuid":"dc-uuid","cabinet_num":2668,"server_num":900,"network_device_num":1200}`), &item))
+	dc, err := cmdbEntityRecord(item, model.EntityDataCenter)
+	require.NoError(t, err)
+	require.Equal(t, int64(2668), dc.Properties["cabinet_num"])
+	require.Equal(t, int64(900), dc.Properties["server_num"])
+	require.Equal(t, int64(1200), dc.Properties["network_device_num"])
+	// 来源缺失计数时保持空值，不猜测为 0。
+	item = nil
+	require.NoError(t, json.Unmarshal([]byte(`{"inst_id":3102,"uuid":"room-uuid-2"}`), &item))
+	room, err = cmdbEntityRecord(item, model.EntityRoom)
+	require.NoError(t, err)
+	require.Nil(t, room.Properties["cabinet_num"])
+	require.Nil(t, room.Properties["server_num"])
+	require.Nil(t, room.Properties["network_device_num"])
+	item = nil
+	require.NoError(t, json.Unmarshal([]byte(`{"inst_id":452,"uuid":"cabinet-uuid","device_num":11,"server_num":9,"network_device_num":2}`), &item))
+	cabinet, err := cmdbEntityRecord(item, model.EntityCabinet)
+	require.NoError(t, err)
+	require.Equal(t, int64(11), cabinet.Properties["device_num"])
+	require.Equal(t, int64(9), cabinet.Properties["server_num"])
+	require.Equal(t, int64(2), cabinet.Properties["network_device_num"])
+	require.Contains(t, roomFields, "cabinet_num")
+	require.Contains(t, roomFields, "server_num")
+	require.Contains(t, roomFields, "network_device_num")
+	require.Contains(t, dataCenterFields, "cabinet_num")
+	require.Contains(t, dataCenterFields, "server_num")
+	require.Contains(t, dataCenterFields, "network_device_num")
+	require.Contains(t, cabinetFields, "device_num")
+	require.Contains(t, cabinetFields, "server_num")
+	require.Contains(t, cabinetFields, "network_device_num")
+}
+
+func TestCMDBInterfaceRecordNormalizesOnlyPortName(t *testing.T) {
+	for _, name := range []string{" FHGigabitEthernet 0/35 ", "FHGigabitEthernet\t0/35", "FHGigabitEthernet\u00a00/\u300035"} {
+		t.Run(name, func(t *testing.T) {
+			encoded, err := json.Marshal(map[string]any{"inst_id": 1, "port_uuid": " port uuid ", "port_name": name, "group_uuid": " group uuid ", "port_group_name": " group name "})
+			require.NoError(t, err)
+			var item map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(encoded, &item))
+			record, err := cmdbInterfaceRecord(item)
+			require.NoError(t, err)
+			require.Equal(t, "FHGigabitEthernet0/35", record.Properties["port_name"])
+			require.Equal(t, "port uuid", record.Identity)
+			require.Equal(t, "group uuid", record.Properties["group_uuid"])
+			require.Equal(t, "group name", record.Properties["group_name"])
+		})
+	}
+}
+
 func TestCMDBPowerIdentityUsesInstIDWithoutUUIDFallback(t *testing.T) {
 	for _, entity := range []model.EntityType{model.EntityTransformer, model.EntityUPSGroup, model.EntityUPS, model.EntityRPP} {
 		for _, uuid := range []string{"", `,"uuid":"legacy"`, `,"uuid":9`, `,"uuid":null`} {
@@ -48,7 +163,8 @@ func TestCMDBCollectUPSRPPPagesMapOnlyGraphProperties(t *testing.T) {
 				want["transformer_id_up"], want["brand"], want["model"], want["rated_capacity"] = int64(1588), "brand", "model", int64(500)
 			} else {
 				object = "idc_RPP"
-				fields = []string{"inst_id", "code", "idc", "ups_group", "transformer_group_a", "create_time", "last_time"}
+				fields = []string{"inst_id", "code", "idc", "idc_room", "ups_group", "transformer_group_a", "create_time", "last_time"}
+				want["idc_room"] = nil
 				want["transformer_group_a_id"] = int64(1588)
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -361,6 +477,7 @@ func TestCMDBSelectedEntityValidatesConfiguredWhitelist(t *testing.T) {
 		{name: "device", value: "device", want: model.EntityDevice},
 		{name: "data center", value: "data_center", want: model.EntityDataCenter},
 		{name: "cabinet", value: "cabinet", want: model.EntityCabinet},
+		{name: "ROOM", value: "room", want: model.EntityRoom},
 		{name: "interface", value: "interface", want: model.EntityInterface},
 		{name: "transformer", value: "transformer", want: model.EntityTransformer},
 		{name: "UPS group", value: "ups_group", want: model.EntityUPSGroup},
@@ -533,12 +650,12 @@ func TestCMDBCollectEntityPageMapsAuthoritativeFields(t *testing.T) {
 	for _, entity := range []model.EntityType{model.EntityDataCenter, model.EntityCabinet} {
 		t.Run(string(entity), func(t *testing.T) {
 			item := `{"inst_id":451,"uuid":" IDC-UUID ","cn_name":" 中文名称 ","code":" RH ","address":" 地址 ","location":" ","created_at":"2021-03-15 18:02:11","updated_at":"2000-01-01 00:00:00","last_time":"2026-09-15T23:01:33.343123456+08:00","alias":"discard","city_id":761,"in_monitor_scope_id":99,"status":1}`
-			want := map[string]any{"inst_id": int64(451), "uuid": "IDC-UUID", "cn_name": "中文名称", "code": "RH", "address": "地址", "location": nil, "source_created_at": time.Date(2021, 3, 15, 10, 2, 11, 0, time.UTC), "source_updated_at": time.Date(2026, 9, 15, 15, 1, 33, 343123000, time.UTC)}
+			want := map[string]any{"inst_id": int64(451), "uuid": "IDC-UUID", "cn_name": "中文名称", "code": "RH", "address": "地址", "location": nil, "cabinet_num": nil, "server_num": nil, "network_device_num": nil, "source_created_at": time.Date(2021, 3, 15, 10, 2, 11, 0, time.UTC), "source_updated_at": time.Date(2026, 9, 15, 15, 1, 33, 343123000, time.UTC)}
 			path := "/pub/api/v3/find/instance/object/idc"
 			if entity == model.EntityCabinet {
 				path = "/pub/api/v3/find/instance/object/cabinet"
 				item = `{"inst_id":451,"uuid":" CABINET-UUID ","code":" C-1 ","dc_colo_rack":" DC ","isp_rack_code":" ISP ","rack":" R08 ","rack_column_code":" COL ","rack_row":" ","idc_id":451,"phy_building_id":404,"phy_room_id":889,"idc_module_id":100,"idc_building_structure_id":1728,"idc_rows_code":15756,"pod_ids":[914,null,0,914,915],"row_switch_id_A":6204,"row_switch_id_B":6114,"created_at":"2000-01-01 00:00:00","updated_at":"2026-09-15T23:01:33+08:00","last_time":"2026-09-16T00:00:00+08:00","phy_idc_id":999,"pod_id":999,"row_switch_id_a":999,"device_num":6,"in_monitor_scope_id":99}`
-				want = map[string]any{"inst_id": int64(451), "uuid": "CABINET-UUID", "code": "C-1", "dc_colo_rack": "DC", "isp_rack_code": "ISP", "rack": "R08", "rack_column_code": "COL", "rack_row": nil, "idc_id": int64(451), "phy_building_id": int64(404), "phy_room_id": int64(889), "idc_module_id": int64(100), "idc_building_structure_id": int64(1728), "idc_rows_code": int64(15756), "pod_ids": []int64{914, 915}, "row_switch_id_a": int64(6204), "row_switch_id_b": int64(6114), "source_created_at": nil, "source_updated_at": time.Date(2026, 9, 15, 15, 1, 33, 0, time.UTC)}
+				want = map[string]any{"inst_id": int64(451), "uuid": "CABINET-UUID", "code": "C-1", "dc_colo_rack": "DC", "isp_rack_code": "ISP", "rack": "R08", "rack_column_code": "COL", "rack_row": nil, "idc_id": int64(451), "phy_building_id": int64(404), "phy_room_id": int64(889), "idc_module_id": int64(100), "idc_building_structure_id": int64(1728), "idc_rows_code": int64(15756), "pod_ids": []int64{914, 915}, "row_switch_id_a": int64(6204), "row_switch_id_b": int64(6114), "device_num": int64(6), "server_num": nil, "network_device_num": nil, "source_created_at": nil, "source_updated_at": time.Date(2026, 9, 15, 15, 1, 33, 0, time.UTC)}
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				require.Equal(t, http.MethodPost, r.Method)

@@ -28,7 +28,8 @@
 - CMDB 上游原始字段 `in_monitor_scope_id` 只能保留在来源资料或来源 DTO 中，不得进入领域模型、API、数据库、图属性或身份。
 - 必须保留 `source_id`，用于区分 CMDB 来源、组成稳定身份和执行来源级清理。
 - 不设计租户隔离、多拓扑兼容层、旧 API 兼容层或旧数据库兼容路径。
-- 当前权威模型固定为 10 个实体 Tag、4 个 Edge Type 和 14 种合法关系端点组合。
+- 当前权威模型固定为 11 个实体 Tag、4 个 Edge Type 和 17 种合法关系端点组合。
+- ROOM 的稳定身份是来源 UUID，正整数 `inst_id` 只解析引用；新增 `room → data_center`、`cabinet → room`、`rpp → room` 的 `located_in`，不替代既有机柜 IDC/POD 或设备机柜关系。
 - 不创建 Address、NetworkNode、TerminationPoint、占位节点或按同步批次复制的资产节点。
 - transformer、ups_group、ups、rpp 的 CMDB 权威身份是正整数 `inst_id`，以规范十进制字符串组成 `source_id + entity_type + stable_id`，图中身份字段为 INT；不要求或伪造 UUID。其他实体的数字引用 ID 仅用于采集期解析，不替代各自稳定身份。
 - GPU 的唯一稳定身份是实际 SN `server_gpu.parts_sn`，完整逻辑身份为 `source_id + gpu + parts_sn`；忽略缺失/空白 SN 的卡，不使用卡 `uuid`、`inst_id` 或槽位回退，不持久化卡 UUID，不兼容双写。GPU 上联按有有效卡的服务器 `device_sn` 完整分页查询，返回的 `gpu_sn` 匹配 `parts_sn`，不逐卡请求；`gpu_uplink.uuid` 仅保留来源关系身份语义。
@@ -53,7 +54,7 @@
 
 只保存当前有效拓扑：
 
-- 10 个实体 Tag。
+- 11 个实体 Tag。
 - 4 个领域 Edge Type。
 - 当前实体和关系属性。
 - `created_at` 和 `synced_at`。

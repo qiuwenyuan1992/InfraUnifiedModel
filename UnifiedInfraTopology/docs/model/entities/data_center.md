@@ -90,6 +90,9 @@ source_id:data_center:uuid
 | `cn_name` | `idc.cn_name` | 唯一名称字段和主要展示名称 |
 | `address` | `idc.address` | 详细地址展示值 |
 | `location` | `idc.location` | 来源位置简称或位置展示值 |
+| `cabinet_num` | `idc.cabinet_num` | 来源机柜计数快照，仅目录展示，不替代图关系 |
+| `server_num` | `idc.server_num` | 来源服务器计数快照，仅目录展示 |
+| `network_device_num` | `idc.network_device_num` | 来源网络设备计数快照，仅目录展示 |
 | `source_created_at` | `idc.created_at` | 来源创建时间，与本项目 `created_at` 区分 |
 | `source_updated_at` | `idc.updated_at` 或 `idc.last_time` | 来源更新时间，不用于全量消失判断 |
 | `created_at` | 同步任务 | 本项目首次入图时间，只在首次创建时写入 |
@@ -162,11 +165,8 @@ cn_name 非空 → cn_name
 - `is_it_oms`
 - `is_core_4_gpu`
 - `it_service_time`
-- `cabinet_num`
 - `cabinet_power_num`
 - `device_num`
-- `server_num`
-- `network_device_num`
 - `external_num`
 - `other_num`
 - `idc_onsite_number`
@@ -178,7 +178,7 @@ cn_name 非空 → cn_name
 - 管理部门、负责人、资产人员、外包人员、值班电话、邮箱和支持人员字段
 - `modifier`、`username`、`supplier_account`
 
-状态和统计快照后续只有在出现明确查询需求时，才通过显式模型变更加入。来源统计不能替代图中实际机柜和设备关系计数。
+`cabinet_num`、`server_num`、`network_device_num` 三个来源计数已按显式模型变更加入，仅作目录展示快照；其余状态和统计快照仍不保存。来源统计不能替代图中实际机柜和设备关系计数。
 
 ## 4. 关系解析
 

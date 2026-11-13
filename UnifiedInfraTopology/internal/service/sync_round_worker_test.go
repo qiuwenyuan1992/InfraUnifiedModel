@@ -16,6 +16,9 @@ type roundWorkerControl struct {
 	repository.InventoryRoundRepository
 	round                           *model.SyncRound
 	phaseNames                      []string
+	persistedPhases                 []model.SyncRoundPhase
+	storedRound                     *model.SyncRound
+	getErr                          error
 	results                         []repository.PhaseResult
 	finishStatus, finishError       string
 	cancellation                    bool
@@ -27,6 +30,21 @@ func (r *roundWorkerControl) ClaimNext(context.Context, time.Time) (*model.SyncR
 		return nil, nil, repository.ErrInventoryNoRun
 	}
 	return r.round, &model.Source{ID: r.round.SourceID, Enabled: true, ConfigRef: "test", AdapterKind: "cmdb"}, nil
+}
+func (r *roundWorkerControl) Get(_ context.Context, _ string) (*model.SyncRound, []model.SyncRoundPhase, error) {
+	stored := r.storedRound
+	if stored == nil {
+		copy := *r.round
+		copy.Status = "running"
+		stored = &copy
+	}
+	phases := r.persistedPhases
+	if phases == nil {
+		for i, name := range model.SyncRoundPhaseNames() {
+			phases = append(phases, model.SyncRoundPhase{RoundID: r.round.ID, Name: name, Position: i + 1, Status: "queued"})
+		}
+	}
+	return stored, phases, r.getErr
 }
 func (r *roundWorkerControl) Renew(context.Context, string, time.Time) error { return r.renewErr }
 func (r *roundWorkerControl) CancellationRequested(context.Context, string) (bool, error) {
@@ -63,7 +81,7 @@ func TestQueuedRoundWorkerOrdersPersistsAndSharesSnapshot(t *testing.T) {
 	require.True(t, processed)
 	require.Equal(t, model.SyncRoundPhaseNames(), names)
 	require.Equal(t, names, control.phaseNames)
-	require.Len(t, control.results, 15)
+	require.Len(t, control.results, len(model.SyncRoundPhaseNames()))
 	require.Equal(t, "succeeded", control.finishStatus)
 	require.Empty(t, control.finishError)
 }
@@ -110,6 +128,61 @@ func TestQueuedRoundWorkerStopsOnFailureOrCancellation(t *testing.T) {
 	}
 }
 
+func TestQueuedRoundWorkerRejectsChangedPersistedPlanBeforeExecution(t *testing.T) {
+	for _, change := range []string{"historical", "missing_core", "duplicate", "order", "position", "phase_owner", "phase_status", "round_id", "source", "round_status", "source_claim"} {
+		t.Run(change, func(t *testing.T) {
+			at := time.Now().UTC().Truncate(time.Microsecond)
+			round := &model.SyncRound{ID: "round", SourceID: "source", SnapshotAt: &at, StartedAt: &at, Status: "running"}
+			control := &roundWorkerControl{round: round}
+			stored, phases, err := control.Get(context.Background(), round.ID)
+			require.NoError(t, err)
+			copyRound := *stored
+			control.storedRound = &copyRound
+			switch change {
+			case "historical":
+				phases = append(phases[:1], phases[2:]...)
+				for i := range phases {
+					phases[i].Position = i + 1
+				}
+			case "missing_core":
+				phases = phases[:len(phases)-1]
+			case "duplicate":
+				phases[1].Name = phases[0].Name
+			case "order":
+				phases[0].Name, phases[1].Name = phases[1].Name, phases[0].Name
+			case "position":
+				phases[1].Position++
+			case "phase_owner":
+				phases[0].RoundID = "other"
+			case "phase_status":
+				phases[0].Status = "succeeded"
+			case "round_id":
+				control.storedRound.ID = "other"
+			case "source":
+				control.storedRound.SourceID = "other"
+			case "round_status":
+				control.storedRound.Status = "succeeded"
+			case "source_claim":
+				control.round.SourceID = "different"
+			}
+			control.persistedPhases = phases
+			worker := NewSyncRoundWorker(control, func(context.Context, model.Source, string) (repository.PhaseResult, error) {
+				t.Error("changed phase plan must not collect or write graph data")
+				return repository.PhaseResult{RunID: "run"}, nil
+			})
+			processed, err := worker.ProcessNext(context.Background())
+			require.True(t, processed)
+			var recorded *recordedRoundFailure
+			require.ErrorAs(t, err, &recorded)
+			require.Contains(t, err.Error(), "new round")
+			require.Empty(t, control.phaseNames)
+			require.Empty(t, control.results)
+			require.Equal(t, "failed", control.finishStatus)
+			require.Equal(t, "round_phase_plan_changed", control.finishError)
+		})
+	}
+}
+
 func TestQueuedRoundWorkerNoRunAndCanceledParent(t *testing.T) {
 	worker := NewSyncRoundWorker(&roundWorkerControl{}, func(context.Context, model.Source, string) (repository.PhaseResult, error) {
 		t.Fatal("unexpected stage")
@@ -147,9 +220,9 @@ func TestQueuedRoundPersistsGPUFailurePartialCounts(t *testing.T) {
 	})
 	_, err := worker.ProcessNext(context.Background())
 	require.Error(t, err)
-	require.Len(t, control.results, 13)
-	require.EqualValues(t, 20197, control.results[12].Nodes)
-	require.Equal(t, "gpu_uplink_write_failed", control.results[12].ErrorCode)
+	require.Len(t, control.results, 14)
+	require.EqualValues(t, 20197, control.results[13].Nodes)
+	require.Equal(t, "gpu_uplink_write_failed", control.results[13].ErrorCode)
 	require.Equal(t, "failed", control.finishStatus)
 }
 
@@ -163,7 +236,8 @@ type recoveringRoundControl struct {
 func (r *recoveringRoundControl) ClaimNext(_ context.Context, at time.Time) (*model.SyncRound, *model.Source, error) {
 	r.claims++
 	id := fmt.Sprintf("round-%d", r.claims)
-	return &model.SyncRound{ID: id, SourceID: "source", SnapshotAt: &at, StartedAt: &at, Status: "running"}, &model.Source{ID: "source"}, nil
+	r.round = &model.SyncRound{ID: id, SourceID: "source", SnapshotAt: &at, StartedAt: &at, Status: "running"}
+	return r.round, &model.Source{ID: "source"}, nil
 }
 func (r *recoveringRoundControl) Finish(_ context.Context, _, status, _ string, _ time.Time) error {
 	r.statuses = append(r.statuses, status)
@@ -223,7 +297,10 @@ func TestQueuedRoundCancellationAtCompletionIsPersisted(t *testing.T) {
 	require.Equal(t, "canceled", control.finishStatus)
 }
 
-type expiredRoundControl struct{ roundWorkerControl }
+type expiredRoundControl struct {
+	roundWorkerControl
+	reads int
+}
 
 func (r *expiredRoundControl) Renew(context.Context, string, time.Time) error {
 	return repository.ErrInventoryConflict
@@ -232,6 +309,10 @@ func (r *expiredRoundControl) Finish(context.Context, string, string, string, ti
 	return repository.ErrInventoryConflict
 }
 func (r *expiredRoundControl) Get(_ context.Context, id string) (*model.SyncRound, []model.SyncRoundPhase, error) {
+	r.reads++
+	if r.reads == 1 {
+		return r.roundWorkerControl.Get(context.Background(), id)
+	}
 	return &model.SyncRound{ID: id, SourceID: r.round.SourceID, Status: "failed", ErrorCode: "worker_lease_expired"}, nil, nil
 }
 func TestQueuedRoundExpiredLeaseAlreadyRecordedIsRecognized(t *testing.T) {

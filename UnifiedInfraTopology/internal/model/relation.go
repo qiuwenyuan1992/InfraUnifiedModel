@@ -27,6 +27,9 @@ type RelationSpec struct {
 }
 
 var relationSpecs = map[RelationSpec]struct{}{
+	{EdgeType: EdgeSpatial, Kind: RelationLocatedIn, From: EntityRoom, To: EntityDataCenter}:          {},
+	{EdgeType: EdgeSpatial, Kind: RelationLocatedIn, From: EntityCabinet, To: EntityRoom}:             {},
+	{EdgeType: EdgeSpatial, Kind: RelationLocatedIn, From: EntityRPP, To: EntityRoom}:                 {},
 	{EdgeType: EdgeSpatial, Kind: RelationMemberOf, From: EntityDevice, To: EntityPod}:                {},
 	{EdgeType: EdgeSpatial, Kind: RelationLocatedIn, From: EntityDevice, To: EntityCabinet}:           {},
 	{EdgeType: EdgeSpatial, Kind: RelationLocatedIn, From: EntityCabinet, To: EntityDataCenter}:       {},

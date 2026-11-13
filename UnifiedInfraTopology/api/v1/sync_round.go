@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"sort"
 	"time"
 
 	"UnifiedInfraTopology/internal/model"
@@ -67,8 +68,18 @@ type InventoryDiagnosticDTO struct {
 func InventoryRound(round model.SyncRound, phases []model.SyncRoundPhase) InventoryRoundDTO {
 	dto := InventoryRoundDTO{ID: round.ID, SourceID: round.SourceID, Status: round.Status, Mode: round.Mode,
 		CreatedAt: round.CreatedAt.UTC(), StartedAt: inventoryUTCTime(round.StartedAt), FinishedAt: inventoryUTCTime(round.FinishedAt),
-		SnapshotAt: inventoryUTCTime(round.SnapshotAt), CancelRequestedAt: inventoryUTCTime(round.CancelRequestedAt), ErrorCode: round.ErrorCode, TotalPhases: 15}
+		SnapshotAt: inventoryUTCTime(round.SnapshotAt), CancelRequestedAt: inventoryUTCTime(round.CancelRequestedAt), ErrorCode: round.ErrorCode}
 	names := model.SyncRoundPhaseNames()
+	if len(phases) > 0 {
+		// 展示任务创建时记录的阶段，新增room不改变旧任务的15阶段历史。
+		ordered := append([]model.SyncRoundPhase(nil), phases...)
+		sort.Slice(ordered, func(i, j int) bool { return ordered[i].Position < ordered[j].Position })
+		names = make([]string, len(ordered))
+		for i, phase := range ordered {
+			names[i] = phase.Name
+		}
+	}
+	dto.TotalPhases = len(names)
 	dto.Phases = make([]InventoryRoundPhaseDTO, len(names))
 	for i, name := range names {
 		phase := InventoryRoundPhaseDTO{Name: name, Position: i + 1, Status: "not_run"}

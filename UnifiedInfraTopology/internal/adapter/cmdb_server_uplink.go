@@ -113,7 +113,7 @@ func (c *CMDB) CollectServerUplinkPage(ctx context.Context, source model.Source,
 			for _, name := range names {
 				value := ""
 				if name != nil {
-					value = strings.TrimSpace(*name)
+					value = NormalizePortName(*name)
 				}
 				uuid := ports[value]
 				if value == "" || uuid == "" {
@@ -193,6 +193,7 @@ func (c *CMDB) collectUplinkToRPorts(ctx context.Context, cfg cmdbConfig, tor st
 			if err != nil {
 				return nil, err
 			}
+			name = NormalizePortName(name)
 			uuid, err := uplinkText(item, "port_uuid")
 			if err != nil {
 				return nil, err

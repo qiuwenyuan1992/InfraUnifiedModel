@@ -25,7 +25,7 @@ func NewSpatialSyncWorker(source *adapter.CMDB, graph repository.TopologyGraphRe
 	return &SpatialSyncWorker{source: source, graph: graph}
 }
 
-// 完整采集和全部端点预检后只写空间边；复读失败不清理已写入的边。
+// 单遍完整采集和全部端点预检后只写空间边，不清理已写入的边。
 func (w *SpatialSyncWorker) Run(ctx context.Context, source model.Source, snapshot time.Time) (SpatialSyncResult, error) {
 	result := SpatialSyncResult{Reasons: map[string]int{}}
 	if err := ctx.Err(); err != nil {
@@ -88,7 +88,7 @@ func normalizeSpatialRelations(candidates []model.Relation, sourceID string, sna
 	byID := map[string]model.Relation{}
 	for _, candidate := range candidates {
 		identity := candidate.Identity
-		allowed := identity.Kind == model.RelationLocatedIn && (identity.From.EntityType == model.EntityDevice && identity.To.EntityType == model.EntityCabinet || identity.From.EntityType == model.EntityCabinet && identity.To.EntityType == model.EntityDataCenter) || identity.Kind == model.RelationTaggedWith && identity.From.EntityType == model.EntityCabinet && identity.To.EntityType == model.EntityPod
+		allowed := identity.Kind != model.RelationMemberOf && (model.RelationSpec{EdgeType: identity.EdgeType, Kind: identity.Kind, From: identity.From.EntityType, To: identity.To.EntityType}).Valid()
 		if !allowed || identity.EdgeType != model.EdgeSpatial || identity.SourceID != sourceID || identity.From.SourceID != sourceID || identity.To.SourceID != sourceID {
 			return nil, fmt.Errorf("spatial sync invalid relation source or endpoints")
 		}
