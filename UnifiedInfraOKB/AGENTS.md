@@ -12,7 +12,7 @@ v2 基线（2026-11-16）取代 v1 全部设计；v1 旧文档已整体删除，
 4. docs/design/api-boundaries.md（REST 四原语契约）
 5. docs/development/README.md（切片派发与验证）
 
-当前仅骨架与文档，没有 go.mod、迁移、API 或前端，不得宣称已有可运行功能。
+当前状态：S0 建馆 + S1 查询切片已实现（go.mod、模型、仓储、摄取、提取、四原语、测试见 docs/development/handoffs/2026-11-16-s0-s1-vertical-slice.md）；真实 LLM 提取器、S2 界面、迁移 DDL 尚未实现，不得宣称已验证真实模型或生产部署。
 
 ## 产品边界
 
@@ -34,7 +34,7 @@ v2 基线（2026-11-16）取代 v1 全部设计；v1 旧文档已整体删除，
 
 ## 代码与存储边界
 
-- 独立 Go module，独立 server/worker 入口；尚未创建 go.mod。
+- 独立 Go module，独立 server/worker 入口；go.mod 已初始化（S0），worker 仍占位。
 - 独立 MySQL 知识库：独立连接、迁移台账、事务上下文；不把知识写入拓扑控制库。
 - 文件/对象存储保存原件、解析大对象、模型原始输出；数据库保存不可变引用、摘要和状态。
 - Git 保存代码、Schema、设计和合成样例；不保存真实工单正文、生产案例、凭据、模型输出或运行数据。
