@@ -37,7 +37,7 @@ v1 全部设计文档已删除，如遇残留旧设计描述一律以 v2 基线�
 | --- | --- |
 | `lookup(alert_signature)` | 告警 → 候选异常 |
 | `trace(anomaly_id, facts?, max_hops, top_k)` | 候选因果链，每跳带条件求值与证据等级 |
-| `evidence(id)` | 出处回链（fragment 级权限，未授权只给摘要） |
+| `evidence(id)` | 出处回链（原文直返；权限分级后置 S3） |
 | `report(diagnosis_ref, used_edges, verdict)` | 反馈飞轮入口，幂等 |
 
 ## 交付切片
@@ -46,8 +46,8 @@ v1 全部设计文档已删除，如遇残留旧设计描述一律以 v2 基线�
 | --- | --- |
 | S0 建馆 | 案例摄取 + LLM 结构化提取 + 证据回链 + 图存储 + 两态修订 |
 | S1 查询 | REST 四原语 + 条件求值（先建馆后查询） |
-| S2 治理闭环 | 反馈回写 + fragment 级权限 + 专家最小界面 |
-| S3 按需 | NebulaGraph 导出、多人审核、MCP 包装等真实需求出现后立项 |
+| S2 治理闭环 | 反馈回写 + 专家最小界面 |
+| S3 按需 | NebulaGraph 导出、多人审核、权限分级、MCP 包装等真实需求出现后立项 |
 
 ## 已确认边界
 

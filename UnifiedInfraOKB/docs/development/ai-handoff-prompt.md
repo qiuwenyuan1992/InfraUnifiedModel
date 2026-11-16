@@ -27,7 +27,7 @@
 - 证据分级：case_verified / doc_explicit / inferred / expert_only；生来自源、不事后提升。
 - 准确性三层：来源定级 → 抽样审核（默认 10%）+ ≥2 独立工单印证升 curated → 运行时反馈飞轮（report 确认/否决回写置信度，否决入库为反证）。
 - 知识状态仅 draft / curated 两态；修订历史追加式；所有读 API 响应携带 revision_id。
-- 工单入库前须过脱敏校验（sensitivity_cleared）；权限校验到 fragment 级，未授权只返回摘要。
+- 工单入库前须过脱敏校验（sensitivity_cleared）；fragment 级权限本期不启用（用户决定后置 S3），evidence 原文直返。
 - 不使用 TopologyDetails.vue，不访问 CMDB/拓扑，不修改 UnifiedInfraTopology、NebulaGraph 和拓扑控制库。
 - REST 即可，本期不做 MCP；向量库、OCR、NebulaGraph 导出不是本期必装依赖。
 - 交付切片：S0 建馆 → S1 查询 → S2 治理闭环 → S3 按需；先建馆后查询。
