@@ -1,58 +1,75 @@
-# UnifiedInfraOKB 运维知识管理
+# UnifiedInfraOKB 故障知识图谱图书馆
 
-UnifiedInfraOKB 是 InfraUnifiedModel 中独立的运维知识管理后端模块。运维专家通过复用的 UnifiedInfraWeb 控制台，管理资料、多来源 AI 提取与知识组装、异常定义、告警映射、传播规则、审核和版本发布。
+UnifiedInfraOKB 是 InfraUnifiedModel 中独立后端模块，定位为**故障知识图谱与 Agent 诊断记忆底座**：结构化保存带证据出处的因果知识，供诊断 Agent（REST 四原语）与运维专家（极简界面）消费。目标参照 XiHe, *Networked Agent Memory and Causality Representation: Experiences towards Interpretable Cloud-Scale Root-Causing*, SIGCOMM 2026。
 
-**当前仅建立目录骨架及需求交接文档。没有 go.mod、可执行程序、数据库迁移、运行配置、知识 API 或知识前端。** 目录存在不代表功能已经实现。
+**当前仅骨架与文档（v2 基线）。没有 go.mod、可执行程序、迁移、API 或前端。** 目录存在不代表功能已实现。
 
 ## 从哪里开始
 
-1. 阅读 [模块协作约束](AGENTS.md)。
-2. 阅读 [需求基线](docs/design/requirements.md)，理解已确认范围与 A01—A14 验收场景。
-3. 阅读 [存储模型](docs/design/storage-model.md) 与 [工作流和页面](docs/design/workflows-and-ui.md)。
-4. 查看 [接口边界](docs/design/api-boundaries.md)。
-5. 使用 [开发接手入口](docs/development/README.md) 和 [工作包](docs/development/work-packages.md)分配任务；详细顺序见 [实施计划](docs/development/plans/2026-11-16-okb-implementation.md)。
-6. 给另一个 AI 可直接复制 [接手提示词](docs/development/ai-handoff-prompt.md)，补上任务编号和实际 Git 基线。
+1. [模块协作约束](AGENTS.md)
+2. [v2 需求基线](docs/design/requirements.md)：定位、证据分级、准确性三层机制、切片 S0—S3、验收 A1—A7
+3. [数据与存储模型](docs/design/storage-model.md)
+4. [REST API 边界](docs/design/api-boundaries.md)：lookup / trace / evidence / report
+5. [开发接手入口](docs/development/README.md)
+
+v1 全部设计文档已删除，如遇残留旧设计描述一律以 v2 基线为准。
+
+## 核心资产
+
+```
+节点   anomaly_type      异常（stable_code 唯一，厂商别名归并）
+边     causal_rule       源异常 → 目标异常：触发条件、时间约束、反证、证据等级
+入口   alert_mapping     告警 signature → 候选异常（置信度）
+```
+
+知识按需查询、不进 prompt；每条边可回链到工单/文档原文片段（verifiable interpretability）。
+
+## 数据与准确性
+
+- **数据源**：脱敏故障工单/复盘为一等公民（结构化程度低，LLM 二次结构化提取）；厂商文档与专家经验为补充源。
+- **证据分级**：case_verified > doc_explicit > inferred > expert_only，生来自源、不事后提升。
+- **准确性三层**：来源定级 → 抽样审核（10%）+ ≥2 独立工单印证升 curated → 运行时反馈飞轮（report 确认/否决回写置信度，否决入库为反证）。
+- **两态治理**：draft → curated，修订历史追加式。
+
+## REST 四原语
+
+| 原语 | 用途 |
+| --- | --- |
+| `lookup(alert_signature)` | 告警 → 候选异常 |
+| `trace(anomaly_id, facts?, max_hops, top_k)` | 候选因果链，每跳带条件求值与证据等级 |
+| `evidence(id)` | 出处回链（fragment 级权限，未授权只给摘要） |
+| `report(diagnosis_ref, used_edges, verdict)` | 反馈飞轮入口，幂等 |
+
+## 交付切片
+
+| 切片 | 内容 |
+| --- | --- |
+| S0 建馆 | 案例摄取 + LLM 结构化提取 + 证据回链 + 图存储 + 两态修订 |
+| S1 查询 | REST 四原语 + 条件求值（先建馆后查询） |
+| S2 治理闭环 | 反馈回写 + fragment 级权限 + 专家最小界面 |
+| S3 按需 | NebulaGraph 导出、多人审核、MCP 包装等真实需求出现后立项 |
 
 ## 已确认边界
 
-- 同仓库独立后端，前端复用 UnifiedInfraWeb；优先 Go 技术生态。
-- 独立 MySQL 知识数据库保存正文、来源、修订和流程记录；文件/私有对象存储保存原件和大对象。
-- PostgreSQL、NebulaGraph、向量数据库和 OpenSPG/KAG 均不是本模块已确认的必装依赖。
-- 当前独立建设知识管理，不关联实际拓扑，不使用或修改 TopologyDetails.vue，不调用 CMDB 或拓扑接口。
-- 三类正式知识：异常类型、告警到多候选异常的映射、有条件的可能传播规则。
-- 主题驱动组合多份资料，保留原文断言、出处、适用条件、冲突、缺口和专家判断。
-- AI 输出是候选；专家通过网页处理，不需要编辑 YAML。发布包由系统导出并绑定固定修订和摘要。
-
-## 知识流程
-
-```mermaid
-flowchart LR
-  A[多份资料的固定版本] --> B[解析与原文片段]
-  B --> C[原子陈述与草稿候选]
-  C --> D[主题组装与缺口冲突]
-  D --> E[专家知识修订]
-  E --> F[冻结审核]
-  F --> G[不可变发布包]
-  G --> H[固定版本查询与追溯]
-```
+- 同仓库独立 Go 后端；独立 MySQL 知识库 + 文件/对象存储；不碰 UnifiedInfraTopology / TopologyDetails.vue / CMDB。
+- OKB 是被动应答的图书馆，不做诊断编排，不保存会话状态；会话级工作记忆归未来 Agent 编排层。
+- REST 即可，本期不做 MCP；查询输入是告警 signature / 异常 stable_code，不是资产 ID。
+- 资料原文、模型原始响应、真实工单正文、凭据不进 Git；工单入库前过脱敏校验（sensitivity_cleared）。
 
 ## 目录职责
 
 | 路径 | 职责与当前状态 |
 | --- | --- |
-| cmd/server | 未来知识 HTTP API 入口；当前占位 |
-| cmd/worker | 未来解析、提取及发布构建 worker 入口；当前占位 |
-| api/v1 | 未来请求/响应契约与类型；当前占位 |
-| internal/handler、service、repository、model | 未来传输、业务、持久化和领域代码；当前占位 |
-| internal/document、extractor、storage、authorization、worker | 文档解析、模型适配、文件存储、授权和后台执行边界；当前占位 |
+| cmd/server、cmd/worker | 未来 HTTP API 与提取 worker 入口；当前占位 |
+| api/v1 | 未来 REST 契约与类型；当前占位 |
+| internal/handler、service、repository、model | 未来传输、业务、持久化、领域代码；当前占位 |
+| internal/document、extractor、storage、authorization、worker | 解析、模型适配、文件存储、授权、后台执行边界；当前占位 |
 | migrations/mysql | 独立知识库迁移；当前没有 SQL |
-| test/fixtures/synthetic、test/integration | 合成案例及未来集成验证；当前占位 |
-| config | 未来无秘密的配置示例；当前占位 |
-| docs/design | 需求、数据、流程和 API 设计 |
-| docs/development | 实施顺序、工作包、任务和交付模板、接手说明 |
+| test/fixtures/synthetic、test/integration | 合成案例与未来集成验证；当前占位 |
+| config | 未来无秘密配置示例；当前占位 |
+| docs/design | v2 设计基线 |
+| docs/development | 接手入口、模板与交付记录 |
 
 ## 验证与运行
 
-本轮仅能核对文档链接、目录、Git 改动和交接一致性。应用启动、go test、模型提取、MySQL 迁移及 Web 联调均尚不可执行或未经本轮验证；未来任务初始化后记录真实命令和输出。
-
-资料原文、模型原始响应、真实案例、凭据和运行文件不进入 Git。原件与数据存放位置由部署配置指定。
+本轮仅能核对文档链接、目录与 Git 改动。应用启动、go test、模型提取、MySQL 迁移及 Web 联调均尚未可执行；未来任务初始化后记录真实命令与输出。
