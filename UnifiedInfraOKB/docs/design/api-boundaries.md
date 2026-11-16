@@ -30,8 +30,8 @@ GET /api/v1/trace?anomaly_id=<id>&max_hops=3&top_k=5&facts=<URL编码的观测�
 GET /api/v1/evidence?id=<node_or_edge_id>&evidence_id=<可选>
 ```
 
-- 返回：证据列表，每项含 evidence_level、source kind、fragment 回链（工单/文档原文或摘要）。
-- 权限（F4）：按 fragment 级 permission_level 校验调用方身份；未授权只返回 summary，不返回原文。
+- 返回：证据列表，每项含 evidence_level、source kind、fragment 回链（摘要与原文）。
+- 权限（F4）：本期不启用（2026-11-16 用户决定，后置 S3）——原文直返；S3 启用后按 fragment 级 permission_level 校验，未授权只返回 summary。
 
 ### 1.4 report —— 反馈飞轮入口（F3）
 
@@ -49,12 +49,12 @@ POST /api/v1/report
 - 案例摄取：`POST /api/v1/sources`（internal_case 上传 → 脱敏校验 → 打 sensitivity_cleared）。
 - LLM 结构化提取任务：提交后异步执行，结果以 draft 候选呈现，不直接入图。
 - 专家操作：`POST /api/v1/edges/{id}/confirm|reject`、归并建议确认、补充证据。
-- 全部操作服务端识别主体、按动作授权、记审计。
+- 操作者以 Bearer 署名记审计；按动作授权本期不启用（后置 S3）。
 
 ## 3 通用约束
 
 - **所有读响应携带 revision_id**（F5）：调用方答案可复现，钉住修订版本。
 - 知识按需查询，不提供"全量导出给 prompt"的接口。
-- 错误语义：`404`（实体不存在）、`403`（无权读取原文，仅返回摘要结构时用 `200 + summary_only=true` 标记）、`422`（条件 Schema 不合法）。
-- 草稿（draft）知识在 trace/lookup 结果中默认排除，除非显式 `include_draft=true` 且调用方有审核权限。
+- 错误语义：`404`（实体不存在）、`422`（内容/Schema 不合法，含脱敏校验失败）。
+- 草稿（draft）知识在 trace/lookup 结果中默认排除，除非显式 `include_draft=true`（本期无审核权限门槛，S3 启用后须审核权限）。
 - 接口契约在本文件冻结；实现切片顺序仍为 S0 建馆 → S1 查询（先建馆后查询）。

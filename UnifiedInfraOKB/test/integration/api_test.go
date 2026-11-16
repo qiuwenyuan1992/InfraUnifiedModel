@@ -62,7 +62,7 @@ func TestA1IngestAndTraceback(t *testing.T) {
 	if err != nil || len(edges) != 1 {
 		t.Fatalf("list edges: %v len=%d", err, len(edges))
 	}
-	view, err := svc.Evidence(service.Caller{ID: "tester", PermissionLevel: 1}, edges[0].ID)
+	view, err := svc.Evidence(edges[0].ID)
 	if err != nil {
 		t.Fatalf("evidence: %v", err)
 	}
@@ -309,11 +309,11 @@ func TestA5Feedback(t *testing.T) {
 	}
 }
 
-// TestA6FragmentPermission A6：未授权调用方只拿到摘要，不返回原文。
-func TestA6FragmentPermission(t *testing.T) {
+// TestA6EvidenceFullContent A6：fragment 级权限本期不启用（后置 S3），evidence 始终返回原文。
+func TestA6EvidenceFullContent(t *testing.T) {
 	svc := newTestService(t)
 	if _, err := svc.Ingest(context.Background(), service.IngestInput{
-		Kind: model.SourceInternalCase, Title: "权限工单",
+		Kind: model.SourceInternalCase, Title: "证据工单",
 		Content: caseContent("ALERT-P", "perm.a", "PA", "perm.a", "perm.b"),
 	}); err != nil {
 		t.Fatalf("ingest: %v", err)
@@ -322,26 +322,21 @@ func TestA6FragmentPermission(t *testing.T) {
 	edges, _ := svc.Store().ListEdgesFrom(node.ID, "")
 	edgeID := edges[0].ID
 
-	// level 0：摘要可见，原文为空
-	view, err := svc.Evidence(service.Caller{ID: "guest", PermissionLevel: 0}, edgeID)
+	// 权限门槛移除后：摘要与原文均直返
+	view, err := svc.Evidence(edgeID)
 	if err != nil {
 		t.Fatalf("evidence: %v", err)
+	}
+	if len(view.Items) == 0 {
+		t.Fatal("evidence items must not be empty")
 	}
 	for _, it := range view.Items {
 		if it.Summary == "" {
 			t.Fatal("summary must always be returned")
 		}
-		if it.Content != "" {
-			t.Fatal("unauthorized caller must not see fragment content")
+		if it.Content == "" {
+			t.Fatal("content must be returned while permission gating is deferred to S3")
 		}
-	}
-	// level 1：原文可见
-	view, err = svc.Evidence(service.Caller{ID: "op", PermissionLevel: 1}, edgeID)
-	if err != nil {
-		t.Fatalf("evidence: %v", err)
-	}
-	if len(view.Items) == 0 || view.Items[0].Content == "" {
-		t.Fatal("authorized caller must see fragment content")
 	}
 }
 

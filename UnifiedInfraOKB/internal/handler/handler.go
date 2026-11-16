@@ -16,34 +16,20 @@ import (
 // Handler HTTP 门面。
 type Handler struct {
 	svc *service.Service
-	// authz 操作者 ID → 权限等级映射；nil 时全部视为 level 1（开发模式）。
-	authz map[string]int
 }
 
-// New 装配 handler。authz 为 nil 表示开发模式：所有调用方 level 1。
-func New(svc *service.Service, authz map[string]int) *Handler {
-	return &Handler{svc: svc, authz: authz}
+// New 装配 handler。
+func New(svc *service.Service) *Handler {
+	return &Handler{svc: svc}
 }
 
-// caller 从请求解析服务端识别的操作主体。
-// 生产中由网关注入可信头；此处从 Authorization: Bearer <operator> 取 ID 查权限表。
-// 未登记的调用方按 level 0 处理（仅摘要可见），不信任客户端自报等级。
-func (h *Handler) caller(r *http.Request) service.Caller {
-	id := ""
-	if parts := splitBearer(r.Header.Get("Authorization")); len(parts) == 2 {
-		id = parts[1]
+// operatorID 从 Authorization: Bearer <operator> 取操作者署名，仅用于审计记录；
+// 本期不做按动作授权（2026-11-16 用户决定后置 S3）。
+func operatorID(r *http.Request) string {
+	if parts := splitBearer(r.Header.Get("Authorization")); len(parts) == 2 && parts[1] != "" {
+		return parts[1]
 	}
-	if id == "" {
-		id = "anonymous"
-	}
-	level, ok := h.authz[id]
-	if !ok {
-		level = 0
-	}
-	if h.authz == nil {
-		level = 1 // 开发模式：未配置权限表时统一 level 1
-	}
-	return service.Caller{ID: id, PermissionLevel: level}
+	return "anonymous"
 }
 
 func splitBearer(s string) []string {
@@ -87,7 +73,7 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "alert_signature is required")
 		return
 	}
-	includeDraft := h.canReview(h.caller(r)) && r.URL.Query().Get("include_draft") == "true"
+	includeDraft := r.URL.Query().Get("include_draft") == "true"
 	res, err := h.svc.Lookup(sig, includeDraft)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -112,7 +98,7 @@ func (h *Handler) handleTrace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	includeDraft := h.canReview(h.caller(r)) && r.URL.Query().Get("include_draft") == "true"
+	includeDraft := r.URL.Query().Get("include_draft") == "true"
 	res, err := h.svc.Trace(code, maxHops, topK, facts, includeDraft)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -132,7 +118,7 @@ func (h *Handler) handleEvidence(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "ref is required")
 		return
 	}
-	res, err := h.svc.Evidence(h.caller(r), ref)
+	res, err := h.svc.Evidence(ref)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeErr(w, http.StatusNotFound, "entity not found")
@@ -141,7 +127,6 @@ func (h *Handler) handleEvidence(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// fragment 级权限：存在被裁剪的原文时显式标记（api-boundaries.md 第 3 节）
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -157,10 +142,9 @@ func (h *Handler) handleReport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	caller := h.caller(r)
 	res, err := h.svc.Report(service.ReportInput{
 		DiagnosisRef: req.DiagnosisRef, EdgeID: req.EdgeID,
-		Verdict: model.Verdict(req.Verdict), OperatorID: caller.ID, Notes: req.Notes,
+		Verdict: model.Verdict(req.Verdict), OperatorID: operatorID(r), Notes: req.Notes,
 	})
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -184,9 +168,8 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	caller := h.caller(r)
 	out, err := h.svc.Ingest(r.Context(), service.IngestInput{
-		Kind: model.SourceKind(req.Kind), Title: req.Title, Content: req.Content, OperatorID: caller.ID,
+		Kind: model.SourceKind(req.Kind), Title: req.Title, Content: req.Content, OperatorID: operatorID(r),
 	})
 	if err != nil {
 		// 脱敏校验失败：422 语义（Schema/内容不合规）
@@ -198,10 +181,6 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 // handleReviewQueue GET /api/v1/review/queue —— S2 复核队列
 func (h *Handler) handleReviewQueue(w http.ResponseWriter, r *http.Request) {
-	if !h.canReview(h.caller(r)) {
-		writeErr(w, http.StatusForbidden, "review permission required")
-		return
-	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	list, err := h.svc.ReviewQueue(limit)
 	if err != nil {
@@ -213,11 +192,7 @@ func (h *Handler) handleReviewQueue(w http.ResponseWriter, r *http.Request) {
 
 // handleConfirmEdge POST /api/v1/edges/{id}/confirm —— S2 治理
 func (h *Handler) handleConfirmEdge(w http.ResponseWriter, r *http.Request) {
-	if !h.canReview(h.caller(r)) {
-		writeErr(w, http.StatusForbidden, "review permission required")
-		return
-	}
-	if err := h.svc.ConfirmEdge(r.PathValue("id"), h.caller(r).ID); err != nil {
+	if err := h.svc.ConfirmEdge(r.PathValue("id"), operatorID(r)); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeErr(w, http.StatusNotFound, "edge not found")
 			return
@@ -230,11 +205,7 @@ func (h *Handler) handleConfirmEdge(w http.ResponseWriter, r *http.Request) {
 
 // handleRejectEdge POST /api/v1/edges/{id}/reject —— S2 治理
 func (h *Handler) handleRejectEdge(w http.ResponseWriter, r *http.Request) {
-	if !h.canReview(h.caller(r)) {
-		writeErr(w, http.StatusForbidden, "review permission required")
-		return
-	}
-	if err := h.svc.RejectEdge(r.PathValue("id"), h.caller(r).ID); err != nil {
+	if err := h.svc.RejectEdge(r.PathValue("id"), operatorID(r)); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeErr(w, http.StatusNotFound, "edge not found")
 			return
@@ -243,9 +214,4 @@ func (h *Handler) handleRejectEdge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "draft"})
-}
-
-// canReview 审核权限：权限表等级 >= 2 视为可审核（含 include_draft 与治理端点）。
-func (h *Handler) canReview(c service.Caller) bool {
-	return c.PermissionLevel >= 2
 }

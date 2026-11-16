@@ -16,17 +16,18 @@
   - `internal/extractor`：Extractor 接口 + FakeExtract（识别 JSON 标记片段，不捏造）；`Validate()` 拒绝缺失字段候选。
   - `internal/service/ingest.go`：脱敏门禁（IP/手机号/邮箱/身份证/凭据/MAC 六类模式，拒绝即 422 不入库）→ 内容寻址版本 → 片段切块 → 提取 → 候选接纳 → **≥2 独立工单印证自动升 curated**（边与映射同规则）。
 - **S1 查询**：
-  - `internal/service/query.go`：lookup（置信度排序）、trace（DFS 遍历+环检测+跳数/条数有界、受控条件求值 passed/failed/unknown——failed 边不可走、unknown 作为待验证检查项、组合链标注"未逐链审核"）、evidence（fragment 级权限：未授权只见摘要）。
+  - `internal/service/query.go`：lookup（置信度排序）、trace（DFS 遍历+环检测+跳数/条数有界、受控条件求值 passed/failed/unknown——failed 边不可走、unknown 作为待验证检查项、组合链标注"未逐链审核"）、evidence（摘要+原文直返）。
   - `internal/service/feedback.go`：report 幂等反馈（confirmed +0.05 / rejected −0.10 降 draft 入复核队列）、ReviewQueue、ConfirmEdge/RejectEdge 专家治理、别名确认。
-  - `internal/handler` + `cmd/server`：REST 全端点（lookup/trace/evidence/report/sources/review/queue/edges/{id}/confirm|reject/healthz）；权限表 OKB_AUTHZ= id:level（0 仅摘要 / 1 读原文 / 2 审核+include_draft）。
+  - `internal/handler` + `cmd/server`：REST 全端点（lookup/trace/evidence/report/sources/review/queue/edges/{id}/confirm|reject/healthz）。**权限门槛已按用户决定移除**（2026-11-16 追加）：操作者仅 Bearer 署名记审计，fragment 级权限分级与按动作授权后置 S3。
 - **测试**：`test/integration/api_test.go` 覆盖 A1—A7 全部验收场景。
 
 ## 验证证据（真实运行）
 
 - `go build ./...`：通过。
-- `go test ./...`：**ok UnifiedInfraOKB/internal/... ok UnifiedInfraOKB/test/integration**（A1 摄取回链 / A2 脱敏门禁 / A3 印证计数 / A4 lookup+trace+条件求值 / A5 反馈幂等+复核队列+修订追加 / A6 fragment 权限 / A7 节点对齐，全部 PASS）。
-- SQLite 真实 HTTP 冒烟（:18090）：两份合成工单摄取 → 第 2 份触发 CuratedRules:1；lookup 默认返回 curated 候选（含 revision_id）；trace 返回 A→B 候选链（case_verified、条件求值、钉 revision）；evidence 匿名只见摘要、agent-1（level 1）见全文；report confirmed→0.55、重复上报 recorded:false、rejected→draft+复核队列；expert-1 确认恢复 curated。
-- MySQL 真实冒烟（本机 MySQL 独立 `okb_test` 库，:18091）：AutoMigrate 建 11 表成功、摄取成功、lookup 权限行为正确（anonymous 无审核权限不见 draft）。**未动 unified 拓扑库**。
+- `go test ./...`：**ok UnifiedInfraOKB/internal/... ok UnifiedInfraOKB/test/integration**（A1 摄取回链 / A2 脱敏门禁 / A3 印证计数 / A4 lookup+trace+条件求值 / A5 反馈幂等+复核队列+修订追加 / A6 证据直返 / A7 节点对齐，全部 PASS）。
+- SQLite 真实 HTTP 冒烟（:18090）：两份合成工单摄取 → 第 2 份触发 CuratedRules:1；lookup 默认返回 curated 候选（含 revision_id）；trace 返回 A→B 候选链（case_verified、条件求值、钉 revision）；evidence 返回摘要与原文；report confirmed→0.55、重复上报 recorded:false、rejected→draft+复核队列；专家确认恢复 curated。
+- MySQL 真实冒烟（本机 MySQL 独立 `okb_test` 库，:18091）：AutoMigrate 建 11 表成功、摄取成功。**未动 unified 拓扑库**。
+- **权限移除后复验**（2026-11-16 追加）：`go vet`/`go build`/`go test` 全绿；A6 改为验证 evidence 原文直返（权限后置 S3）。
 - 发现并修复 2 个真实 bug：① AddFeedback 幂等判断写反（Count 永真）→ 改用 RowsAffected；② alert_mapping 无印证升级 → 补齐同规则。
 
 ## 未实现 / 已知限制

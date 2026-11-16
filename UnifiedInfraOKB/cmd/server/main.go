@@ -1,6 +1,6 @@
 // cmd/server OKB HTTP API 入口。
 // 驱动选择：OKB_DB_DRIVER=sqlite（默认，零依赖开发/测试）或 mysql（生产）。
-// 配置全部经环境变量，凭据不进 Git；权限表 OKB_AUTHZ 格式：id:level,id:level。
+// 配置全部经环境变量，凭据不进 Git。按动作授权本期不启用（后置 S3）。
 package main
 
 import (
@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -45,15 +43,12 @@ func run() error {
 		return fmt.Errorf("init store: %w", err)
 	}
 
-	// 3. 权限表（服务端识别主体 → 动作权限等级；0=仅摘要 1=读原文 2=审核）
-	authz := parseAuthz(os.Getenv("OKB_AUTHZ"))
-
-	// 4. 装配 service（模型提取器：未配置真实模型时使用 FakeExtract，仅限开发）
+	// 3. 装配 service（模型提取器：未配置真实模型时使用 FakeExtract，仅限开发）
 	svc := service.New(store, nil, service.DefaultConfig())
 
-	// 5. HTTP
+	// 4. HTTP（本期无权限门槛：操作者仅 Bearer 署名记审计，按动作授权后置 S3）
 	mux := http.NewServeMux()
-	handler.New(svc, authz).Routes(mux)
+	handler.New(svc).Routes(mux)
 	addr := envOr("OKB_LISTEN", ":18090")
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
@@ -65,7 +60,7 @@ func run() error {
 		}
 	}()
 
-	// 6. 优雅退出
+	// 5. 优雅退出
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
@@ -90,24 +85,6 @@ func openDB(driver string) (*gorm.DB, error) {
 	default:
 		return nil, fmt.Errorf("unknown driver %q (expect sqlite/mysql)", driver)
 	}
-}
-
-// parseAuthz 解析 "id:level,id:level" 权限表；空串返回 nil（开发模式 level 1）。
-func parseAuthz(raw string) map[string]int {
-	if raw == "" {
-		return nil
-	}
-	authz := map[string]int{}
-	for _, pair := range strings.Split(raw, ",") {
-		kv := strings.SplitN(strings.TrimSpace(pair), ":", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		if lv, err := strconv.Atoi(kv[1]); err == nil {
-			authz[kv[0]] = lv
-		}
-	}
-	return authz
 }
 
 func envOr(key, def string) string {
