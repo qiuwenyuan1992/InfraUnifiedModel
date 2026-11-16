@@ -1,0 +1,372 @@
+// query.go S1 查询原语：lookup / trace / evidence。
+// trace 为 BFS 遍历 + 受控条件求值（passed/failed/unknown）；
+// evidence 按 fragment 级权限校验，未授权只返回摘要（F4）；
+// 所有响应钉住 revision_id（F5）。
+package service
+
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+
+	"UnifiedInfraOKB/internal/model"
+	"UnifiedInfraOKB/internal/repository"
+)
+
+// Caller 调用方身份：服务端识别，按动作授权（不信任客户端自报角色）。
+type Caller struct {
+	ID             string
+	PermissionLevel int // >= fragment.PermissionLevel 才能读原文
+}
+
+// LookupResult lookup 原语输出：告警 → 候选异常。
+type LookupResult struct {
+	AlertSignature string            `json:"alert_signature"`
+	Candidates     []LookupCandidate `json:"candidates"`
+}
+
+// LookupCandidate 单个候选异常。
+type LookupCandidate struct {
+	AnomalyID      string              `json:"anomaly_id"`
+	StableCode     string              `json:"stable_code"`
+	Name           string              `json:"name"`
+	Confidence     float64             `json:"confidence"`
+	EvidenceLevel  model.EvidenceLevel `json:"evidence_level"`
+	RevisionID     string              `json:"revision_id"`
+	Status         model.KnowledgeStatus `json:"status"`
+}
+
+// TraceResult trace 原语输出：候选因果链集合。
+type TraceResult struct {
+	StartAnomalyID string        `json:"start_anomaly_id"`
+	MaxHops        int           `json:"max_hops"`
+	Chains         []TraceChain  `json:"chains"`
+}
+
+// TraceChain 一条候选根因链（多跳）。
+type TraceChain struct {
+	Hops                   []TraceHop `json:"hops"`
+	FullyCurated           bool        `json:"fully_curated"` // 逐跳全部 curated
+	MinConfidence          float64     `json:"min_confidence"`
+	CombinedNote           string      `json:"combined_note,omitempty"` // 组合推导标注
+}
+
+// TraceHop 一跳：边 + 条件求值结果。
+type TraceHop struct {
+	EdgeID        string                 `json:"edge_id"`
+	TargetID      string                 `json:"target_anomaly_id"`
+	TargetCode    string                 `json:"target_stable_code"`
+	TargetName    string                 `json:"target_name"`
+	Conditions    []model.ConditionClause `json:"conditions,omitempty"`
+	Evaluations   []ConditionEval         `json:"evaluations,omitempty"`
+	TimeConstraints string                `json:"time_constraints,omitempty"`
+	EvidenceLevel model.EvidenceLevel     `json:"evidence_level"`
+	Confidence    float64                 `json:"confidence"`
+	Status        model.KnowledgeStatus  `json:"status"`
+	RevisionID    string                  `json:"revision_id"`
+}
+
+// ConditionEval 单条条件求值：passed/failed/unknown。
+// unknown 的条件作为待验证检查项交给调用方取证（evidence-driven）。
+type ConditionEval struct {
+	FactKey string `json:"fact_key"`
+	Op      string `json:"op"`
+	Result  string `json:"result"` // passed / failed / unknown
+}
+
+// EvidenceView evidence 原语输出：单条知识的证据回链。
+type EvidenceView struct {
+	EntityType  model.EntityType `json:"entity_type"`
+	EntityID    string           `json:"entity_id"`
+	RevisionID  string           `json:"revision_id"`
+	Items        []EvidenceItem  `json:"items"`
+}
+
+// EvidenceItem 单条证据。
+type EvidenceItem struct {
+	EvidenceID   string              `json:"evidence_id"`
+	Kind         model.EvidenceKind `json:"kind"`
+	Level        model.EvidenceLevel `json:"level"`
+	FragmentID   string              `json:"fragment_id"`
+	Summary      string              `json:"summary"` // 摘要：始终返回
+	Content      string              `json:"content,omitempty"` // 原文：仅授权调用方
+	SourceKind   model.SourceKind    `json:"source_kind"`
+	CreatedBy    model.CreatorKind   `json:"created_by"`
+}
+
+// Lookup 告警入口：signature → 候选异常。draft 默认排除，includeDraft 须审核权限（由 handler 校验）。
+func (s *Service) Lookup(alertSignature string, includeDraft bool) (*LookupResult, error) {
+	status := model.StatusCurated
+	if includeDraft {
+		status = ""
+	}
+	mappings, err := s.store.ListMappingsByAlert(alertSignature, status)
+	if err != nil {
+		return nil, fmt.Errorf("list mappings: %w", err)
+	}
+	res := &LookupResult{AlertSignature: alertSignature, Candidates: []LookupCandidate{}}
+	for _, m := range mappings {
+		node, err := s.store.GetAnomalyByID(m.AnomalyID)
+		if err != nil {
+			continue // 孤儿映射跳过，不中断查询
+		}
+		revID := ""
+		if rev, err := s.store.LatestRevision(model.EntityAlertMapping, m.ID); err == nil {
+			revID = rev.ID
+		}
+		res.Candidates = append(res.Candidates, LookupCandidate{
+			AnomalyID: node.ID, StableCode: node.StableCode, Name: node.Name,
+			Confidence: m.Confidence, EvidenceLevel: m.EvidenceLevel,
+			RevisionID: revID, Status: m.Status,
+		})
+	}
+	// 置信度降序，输出有界
+	sort.Slice(res.Candidates, func(i, j int) bool {
+		return res.Candidates[i].Confidence > res.Candidates[j].Confidence
+	})
+	return res, nil
+}
+
+// Trace 候选根因链遍历：从起始异常沿出边 BFS，条件求值，输出 top-k 链。
+// facts 为调用方已知观测；求值失败的边不可走（防止可能性被放大成必然性）。
+func (s *Service) Trace(startCode string, maxHops, topK int, facts map[string]interface{}, includeDraft bool) (*TraceResult, error) {
+	if maxHops <= 0 || maxHops > s.cfg.MaxHops {
+		maxHops = s.cfg.MaxHops
+	}
+	if topK <= 0 || topK > 20 {
+		topK = s.cfg.TopK
+	}
+	start, err := s.store.GetAnomalyByCode(startCode)
+	if err != nil {
+		return nil, fmt.Errorf("start anomaly: %w", err)
+	}
+	status := model.StatusCurated
+	if includeDraft {
+		status = ""
+	}
+
+	res := &TraceResult{StartAnomalyID: start.ID, MaxHops: maxHops, Chains: []TraceChain{}}
+	// DFS 收集所有 ≤maxHops 的链（环检测：同链不重复访节点）
+	var walk func(nodeID string, hops []TraceHop, visited map[string]bool)
+	walk = func(nodeID string, hops []TraceHop, visited map[string]bool) {
+		if len(hops) >= maxHops {
+			return
+		}
+		edges, err := s.store.ListEdgesFrom(nodeID, status)
+		if err != nil {
+			return
+		}
+		for _, e := range edges {
+			if visited[e.TargetAnomalyID] {
+				continue // 环：跳过
+			}
+			hop, ok := s.buildHop(e, facts)
+			if !ok {
+				continue // 条件 failed 的边不可走
+			}
+			next := append(hops, hop)
+			chain := TraceChain{Hops: append([]TraceHop(nil), next...)}
+			chain.FullyCurated = true
+			chain.MinConfidence = 1.0
+			for _, h := range chain.Hops {
+				if h.Status != model.StatusCurated {
+					chain.FullyCurated = false
+				}
+				if h.Confidence < chain.MinConfidence {
+					chain.MinConfidence = h.Confidence
+				}
+			}
+			if !chain.FullyCurated {
+				chain.CombinedNote = "组合推导，未逐链审核"
+			}
+			res.Chains = append(res.Chains, chain)
+			nv := make(map[string]bool, len(visited)+1)
+			for k := range visited {
+				nv[k] = true
+			}
+			nv[e.TargetAnomalyID] = true
+			walk(e.TargetAnomalyID, next, nv)
+		}
+	}
+	seed := map[string]bool{start.ID: true}
+	walk(start.ID, []TraceHop{}, seed)
+
+	// 排序：全 curated 优先，再按最小置信度降序；截断 top-k
+	sort.SliceStable(res.Chains, func(i, j int) bool {
+		if res.Chains[i].FullyCurated != res.Chains[j].FullyCurated {
+			return res.Chains[i].FullyCurated
+		}
+		if len(res.Chains[i].Hops) != len(res.Chains[j].Hops) {
+			return len(res.Chains[i].Hops) < len(res.Chains[j].Hops) // 短链（更直接根因）优先
+		}
+		return res.Chains[i].MinConfidence > res.Chains[j].MinConfidence
+	})
+	if len(res.Chains) > topK {
+		res.Chains = res.Chains[:topK]
+	}
+	return res, nil
+}
+
+// buildHop 构造一跳并求值条件；返回 ok=false 表示边不可走（条件 failed）。
+func (s *Service) buildHop(e model.CausalRule, facts map[string]interface{}) (TraceHop, bool) {
+	hop := TraceHop{
+		EdgeID: e.ID, TargetID: e.TargetAnomalyID,
+		TimeConstraints: e.TimeConstraints,
+		EvidenceLevel: e.EvidenceLevel, Confidence: e.Confidence,
+		Status: e.Status,
+	}
+	if node, err := s.store.GetAnomalyByID(e.TargetAnomalyID); err == nil {
+		hop.TargetCode, hop.TargetName = node.StableCode, node.Name
+	}
+	if rev, err := s.store.LatestRevision(model.EntityCausalRule, e.ID); err == nil {
+		hop.RevisionID = rev.ID
+	}
+	if e.Conditions != "" {
+		var clauses []model.ConditionClause
+		if err := json.Unmarshal([]byte(e.Conditions), &clauses); err == nil {
+			hop.Conditions = clauses
+			hop.Evaluations = make([]ConditionEval, len(clauses))
+			for i, c := range clauses {
+				hop.Evaluations[i] = ConditionEval{FactKey: c.FactKey, Op: c.Op}
+				switch evalCondition(c, facts) {
+				case evalFailed:
+					return hop, false // 条件不满足：边不可走
+				case evalPassed:
+					hop.Evaluations[i].Result = "passed"
+				default:
+					hop.Evaluations[i].Result = "unknown" // 待验证检查项
+				}
+			}
+		}
+	}
+	return hop, true
+}
+
+const (
+	evalUnknown = iota
+	evalPassed
+	evalFailed
+)
+
+// evalCondition 受控条件求值：只支持受控算符，不执行任意脚本。
+func evalCondition(c model.ConditionClause, facts map[string]interface{}) int {
+	v, ok := facts[c.FactKey]
+	if !ok || v == nil {
+		return evalUnknown
+	}
+	switch c.Op {
+	case "exists":
+		return evalPassed
+	case "eq":
+		if fmt.Sprintf("%v", v) == fmt.Sprintf("%v", c.Value) {
+			return evalPassed
+		}
+		return evalFailed
+	case "ne":
+		if fmt.Sprintf("%v", v) != fmt.Sprintf("%v", c.Value) {
+			return evalPassed
+		}
+		return evalFailed
+	case "gt", "lt", "gte", "lte":
+		f, ok1 := toFloat(v)
+		cv, ok2 := toFloat(c.Value)
+		if !ok1 || !ok2 {
+			return evalUnknown
+		}
+		switch c.Op {
+		case "gt":
+			return boolToEval(f > cv)
+		case "lt":
+			return boolToEval(f < cv)
+		case "gte":
+			return boolToEval(f >= cv)
+		case "lte":
+			return boolToEval(f <= cv)
+		}
+	}
+	return evalUnknown
+}
+
+func boolToEval(b bool) int {
+	if b {
+		return evalPassed
+	}
+	return evalFailed
+}
+
+func toFloat(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	case string:
+		var f float64
+		if _, err := fmt.Sscanf(n, "%g", &f); err == nil {
+			return f, true
+		}
+	}
+	return 0, false
+}
+
+// Evidence 出处回链：实体的全部证据。fragment 级权限：未授权只返回摘要（F4）。
+// entityRef 接受异常 stable_code 或边 ID。
+func (s *Service) Evidence(caller Caller, entityRef string) (*EvidenceView, error) {
+	// 先按边 ID，再按异常 stable_code 解析
+	et := model.EntityCausalRule
+	var entityID string
+	if rule, err := s.store.GetCausalRule(entityRef); err == nil {
+		entityID = rule.ID
+	} else if node, err := s.store.GetAnomalyByCode(entityRef); err == nil {
+		et, entityID = model.EntityAnomalyType, node.ID
+	} else if !strings.Contains(entityRef, "/") && strings.HasPrefix(entityRef, "map_") {
+		et = model.EntityAlertMapping
+		entityID = strings.TrimPrefix(entityRef, "map_")
+	} else {
+		return nil, repository.ErrNotFound
+	}
+	evList, err := s.store.ListEvidenceByEntity(et, entityID)
+	if err != nil {
+		return nil, fmt.Errorf("list evidence: %w", err)
+	}
+	view := &EvidenceView{EntityType: et, EntityID: entityID, Items: []EvidenceItem{}}
+	if rev, err := s.store.LatestRevision(et, entityID); err == nil {
+		view.RevisionID = rev.ID
+	}
+	for _, ev := range evList {
+		item := EvidenceItem{
+			EvidenceID: ev.ID, Kind: ev.Kind, FragmentID: ev.FragmentID,
+			CreatedBy: ev.CreatedBy,
+		}
+		switch ev.Kind {
+		case model.EvidenceKindCase:
+			item.Level = model.EvidenceCaseVerified
+		case model.EvidenceKindDoc:
+			item.Level = model.EvidenceDocExplicit
+		case model.EvidenceKindExpert:
+			item.Level = model.EvidenceExpertOnly
+		default:
+			item.Level = model.EvidenceInferred
+		}
+		if src, err := s.store.GetSource(ev.SourceID); err == nil {
+			item.SourceKind = src.Kind
+		}
+		if frag, err := s.store.GetFragment(ev.FragmentID); err == nil {
+			item.Summary = frag.Summary
+			// fragment 级权限：调用方权限 >= 片段权限才返回原文
+			if caller.PermissionLevel >= frag.PermissionLevel {
+				item.Content = frag.Content
+			}
+		}
+		view.Items = append(view.Items, item)
+	}
+	return view, nil
+}
