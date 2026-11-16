@@ -1,7 +1,6 @@
 // query.go S1 查询原语：lookup / trace / evidence。
 // trace 为 BFS 遍历 + 受控条件求值（passed/failed/unknown）；
-// evidence 按 fragment 级权限校验，未授权只返回摘要（F4）；
-// 所有响应钉住 revision_id（F5）。
+// 所有响应钉住 revision_id（F5）。fragment 级权限本期不启用（后置 S3）。
 package service
 
 import (
@@ -13,12 +12,6 @@ import (
 	"UnifiedInfraOKB/internal/model"
 	"UnifiedInfraOKB/internal/repository"
 )
-
-// Caller 调用方身份：服务端识别，按动作授权（不信任客户端自报角色）。
-type Caller struct {
-	ID             string
-	PermissionLevel int // >= fragment.PermissionLevel 才能读原文
-}
 
 // LookupResult lookup 原语输出：告警 → 候选异常。
 type LookupResult struct {
@@ -90,7 +83,7 @@ type EvidenceItem struct {
 	Level        model.EvidenceLevel `json:"level"`
 	FragmentID   string              `json:"fragment_id"`
 	Summary      string              `json:"summary"` // 摘要：始终返回
-	Content      string              `json:"content,omitempty"` // 原文：仅授权调用方
+	Content      string              `json:"content"` // 原文：权限分级后置 S3，本期直返
 	SourceKind   model.SourceKind    `json:"source_kind"`
 	CreatedBy    model.CreatorKind   `json:"created_by"`
 }
@@ -317,9 +310,9 @@ func toFloat(v interface{}) (float64, bool) {
 	return 0, false
 }
 
-// Evidence 出处回链：实体的全部证据。fragment 级权限：未授权只返回摘要（F4）。
+// Evidence 出处回链：实体的全部证据。权限分级本期不启用（2026-11-16 决定后置 S3），原文直返。
 // entityRef 接受异常 stable_code 或边 ID。
-func (s *Service) Evidence(caller Caller, entityRef string) (*EvidenceView, error) {
+func (s *Service) Evidence(entityRef string) (*EvidenceView, error) {
 	// 先按边 ID，再按异常 stable_code 解析
 	et := model.EntityCausalRule
 	var entityID string
@@ -361,10 +354,7 @@ func (s *Service) Evidence(caller Caller, entityRef string) (*EvidenceView, erro
 		}
 		if frag, err := s.store.GetFragment(ev.FragmentID); err == nil {
 			item.Summary = frag.Summary
-			// fragment 级权限：调用方权限 >= 片段权限才返回原文
-			if caller.PermissionLevel >= frag.PermissionLevel {
-				item.Content = frag.Content
-			}
+			item.Content = frag.Content // 权限分级后置：原文直返
 		}
 		view.Items = append(view.Items, item)
 	}

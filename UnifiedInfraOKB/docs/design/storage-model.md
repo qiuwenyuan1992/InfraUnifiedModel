@@ -12,7 +12,7 @@
 | `fragment` | 文本片段：字符区间/页码/段落路径 + 原文摘要，绑定固定解析版本 | parsed_version_id, char_range, page, summary, permission_level |
 
 - 工单入库前做脱敏校验，通过后 source 打 `sensitivity_cleared`；未通过不入库（F4）。
-- 权限分级下沉到 fragment 级；未授权读取只返回 summary。
+- 权限分级字段（source/fragment 的 permission_level）保留在模型中，但**本期不启用**（2026-11-16 用户决定，后置 S3）；evidence 原文直返。
 
 ## 2 图谱层
 
