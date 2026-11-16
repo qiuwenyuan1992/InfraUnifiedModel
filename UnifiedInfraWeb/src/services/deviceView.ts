@@ -4,17 +4,32 @@ export type DeviceViewGroup = 'server' | 'gpu' | 'power' | 'interface' | 'networ
 export interface DeviceViewRect { x: number; y: number; width: number; height: number }
 export interface DeviceViewNode extends DeviceViewRect { node: TopologyNode; group: DeviceViewGroup }
 export interface DeviceViewEdge { edge: TopologyEdge; path: string; labelX: number; labelY: number; contained?: boolean }
-export interface DeviceViewContainer extends DeviceViewRect { id: string; group: DeviceViewGroup; relationIds: string[]; depth: number }
+export interface DeviceViewContainer extends DeviceViewRect { id: string; group: DeviceViewGroup; relationIds: string[]; depth: number; childIds: string[]; childCount: number; collapsed: boolean }
 export interface DeviceViewLayout { nodes: DeviceViewNode[]; edges: DeviceViewEdge[]; container: DeviceViewRect; width: number; height: number; containers: DeviceViewContainer[]; warnings: string[] }
+
+// 超过该数量的容器默认折叠为摘要框（组件层决定），借鉴 gpu_topology 的语义聚合。
+export const deviceViewCollapseThreshold = 12
 
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0
 const stableOrder = (a: TopologyNode, b: TopologyNode) => compare(a.stable_id, b.stable_id) || compare(a.id, b.id)
 const cardWidth = 180
 const cardHeight = 96
 const gap = 20
+const rowGap = 20
 const childTop = cardHeight + gap * 2
+const summaryWidth = 280
+const summaryHeight = childTop + cardHeight + gap
 
-export function buildDeviceView(graph: TopologyGraph, rootId: string): DeviceViewLayout {
+// 网格换行容量：子节点不再单行铺开，容器宽度保持有界。
+const rowCapacityOf = (owned: TopologyNode[]): number => {
+  if (owned.length < 2) return 1
+  if (owned.every(child => child.entity_type === 'gpu')) return 8
+  if (owned.every(child => child.entity_type === 'interface')) return 4
+  if (owned.every(child => child.entity_type === 'ups')) return 6
+  return 3
+}
+
+export function buildDeviceView(graph: TopologyGraph, rootId: string, collapsed?: Iterable<string>): DeviceViewLayout {
   const root = graph.nodes.find(node => node.id === rootId)
   if (!root) return { nodes: [], edges: [], container: { x: 0, y: 0, width: 0, height: 0 }, width: 1200, height: 600, containers: [], warnings: [] }
   const originals = [...graph.nodes].sort(stableOrder)
@@ -88,6 +103,19 @@ export function buildDeviceView(graph: TopologyGraph, rootId: string): DeviceVie
     }
     return 'background'
   }
+  const collapsedIds = collapsed ? new Set(collapsed) : new Set<string>()
+  // 折叠容器的全部后代同样隐藏，布局按紧凑尺寸计算，画布不随隐藏子树膨胀。
+  const collapsedSubtree = new Set<string>()
+  if (collapsedIds.size) {
+    const expand = (id: string) => {
+      for (const child of children.get(id) || []) {
+        if (collapsedSubtree.has(child.id)) continue
+        collapsedSubtree.add(child.id)
+        expand(child.id)
+      }
+    }
+    collapsedIds.forEach(expand)
+  }
   const sizes = new Map<string, { width: number; height: number }>()
   const measure = (node: TopologyNode): { width: number; height: number } => {
     const cached = sizes.get(node.id)
@@ -96,9 +124,23 @@ export function buildDeviceView(graph: TopologyGraph, rootId: string): DeviceVie
     if (!owned.length && (node.id !== rootId || ['data_center', 'room', 'pod'].includes(node.entity_type))) {
       const size = { width: cardWidth, height: cardHeight }; sizes.set(node.id, size); return size
     }
-    const width = Math.max(280, owned.reduce((sum, child) => sum + measure(child).width, 0) + Math.max(0, owned.length - 1) * gap + gap * 2)
-    const height = childTop + Math.max(40, ...owned.map(child => measure(child).height)) + gap
-    const size = { width, height }; sizes.set(node.id, size); return size
+    if (collapsedIds.has(node.id) || (collapsedSubtree.has(node.id) && owned.length)) {
+      // 折叠态：容器收缩为摘要框尺寸。
+      const size = { width: summaryWidth, height: summaryHeight }; sizes.set(node.id, size); return size
+    }
+    if (collapsedSubtree.has(node.id)) {
+      const size = { width: cardWidth, height: cardHeight }; sizes.set(node.id, size); return size
+    }
+    const capacity = rowCapacityOf(owned)
+    let width = 0, height = childTop, rows = 0
+    for (let start = 0; start < owned.length; start += capacity) {
+      const row = owned.slice(start, start + capacity)
+      width = Math.max(width, row.reduce((sum, child) => sum + measure(child).width, 0) + (row.length - 1) * gap)
+      height += Math.max(40, ...row.map(child => measure(child).height))
+      rows++
+    }
+    const size = { width: Math.max(280, width + gap * 2), height: height + Math.max(0, rows - 1) * rowGap + gap }
+    sizes.set(node.id, size); return size
   }
   originals.forEach(measure)
   const placed = new Map<string, DeviceViewNode>()
@@ -108,11 +150,20 @@ export function buildDeviceView(graph: TopologyGraph, rootId: string): DeviceVie
     const isContainer = !['data_center', 'room', 'pod'].includes(node.entity_type) && (owned.length > 0 || node.id === rootId)
     placed.set(node.id, { node, group, x: x + (isContainer ? gap : 0), y: y + (isContainer ? gap : 0), width: isContainer ? size.width - gap * 2 : size.width, height: cardHeight })
     if (!isContainer) return
-    containers.push({ id: node.id, group, x, y, ...size, depth, relationIds: relationIds.get(node.id) || [] })
-    let childX = x + gap
+    containers.push({ id: node.id, group, x, y, ...size, depth, relationIds: relationIds.get(node.id) || [], childIds: owned.map(child => child.id), childCount: owned.length, collapsed: collapsedIds.has(node.id) })
+    if (collapsedIds.has(node.id) || collapsedSubtree.has(node.id)) {
+      // 折叠态：子树隐藏渲染，统一堆叠在摘要框内，画布保持紧凑。
+      for (const child of owned) place(child, x + gap, y + childTop, depth + 1)
+      return
+    }
+    const capacity = rowCapacityOf(owned)
+    let cursorX = x + gap, cursorY = y + childTop, column = 0, rowHeight = 0
     for (const child of owned) {
-      place(child, childX, y + childTop, depth + 1)
-      childX += sizes.get(child.id)!.width + gap
+      place(child, cursorX, cursorY, depth + 1)
+      const childSize = sizes.get(child.id)!
+      cursorX += childSize.width + gap
+      rowHeight = Math.max(rowHeight, childSize.height)
+      if (++column === capacity) { column = 0; cursorX = x + gap; cursorY += rowHeight + rowGap; rowHeight = 0 }
     }
   }
   let rootTree = rootId

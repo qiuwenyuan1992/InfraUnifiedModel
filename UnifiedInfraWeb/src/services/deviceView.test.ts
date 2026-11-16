@@ -39,18 +39,23 @@ it('contains only GPUs owned by outgoing actual root contains_gpu edges', () => 
 })
 
 describe.each([0, 1, 8, 16])('%i actual GPUs', count => {
-  it('lays out bounded non-overlapping GPU cards in one horizontal row', () => {
+  it('wraps GPU cards into bounded grid rows of at most eight', () => {
     const layout = buildDeviceView(graphWithGPUs(count), 'server')
     const cards = layout.nodes.filter(item => item.group === 'gpu')
     expect(cards).toHaveLength(count)
-    expect(new Set(cards.map(item => item.x)).size).toBe(count)
-    expect(new Set(cards.map(item => item.y)).size).toBe(count ? 1 : 0)
-    cards.slice(1).forEach((card, index) => expect(card.x).toBeGreaterThan(cards[index]!.x + cards[index]!.width))
+    const rows = [...new Set(cards.map(item => item.y))].sort((a, b) => a - b)
+    expect(rows).toHaveLength(count ? Math.ceil(count / 8) : 0)
+    for (const y of rows) {
+      const row = cards.filter(item => item.y === y).sort((a, b) => a.x - b.x)
+      expect(row.length).toBeLessThanOrEqual(8)
+      expect(new Set(row.map(item => item.x)).size).toBe(row.length)
+      row.slice(1).forEach((card, index) => expect(card.x).toBeGreaterThanOrEqual(row[index]!.x + row[index]!.width))
+    }
+    // 容器宽度有界：不再随 GPU 数量线性拉长成一横排。
+    expect(layout.container.width).toBeLessThanOrEqual(8 * 180 + 10 * 20)
     for (const card of cards) {
-      expect(card.x).toBeGreaterThanOrEqual(layout.container.x)
+      expectInside(card, layout.container)
       expect(card.y).toBeGreaterThan(layout.container.y)
-      expect(card.x + card.width).toBeLessThanOrEqual(layout.container.x + layout.container.width)
-      expect(card.y + card.height).toBeLessThanOrEqual(layout.container.y + layout.container.height)
     }
     for (const item of layout.nodes) {
       expect(item.x).toBeGreaterThanOrEqual(0); expect(item.y).toBeGreaterThanOrEqual(0)
@@ -59,6 +64,41 @@ describe.each([0, 1, 8, 16])('%i actual GPUs', count => {
     }
     expect(new Set(cards.map(item => `${item.x},${item.y}`)).size).toBe(count)
   })
+})
+
+it('wraps interface cards into grid rows of at most four per owner container', () => {
+  const ports = Array.from({ length: 26 }, (_, i) => node(`port-${String(i).padStart(2, '0')}`, 'interface'))
+  const graph: TopologyGraph = { nodes: [node('server'), node('switch'), ...ports], edges: ports.map((port, index) => edge(`own-${index}`, 'switch', port.id, 'owns_interface')) }
+  const layout = buildDeviceView(graph, 'server')
+  const owner = layout.containers.find(item => item.id === 'switch')!
+  expect(owner.childCount).toBe(26)
+  const cards = layout.nodes.filter(item => item.group === 'interface')
+  const rows = [...new Set(cards.map(item => item.y))]
+  expect(rows).toHaveLength(Math.ceil(26 / 4))
+  for (const y of rows) expect(cards.filter(item => item.y === y)).toHaveLength(Math.min(4, 26 - rows.indexOf(y) * 4))
+  // 端口容器宽度有界，不再铺成一整排。
+  expect(owner.width).toBeLessThanOrEqual(4 * 180 + 6 * 20)
+  cards.forEach(card => expectInside(card, owner))
+})
+
+it('collapses crowded containers into summary boxes without dropping records', () => {
+  const ports = Array.from({ length: 26 }, (_, i) => node(`port-${String(i).padStart(2, '0')}`, 'interface'))
+  const graph: TopologyGraph = { nodes: [node('server'), node('switch'), ...ports], edges: ports.map((port, index) => edge(`own-${index}`, 'switch', port.id, 'owns_interface')) }
+  const expanded = buildDeviceView(graph, 'server')
+  const layout = buildDeviceView(graph, 'server', ['switch'])
+  const box = layout.containers.find(item => item.id === 'switch')!
+  expect(box.collapsed).toBe(true)
+  expect(box.childCount).toBe(26)
+  expect(box.childIds).toHaveLength(26)
+  // 摘要框远小于展开网格，画布保持可读。
+  expect(box.width).toBeLessThanOrEqual(320)
+  expect(box.width).toBeLessThan(expanded.containers.find(item => item.id === 'switch')!.width / 2)
+  // 折叠不丢任何节点与边记录；隐藏子树堆叠在摘要框内不出界。
+  expect(layout.nodes).toHaveLength(graph.nodes.length)
+  expect(layout.edges).toHaveLength(graph.edges.length)
+  for (const card of layout.nodes.filter(item => item.group === 'interface')) expectInside(card, box)
+  // 折叠态确定性布局。
+  expect(buildDeviceView(graph, 'server', ['switch'])).toEqual(layout)
 })
 
 it('renders separate deterministic directed paths and label offsets for parallel A/B IDs', () => {

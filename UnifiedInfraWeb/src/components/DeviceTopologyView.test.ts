@@ -3,7 +3,7 @@ import { renderToString } from 'vue/server-renderer'
 import { afterEach, expect, it, vi } from 'vitest'
 import DeviceTopologyView from './DeviceTopologyView.vue'
 import type { EdgeType, TopologyEdge, TopologyGraph, TopologyNode, TopologySelection } from '../api/topologyTypes'
-import type { DeviceViewEdge, DeviceViewLayout, DeviceViewNode } from '../services/deviceView'
+import type { DeviceViewContainer, DeviceViewEdge, DeviceViewLayout, DeviceViewNode } from '../services/deviceView'
 
 const hooks = vi.hoisted(() => ({ unmount: () => {} }))
 vi.mock('vue', async importOriginal => {
@@ -18,6 +18,9 @@ type State = {
   layout: Ref<DeviceViewLayout>; visibleNodes: Ref<DeviceViewNode[]>; visibleEdges: Ref<DeviceViewEdge[]>
   filters: Ref<Record<EdgeType, boolean>>; zoomLevel: Ref<number>; camera: Ref<{ x: number; y: number }>
   svg: Ref<SVGSVGElement | undefined>; gpuCount: Ref<number>; networkCount: Ref<number>
+  collapsedIds: Ref<ReadonlySet<string>>; hiddenIds: Ref<Set<string>>
+  collapsedContainers: Ref<DeviceViewContainer[]>; collapsibleContainers: Ref<DeviceViewContainer[]>
+  toggleCollapse: (id: string) => void
   select: (selection: TopologySelection) => void; edgeLabel: (edge: TopologyEdge) => string
   edgeHighlighted: (edge: TopologyEdge) => boolean; nodeHighlighted: (id: string) => boolean
   zoom: (factor: number) => void; fit: () => void; onWheel: (event: WheelEvent) => void
@@ -165,4 +168,63 @@ it('renders explicit zero GPU and missing uplink states with no placeholders', a
   expect(html).toContain('未发现真实网络上联关系')
   expect(html).not.toContain('data-group="gpu"')
   expect((html.match(/data-node-id=/g) || [])).toHaveLength(1)
+})
+
+const portHeavyGraph = (): TopologyGraph => {
+  const ports = Array.from({ length: 14 }, (_, index) => node(`port-${index}`, 'interface'))
+  return { nodes: [node('server'), node('switch'), ...ports], edges: [edge('uplink', 'server', 'port-0', 'network_relation', 'server_uplink'), ...ports.map((port, index) => edge(`own-${index}`, 'switch', port.id, 'composition_relation', 'owns_interface'))] }
+}
+
+it('collapses port-heavy owners into summary boxes and expands back on demand', () => {
+  const graph = portHeavyGraph()
+  const { state, stop } = mount(graph)
+  try {
+    // 超过阈值的对端容器默认折叠为摘要框，端口与头部卡片隐藏。
+    expect(state.collapsedIds.value.has('switch')).toBe(true)
+    expect(state.hiddenIds.value.has('switch')).toBe(true)
+    expect(state.hiddenIds.value.has('port-3')).toBe(true)
+    expect(state.collapsedContainers.value.map(item => item.id)).toEqual(['switch'])
+    expect(state.visibleNodes.value.map(item => item.node.id)).toEqual(['server'])
+    expect(state.visibleEdges.value).toHaveLength(0)
+    // 摘要框比展开网格窄得多，画布保持可读。
+    const box = state.collapsedContainers.value[0]!
+    expect(box.width).toBeLessThanOrEqual(320)
+    // 点击摘要框展开：全部端口卡片与上联边恢复显示。
+    state.toggleCollapse('switch')
+    expect(state.collapsedIds.value.has('switch')).toBe(false)
+    expect(state.collapsedContainers.value).toEqual([])
+    expect(state.visibleNodes.value).toHaveLength(16)
+    expect(state.visibleEdges.value.map(item => item.edge.id)).toEqual(['uplink'])
+    expect(state.collapsibleContainers.value.map(item => item.id)).toEqual(['switch'])
+    // 再次收起，恢复摘要框。
+    state.toggleCollapse('switch')
+    expect(state.collapsedIds.value.has('switch')).toBe(true)
+    expect(state.visibleNodes.value.map(item => item.node.id)).toEqual(['server'])
+  } finally { stop() }
+})
+
+it('never collapses the root device or its ancestor containers', () => {
+  const ports = Array.from({ length: 14 }, (_, index) => node(`port-${index}`, 'interface'))
+  const servers = Array.from({ length: 16 }, (_, index) => node(`peer-${index}`))
+  const graph: TopologyGraph = { nodes: [node('server'), node('cab', 'cabinet'), ...servers, node('switch'), ...ports], edges: [edge('spatial', 'server', 'cab', 'spatial_relation', 'located_in'), ...servers.map(peer => edge(`s-${peer.id}`, peer.id, 'cab', 'spatial_relation', 'located_in')), ...ports.map((port, index) => edge(`own-${index}`, 'switch', port.id, 'composition_relation', 'owns_interface'))] }
+  const { state, stop } = mount(graph)
+  try {
+    // 根设备与包含根的机柜（祖先）永不折叠；只有对端交换机折叠。
+    expect(state.collapsedIds.value).toEqual(new Set(['switch']))
+    state.toggleCollapse('server')
+    state.toggleCollapse('cab')
+    expect(state.collapsedIds.value).toEqual(new Set(['switch']))
+  } finally { stop() }
+})
+
+it('renders summary boxes for crowded owners without leaking hidden port cards', async () => {
+  const graph = portHeavyGraph()
+  const html = await renderToString(h(DeviceTopologyView, { graph, rootId: 'server', selection: null }))
+  expect(html).toContain('data-collapsed-container-id="switch"')
+  expect(html).toContain('网络端口 ×14 · 点击展开')
+  expect(html).toContain('设备 switch')
+  expect((html.match(/data-node-id=/g) || [])).toHaveLength(1)
+  expect(html).not.toContain('data-node-id="port-0"')
+  expect(html).not.toContain('data-container-id="switch"')
+  expect(html).not.toContain('data-edge-id="uplink"')
 })
