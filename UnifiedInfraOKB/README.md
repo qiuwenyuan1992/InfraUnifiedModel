@@ -2,7 +2,7 @@
 
 UnifiedInfraOKB 是 InfraUnifiedModel 中独立后端模块，定位为**故障知识图谱与 Agent 诊断记忆底座**：结构化保存带证据出处的因果知识，供诊断 Agent（REST 四原语）与运维专家（极简界面）消费。目标参照 XiHe, *Networked Agent Memory and Causality Representation: Experiences towards Interpretable Cloud-Scale Root-Causing*, SIGCOMM 2026。
 
-**当前仅骨架与文档（v2 基线）。没有 go.mod、可执行程序、迁移、API 或前端。** 目录存在不代表功能已实现。
+**S0 建馆 + S1 查询切片已实现并通过测试与真实运行验证（交付记录见 docs/development/handoffs/）。真实 LLM 提取器、专家界面（S2）与迁移 DDL 尚未实现。**
 
 ## 从哪里开始
 
