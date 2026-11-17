@@ -424,6 +424,75 @@ func TestA9EdgeTypes(t *testing.T) {
 	}
 }
 
+// TestA11Scenarios 场景组织维度：卡片统计、成员指派幂等、场景内边过滤。
+func TestA11Scenarios(t *testing.T) {
+	svc := newTestService(t)
+	// 灌一条链：a → b → c（a,b 归场景1；b,c 归场景2——b 跨场景）
+	content := strings.Join([]string{
+		`{"anomaly": "sc.a", "name": "A", "code": "sc.a"}`,
+		`{"anomaly": "sc.b", "name": "B", "code": "sc.b"}`,
+		`{"anomaly": "sc.c", "name": "C", "code": "sc.c"}`,
+		`{"source": "sc.a", "target": "sc.b"}`,
+		`{"source": "sc.b", "target": "sc.c"}`,
+	}, "\n\n")
+	for i := 1; i <= 2; i++ {
+		if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "场景工单", Content: content}); err != nil {
+			t.Fatalf("ingest %d: %v", i, err)
+		}
+	}
+
+	// 建两个场景
+	for _, sc := range []model.Scenario{
+		{Code: "scenario.sc.one", Name: "场景一", Domain: "network"},
+		{Code: "scenario.sc.two", Name: "场景二", Domain: "network"},
+	} {
+		if err := svc.UpsertScenario(&sc); err != nil {
+			t.Fatalf("upsert scenario: %v", err)
+		}
+	}
+	// 指派成员（幂等：重复指派同节点不报错不重复计）
+	if _, err := svc.AssignScenarioNodes("scenario.sc.one", []string{"sc.a", "sc.b"}, "tester"); err != nil {
+		t.Fatalf("assign one: %v", err)
+	}
+	if _, err := svc.AssignScenarioNodes("scenario.sc.one", []string{"sc.b"}, "tester"); err != nil {
+		t.Fatalf("re-assign must be idempotent: %v", err)
+	}
+	if _, err := svc.AssignScenarioNodes("scenario.sc.two", []string{"sc.b", "sc.c"}, "tester"); err != nil {
+		t.Fatalf("assign two: %v", err)
+	}
+
+	// 卡片：场景一 2 节点 1 边（a→b 两端均在内）；场景二 2 节点 1 边（b→c）
+	cards, err := svc.ScenarioCards()
+	if err != nil || len(cards) != 2 {
+		t.Fatalf("cards: %+v err=%v", cards, err)
+	}
+	for _, c := range cards {
+		if c.NodeCount != 2 || c.EdgeCount != 1 {
+			t.Fatalf("card stats wrong: %+v", c)
+		}
+		if c.CuratedEdges+c.DraftEdges != c.EdgeCount {
+			t.Fatalf("edge status split wrong: %+v", c)
+		}
+	}
+
+	// 详情：场景一节点 2、边 1（跨场景边 b→c 不入场景一）
+	d1, err := svc.ScenarioDetailByCode("scenario.sc.one")
+	if err != nil || len(d1.Nodes) != 2 || len(d1.Edges) != 1 {
+		t.Fatalf("detail one: nodes=%d edges=%d err=%v", len(d1.Nodes), len(d1.Edges), err)
+	}
+	if d1.Edges[0].SourceCode != "sc.a" || d1.Edges[0].TargetCode != "sc.b" {
+		t.Fatalf("detail one edge: %+v", d1.Edges[0])
+	}
+
+	// 幂等后再取卡片：成员数不膨胀
+	cards, _ = svc.ScenarioCards()
+	for _, c := range cards {
+		if c.Code == "scenario.sc.one" && c.NodeCount != 2 {
+			t.Fatalf("idempotent assign must not duplicate membership: %+v", c)
+		}
+	}
+}
+
 // TestA10DomainCategory 领域推导：stable_code 前缀 → category，显式指定优先。
 func TestA10DomainCategory(t *testing.T) {
 	svc := newTestService(t)

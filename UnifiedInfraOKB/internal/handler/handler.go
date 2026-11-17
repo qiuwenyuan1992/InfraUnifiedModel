@@ -55,6 +55,10 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/graph", h.handleGraph)
 	mux.HandleFunc("GET /api/v1/knowledge", h.handleKnowledge)
+	mux.HandleFunc("GET /api/v1/scenarios", h.handleScenarioCards)
+	mux.HandleFunc("POST /api/v1/scenarios", h.handleScenarioUpsert)
+	mux.HandleFunc("GET /api/v1/scenarios/{code}", h.handleScenarioDetail)
+	mux.HandleFunc("POST /api/v1/scenarios/{code}/nodes", h.handleScenarioAssign)
 	mux.HandleFunc("GET /api/v1/lookup", h.handleLookup)
 	mux.HandleFunc("GET /api/v1/trace", h.handleTrace)
 	mux.HandleFunc("GET /api/v1/mitigations", h.handleMitigations)
@@ -84,6 +88,72 @@ func (h *Handler) handleKnowledge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// handleScenarioCards GET /api/v1/scenarios —— 场景卡片墙
+func (h *Handler) handleScenarioCards(w http.ResponseWriter, r *http.Request) {
+	cards, err := h.svc.ScenarioCards()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"scenarios": cards})
+}
+
+// handleScenarioUpsert POST /api/v1/scenarios —— 创建/更新场景
+func (h *Handler) handleScenarioUpsert(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Code        string `json:"code"`
+		Name        string `json:"name"`
+		Domain      string `json:"domain"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.svc.UpsertScenario(&model.Scenario{
+		Code: req.Code, Name: req.Name, Domain: req.Domain, Description: req.Description,
+	}); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"code": req.Code, "status": "ok"})
+}
+
+// handleScenarioDetail GET /api/v1/scenarios/{code} —— 场景详情（成员节点 + 场景内边）
+func (h *Handler) handleScenarioDetail(w http.ResponseWriter, r *http.Request) {
+	detail, err := h.svc.ScenarioDetailByCode(r.PathValue("code"))
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "scenario not found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+// handleScenarioAssign POST /api/v1/scenarios/{code}/nodes —— 指派成员节点
+func (h *Handler) handleScenarioAssign(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		StableCodes []string `json:"stable_codes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	n, err := h.svc.AssignScenarioNodes(r.PathValue("code"), req.StableCodes, operatorID(r))
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"assigned": n})
 }
 
 // handleGraph GET /api/v1/graph —— 整图视图（可视化消费）
