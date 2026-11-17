@@ -33,6 +33,7 @@ func New(db *gorm.DB, migrate bool) (*Store, error) {
 			&model.Source{}, &model.SourceVersion{}, &model.ParsedVersion{}, &model.Fragment{},
 			&model.AnomalyType{}, &model.AnomalyAlias{}, &model.CausalRule{}, &model.AlertMapping{},
 			&model.Evidence{}, &model.Revision{}, &model.Feedback{},
+			&model.Scenario{}, &model.ScenarioNode{},
 		); err != nil {
 			return nil, fmt.Errorf("automigrate: %w", err)
 		}
@@ -455,5 +456,62 @@ func (s *Store) ListReviewFlagged(limit int) ([]model.CausalRule, error) {
 	}
 	var list []model.CausalRule
 	err := s.DB.Where("review_flagged = ?", true).Limit(limit).Find(&list).Error
+	return list, err
+}
+
+// ---------- 场景 ----------
+
+// GetOrCreateScenario 按 code 幂等建场景。
+func (s *Store) GetOrCreateScenario(sc *model.Scenario) (bool, error) {
+	var exist model.Scenario
+	err := s.DB.Where("code = ?", sc.Code).First(&exist).Error
+	if err == nil {
+		*sc = exist
+		return false, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, err
+	}
+	sc.ID = NewID()
+	ts := now()
+	sc.CreatedAt, sc.UpdatedAt = ts, ts
+	if err := s.DB.Create(sc).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ListScenarios 全部场景（卡片视图用）。
+func (s *Store) ListScenarios() ([]model.Scenario, error) {
+	var list []model.Scenario
+	err := s.DB.Order("domain ASC, code ASC").Find(&list).Error
+	return list, err
+}
+
+// GetScenarioByCode 按 code 取场景。
+func (s *Store) GetScenarioByCode(code string) (*model.Scenario, error) {
+	var sc model.Scenario
+	if err := s.DB.First(&sc, "code = ?", code).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &sc, nil
+}
+
+// AddScenarioNode 场景成员指派（幂等：唯一索引 + 冲突忽略）。
+func (s *Store) AddScenarioNode(scenarioID, anomalyID string) error {
+	sn := model.ScenarioNode{ID: NewID(), ScenarioID: scenarioID, AnomalyID: anomalyID, CreatedAt: now()}
+	if err := s.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&sn).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+// ListScenarioNodes 场景成员（含异常信息由 service 组装）。
+func (s *Store) ListScenarioNodes(scenarioID string) ([]model.ScenarioNode, error) {
+	var list []model.ScenarioNode
+	err := s.DB.Where("scenario_id = ?", scenarioID).Find(&list).Error
 	return list, err
 }

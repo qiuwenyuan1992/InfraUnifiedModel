@@ -184,6 +184,26 @@ type CausalRule struct {
 	UpdatedAt         time.Time
 }
 
+// Scenario 场景：领域内有主题的知识分组（组织维度：领域 → 场景 → 知识）。
+// 场景由专家或提取管线显式定义与指派，不做自动聚类臆造。
+type Scenario struct {
+	ID          string    `gorm:"primaryKey;size:36"`
+	Code        string    `gorm:"size:128;uniqueIndex"` // scenario.net.link.port 等
+	Name        string    `gorm:"size:128"`
+	Domain      string    `gorm:"size:32;index"`      // 归属领域（network/gpu/power...）
+	Description string    `gorm:"size:512"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// ScenarioNode 场景成员：节点可属多个场景；跨场景边自然存在于图上。
+type ScenarioNode struct {
+	ID         string    `gorm:"primaryKey;size:36"`
+	ScenarioID string    `gorm:"size:36;uniqueIndex:idx_scenario_node"`
+	AnomalyID  string    `gorm:"size:36;uniqueIndex:idx_scenario_node"`
+	CreatedAt  time.Time
+}
+
 // AlertMapping 入口：告警 signature → 候选异常。
 type AlertMapping struct {
 	ID                string    `gorm:"primaryKey;size:36"`

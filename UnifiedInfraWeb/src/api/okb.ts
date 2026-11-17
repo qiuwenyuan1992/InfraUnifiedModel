@@ -183,6 +183,26 @@ export interface MitigationRow {
   fragment_ref: string
 }
 
+// 场景（/api/v1/scenarios）
+export interface ScenarioCard {
+  code: string
+  name: string
+  domain: string
+  description: string
+  node_count: number
+  edge_count: number
+  curated_edges: number
+  draft_edges: number
+  alert_count: number
+  mitigation_count: number
+}
+
+export interface ScenarioDetail {
+  scenario: ScenarioCard
+  nodes: KnowledgeRow[]
+  edges: KnowledgeRow[]
+}
+
 export const okbApi = {
   graph: (signal?: AbortSignal) => okbRequest<GraphView>('/graph', { signal }),
   knowledge: (kind: 'anomaly' | 'rule' | 'mapping', params: { status?: string; q?: string; limit?: number; offset?: number } = {}, signal?: AbortSignal) => {
@@ -207,6 +227,14 @@ export const okbApi = {
     okbRequest<IngestOutput>('/sources', { method: 'POST', body: JSON.stringify(payload) }),
   reviewQueue: (limit = 50, signal?: AbortSignal) =>
     okbRequest<{ edges: KnowledgeRow[] }>(`/review/queue?limit=${limit}`, { signal }),
+  scenarioCards: (signal?: AbortSignal) =>
+    okbRequest<{ scenarios: ScenarioCard[] }>('/scenarios', { signal }),
+  scenarioDetail: (code: string, signal?: AbortSignal) =>
+    okbRequest<ScenarioDetail>(`/scenarios/${encodeURIComponent(code)}`, { signal }),
+  scenarioUpsert: (payload: { code: string; name: string; domain: string; description?: string }) =>
+    okbRequest<{ code: string; status: string }>('/scenarios', { method: 'POST', body: JSON.stringify(payload) }),
+  scenarioAssign: (code: string, stableCodes: string[]) =>
+    okbRequest<{ assigned: number }>(`/scenarios/${encodeURIComponent(code)}/nodes`, { method: 'POST', body: JSON.stringify({ stable_codes: stableCodes }) }),
   confirmEdge: (edgeId: string) =>
     okbRequest<{ status: string }>(`/edges/${encodeURIComponent(edgeId)}/confirm`, { method: 'POST' }),
   rejectEdge: (edgeId: string) =>
