@@ -5,6 +5,14 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
   return {
     plugins: [vue()],
+    build: {
+      rollupOptions: {
+        output: {
+          // echarts 体积大且仅图谱页使用，单独成块避免拖大 OkbConsole chunk
+          manualChunks: { echarts: ['echarts'] },
+        },
+      },
+    },
     server: {
       host: '127.0.0.1',
       proxy: {
