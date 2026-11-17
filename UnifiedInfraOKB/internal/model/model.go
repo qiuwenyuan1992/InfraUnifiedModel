@@ -213,6 +213,7 @@ type AlertMapping struct {
 	EvidenceLevel     EvidenceLevel `gorm:"size:20"`
 	CurrentRevisionID string    `gorm:"size:36"`
 	Status            KnowledgeStatus `gorm:"size:16;default:draft"`
+	ReviewFlagged     bool      `gorm:"default:false"` // 否决降级后的复核标记（与边同规则）
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }

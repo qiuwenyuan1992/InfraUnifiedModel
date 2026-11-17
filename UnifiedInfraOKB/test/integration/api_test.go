@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -91,12 +92,17 @@ func TestA2SanitizeGate(t *testing.T) {
 	}
 }
 
-// TestA3Corroboration A3：同一因果边被 ≥2 独立工单印证后自动升 curated。
+// TestA3Corroboration A3：同一因果边被 ≥2 个独立工单印证后自动升 curated；
+// 同内容重复提交不计为独立印证（内容寻址去重）。
 func TestA3Corroboration(t *testing.T) {
 	svc := newTestService(t)
-	content := caseContent("ALERT-X1", "a.source", "源异常", "a.source", "a.target")
+	base := caseContent("ALERT-X1", "a.source", "源异常", "a.source", "a.target")
+	// 两个"独立工单"必须内容不同：不同事件的复盘细节不同（提取结果相同，正文有差异）
+	t1 := base + "\n\n工单备注：独立事件一，机房甲，发生时间不同。"
+	t2 := base + "\n\n工单备注：独立事件二，机房乙，处置人不同。"
+
 	// 工单 1：draft
-	if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "工单-1", Content: content}); err != nil {
+	if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "工单-1", Content: t1}); err != nil {
 		t.Fatalf("ingest 1: %v", err)
 	}
 	src, _ := svc.Store().GetAnomalyByCode("a.source")
@@ -104,26 +110,31 @@ func TestA3Corroboration(t *testing.T) {
 	if len(edges) != 1 || edges[0].Status != model.StatusDraft {
 		t.Fatalf("first case must leave edge draft: %+v", edges)
 	}
-	// 工单 2：独立来源 → 印证计数 2 → auto curated
-	out, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "工单-2", Content: content})
+
+	// 同内容重复提交（= 工单 1 原样重提）：DuplicateContent，不虚增印证
+	out, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "工单-1-重复提交", Content: t1})
+	if err != nil {
+		t.Fatalf("ingest duplicate: %v", err)
+	}
+	if !out.DuplicateContent {
+		t.Fatal("identical content must be flagged duplicate_content")
+	}
+	edges, _ = svc.Store().ListEdgesFrom(src.ID, "", "")
+	if edges[0].CaseSupportCount != 1 || edges[0].Status != model.StatusDraft {
+		t.Fatalf("duplicate must not inflate support: %+v", edges[0])
+	}
+
+	// 工单 2（内容不同）：独立印证计数 2 → auto curated
+	out, err = svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "工单-2", Content: t2})
 	if err != nil {
 		t.Fatalf("ingest 2: %v", err)
 	}
-	if out.CuratedRules != 1 {
-		t.Fatalf("second independent case must auto-curate edge: %+v", out)
+	if out.DuplicateContent || out.CuratedRules != 1 {
+		t.Fatalf("second independent case must auto-curate: %+v", out)
 	}
 	edges, _ = svc.Store().ListEdgesFrom(src.ID, "", "")
 	if edges[0].Status != model.StatusCurated || edges[0].CaseSupportCount != 2 {
 		t.Fatalf("edge must be curated with support 2: %+v", edges[0])
-	}
-	// 工单 3：同链重复内容（新来源）不重复升版；幂等
-	out, err = svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "工单-3", Content: content})
-	if err != nil {
-		t.Fatalf("ingest 3: %v", err)
-	}
-	edges, _ = svc.Store().ListEdgesFrom(src.ID, "", "")
-	if edges[0].CaseSupportCount != 3 || edges[0].Status != model.StatusCurated {
-		t.Fatalf("support should count distinct sources: %+v", edges[0])
 	}
 }
 
@@ -138,16 +149,23 @@ func TestA4LookupTrace(t *testing.T) {
 		`{"source": "chain.b", "target": "chain.c"}`,
 		`{"anomaly": "chain.c", "name": "C", "code": "chain.c"}`,
 	}, "\n\n")
-	for i := 1; i <= 2; i++ {
-		if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "链路工单", Content: content}); err != nil {
-			t.Fatalf("ingest %d: %v", i, err)
-		}
+	// 链路：A -> B -> C；A,B 由告警入口接入。两份工单内容必须不同（独立事件）。
+	mk := func(note string) string {
+		return content + "\n\n工单备注：" + note
+	}
+
+	// 工单 1：边与映射均为 draft
+	if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "链路工单-1", Content: mk("独立事件一")}); err != nil {
+		t.Fatalf("ingest 1: %v", err)
 	}
 
 	// lookup：draft 默认排除 → 空；includeDraft 才可见
 	lookup, err := svc.Lookup("ALERT-CHAIN", false)
 	if err != nil {
 		t.Fatalf("lookup: %v", err)
+	}
+	if len(lookup.Candidates) != 0 {
+		t.Fatalf("draft mapping must be excluded by default: %+v", lookup.Candidates)
 	}
 	lookup, err = svc.Lookup("ALERT-CHAIN", true)
 	if err != nil || len(lookup.Candidates) != 1 || lookup.Candidates[0].StableCode != "chain.a" {
@@ -157,7 +175,7 @@ func TestA4LookupTrace(t *testing.T) {
 		t.Fatal("lookup candidate must pin revision_id")
 	}
 
-	// trace：全 draft 边，includeDraft 才可遍历；应得到 A->B 与 A->B->C
+	// trace：draft 边，includeDraft 才可遍历；应得到 A->B 与 A->B->C
 	trace, err := svc.Trace("chain.a", 3, 5, nil, true)
 	if err != nil {
 		t.Fatalf("trace: %v", err)
@@ -186,11 +204,14 @@ func TestA4LookupTrace(t *testing.T) {
 		t.Fatalf("trace must reach 2-hop chain A->B->C: %+v", trace.Chains)
 	}
 
-	// 印证后 curated：默认（不含 draft）可遍历
-	for i := 3; i <= 4; i++ {
-		if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "链路工单", Content: content}); err != nil {
-			t.Fatalf("ingest %d: %v", i, err)
-		}
+	// 工单 2（不同内容，独立印证）：升 curated
+	if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "链路工单-2", Content: mk("独立事件二")}); err != nil {
+		t.Fatalf("ingest 2: %v", err)
+	}
+	// 同内容重复提交：不虚增印证、不改状态
+	out, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "链路工单-重复", Content: mk("独立事件二")})
+	if err != nil || !out.DuplicateContent {
+		t.Fatalf("identical content must be deduped: %+v err=%v", out, err)
 	}
 	trace, err = svc.Trace("chain.a", 3, 5, nil, false)
 	if err != nil {
@@ -427,7 +448,7 @@ func TestA9EdgeTypes(t *testing.T) {
 // TestA11Scenarios 场景组织维度：卡片统计、成员指派幂等、场景内边过滤。
 func TestA11Scenarios(t *testing.T) {
 	svc := newTestService(t)
-	// 灌一条链：a → b → c（a,b 归场景1；b,c 归场景2——b 跨场景）
+	// 建一条链：a → b → c（a,b 归场景1；b,c 归场景2——b 跨场景）
 	content := strings.Join([]string{
 		`{"anomaly": "sc.a", "name": "A", "code": "sc.a"}`,
 		`{"anomaly": "sc.b", "name": "B", "code": "sc.b"}`,
@@ -435,10 +456,8 @@ func TestA11Scenarios(t *testing.T) {
 		`{"source": "sc.a", "target": "sc.b"}`,
 		`{"source": "sc.b", "target": "sc.c"}`,
 	}, "\n\n")
-	for i := 1; i <= 2; i++ {
-		if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "场景工单", Content: content}); err != nil {
-			t.Fatalf("ingest %d: %v", i, err)
-		}
+	if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "场景工单", Content: content}); err != nil {
+		t.Fatalf("ingest: %v", err)
 	}
 
 	// 建两个场景
@@ -493,6 +512,55 @@ func TestA11Scenarios(t *testing.T) {
 	}
 }
 
+// TestA12ReviewGuard 复核守卫：被否决（ReviewFlagged）的边，新工单印证达标也不得被摄取静默恢复 curated；
+// 须专家 ConfirmEdge 恢复。
+func TestA12ReviewGuard(t *testing.T) {
+	svc := newTestService(t)
+	base := caseContent("ALERT-G", "g.a", "A", "g.a", "g.b")
+
+	// 两份独立工单 → 边 auto-curated
+	for i, note := range []string{"独立事件一", "独立事件二"} {
+		if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: fmt.Sprintf("守卫工单-%d", i+1), Content: base + "\n\n备注：" + note}); err != nil {
+			t.Fatalf("ingest %d: %v", i+1, err)
+		}
+	}
+	src, _ := svc.Store().GetAnomalyByCode("g.a")
+	edges, _ := svc.Store().ListEdgesFrom(src.ID, "", "")
+	if len(edges) != 1 || edges[0].Status != model.StatusCurated {
+		t.Fatalf("edge must be curated before reject: %+v", edges)
+	}
+	edgeID := edges[0].ID
+
+	// 反馈否决 → draft + ReviewFlagged
+	if _, err := svc.Report(service.ReportInput{DiagnosisRef: "guard-1", EdgeID: edgeID, Verdict: model.VerdictRejected}); err != nil {
+		t.Fatalf("report reject: %v", err)
+	}
+
+	// 第三份独立工单印证达标：不得自动恢复（ReviewFlagged 守卫）
+	if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "守卫工单-3", Content: base + "\n\n备注：独立事件三"}); err != nil {
+		t.Fatalf("ingest 3: %v", err)
+	}
+	edge, err := svc.Store().GetCausalRule(edgeID)
+	if err != nil {
+		t.Fatalf("get edge: %v", err)
+	}
+	if edge.Status != model.StatusDraft || !edge.ReviewFlagged {
+		t.Fatalf("ingest must not silently curate a review-flagged edge: %+v", edge)
+	}
+	if edge.CaseSupportCount != 3 {
+		t.Fatalf("support should still count (3) while status stays draft: %+v", edge)
+	}
+
+	// 专家确认恢复 curated
+	if err := svc.ConfirmEdge(edgeID, "expert-1"); err != nil {
+		t.Fatalf("confirm edge: %v", err)
+	}
+	edge, _ = svc.Store().GetCausalRule(edgeID)
+	if edge.Status != model.StatusCurated || edge.ReviewFlagged {
+		t.Fatal("expert confirm must restore curated and clear flag")
+	}
+}
+
 // TestA10DomainCategory 领域推导：stable_code 前缀 → category，显式指定优先。
 func TestA10DomainCategory(t *testing.T) {
 	svc := newTestService(t)
@@ -533,9 +601,10 @@ func nodeID(t *testing.T, svc *service.Service, code string) string {
 func TestA8KnowledgeListGraphReview(t *testing.T) {
 	svc := newTestService(t)
 	content := caseContent("ALERT-L", "list.a", "A", "list.a", "list.b")
-	for i := 1; i <= 2; i++ {
-		if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "清单工单", Content: content}); err != nil {
-			t.Fatalf("ingest %d: %v", i, err)
+	// 两份独立工单（内容不同）
+	for i, note := range []string{"独立事件一", "独立事件二"} {
+		if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: fmt.Sprintf("清单工单-%d", i+1), Content: content + "\n\n工单备注：" + note}); err != nil {
+			t.Fatalf("ingest %d: %v", i+1, err)
 		}
 	}
 
