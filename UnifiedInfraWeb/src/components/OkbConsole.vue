@@ -145,6 +145,9 @@
       <div v-if="graphLegend.length" class="topology-legend">
         <span v-for="item in graphLegend" :key="item.label"><i :style="{ background: item.color }" />{{ item.label }}</span>
       </div>
+      <el-alert v-if="graphDraftHiddenCount > 0" type="info" :closable="false" class="spaced"
+        :title="`有 ${graphDraftHiddenCount} 个节点当前仅通过未审核（草稿）边关联，图中以虚线空心圈标注`"
+        description="这些知识已入库但尚未通过印证或人工审核，不参与正式 trace。勾选「显示草稿边」可查看其关联。" />
       <el-dialog v-model="nodeDialogVisible" :title="nodeDialogNode?.name" width="480px">
         <p class="dialog-intro">{{ nodeDialogNode?.stable_code }}（{{ nodeDialogNode?.status }}）</p>
         <div class="drawer-actions">
@@ -428,6 +431,7 @@ const graphIncludeDraft = ref(false)
 const graphLoaded = ref(false)
 const graphEmpty = ref(false)
 const graphLegend = ref<Array<{ label: string; color: string }>>([])
+const graphDraftHiddenCount = ref(0)
 const nodeDialogVisible = ref(false)
 const nodeDialogNode = ref<GraphView['nodes'][number] | null>(null)
 let chart: echarts.ECharts | null = null
@@ -460,11 +464,22 @@ function ensureChart(): echarts.ECharts | null {
 function renderGraph(view: GraphView) {
   const instance = ensureChart()
   if (!instance) return
-  const edges = view.edges.filter(e => graphIncludeDraft.value || e.status === 'curated')
-  const presentLevels = new Set(edges.map(e => e.evidence_level))
+  const visibleEdges = view.edges.filter(e => graphIncludeDraft.value || e.status === 'curated')
+  const presentLevels = new Set(visibleEdges.map(e => e.evidence_level))
   graphLegend.value = Array.from(presentLevels).map(level => ({
     label: levelLabel(level), color: LEVEL_COLORS[level] || '#8b98aa',
   }))
+  // 因草稿边被过滤而孤立的节点：提示而非隐藏（用户需要知道知识存在、只是未审核）
+  const draftOnlyIds = new Set<string>()
+  if (!graphIncludeDraft.value) {
+    const connected = new Set<string>()
+    view.edges.filter(e => e.status === 'curated').forEach(e => { connected.add(e.source); connected.add(e.target) })
+    view.nodes.forEach(n => {
+      const hasDraftEdge = view.edges.some(e => e.status !== 'curated' && (e.source === n.stable_code || e.target === n.stable_code))
+      if (!connected.has(n.stable_code) && hasDraftEdge) draftOnlyIds.add(n.stable_code)
+    })
+  }
+  graphDraftHiddenCount.value = draftOnlyIds.size
   instance.setOption({
     tooltip: {
       formatter: (params: { dataType: string; data: Record<string, unknown> }) => {
@@ -472,19 +487,26 @@ function renderGraph(view: GraphView) {
         if (params.dataType === 'edge') {
           return `<b>${d.source} → ${d.target}</b><br/>证据：${d.evidence_level} · 置信度 ${Number(d.confidence).toFixed(2)}<br/>状态：${d.status} · 印证 ${d.case_support_count} 工单`
         }
-        return `<b>${d.name}</b><br/>${d.stable_code}<br/>状态：${d.status}`
+        const isolated = d.draft_only ? '<br/><span style="color:#b26205">存在未审核（草稿）关联边，勾选「显示草稿边」可见</span>' : ''
+        return `<b>${d.name}</b><br/>${d.stable_code}<br/>状态：${d.status}${isolated}`
       },
     },
     series: [{
       type: 'graph', layout: 'force', roam: true, draggable: true,
       force: { repulsion: 320, edgeLength: [90, 180], gravity: 0.08 },
       label: { show: true, position: 'right', fontSize: 11, formatter: (p: { data: { name: string } }) => p.data.name },
-      data: view.nodes.map(n => ({
-        id: n.stable_code, name: n.name, stable_code: n.stable_code, status: n.status,
-        symbolSize: 34,
-        itemStyle: { color: n.status === 'curated' ? '#3479df' : '#a0cfff' },
-      })),
-      edges: edges.map(e => ({
+      data: view.nodes.map(n => {
+        const draftOnly = draftOnlyIds.has(n.stable_code)
+        return {
+          id: n.stable_code, name: n.name, stable_code: n.stable_code, status: n.status, draft_only: draftOnly,
+          symbolSize: 34,
+          itemStyle: draftOnly
+            ? { color: '#f5f7fa', borderColor: '#d79b35', borderWidth: 2, borderType: 'dashed' }
+            : { color: n.status === 'curated' ? '#3479df' : '#a0cfff' },
+          label: draftOnly ? { color: '#9aa7b8' } : undefined,
+        }
+      }),
+      edges: visibleEdges.map(e => ({
         source: e.source, target: e.target, evidence_level: e.evidence_level,
         confidence: e.confidence, status: e.status, case_support_count: e.case_support_count,
         lineStyle: {
