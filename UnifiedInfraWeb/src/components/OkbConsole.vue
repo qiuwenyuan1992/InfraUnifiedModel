@@ -3,19 +3,18 @@
     <el-alert v-if="connectionError" type="error" :closable="false" show-icon
       title="OKB 服务不可达"
       :description="`${connectionError}——请确认 OKB 后端已启动（默认 :18090）且 Vite 代理已配置 /api → OKB。`" />
-    <el-tabs v-model="tab">
+    <template v-if="page === 'okb:list'">
       <!-- 知识清单：分类折叠列表 + 行内管理 -->
-      <el-tab-pane label="知识清单" name="list">
-        <div class="query-bar">
-          <el-input v-model="listFilter.q" placeholder="搜索编码 / 名称 / signature" clearable style="width: 260px"
-            @keyup.enter="loadAllLists" />
-          <el-select v-model="listFilter.status" placeholder="全部状态" clearable style="width: 130px">
-            <el-option label="curated" value="curated" />
-            <el-option label="draft" value="draft" />
-          </el-select>
-          <el-button type="primary" :loading="loading.list" @click="loadAllLists">刷新清单</el-button>
-          <span class="dim">展开各分区查看与管理</span>
-        </div>
+      <div class="query-bar">
+        <el-input v-model="listFilter.q" placeholder="搜索编码 / 名称 / signature" clearable style="width: 260px"
+          @keyup.enter="loadAllLists" />
+        <el-select v-model="listFilter.status" placeholder="全部状态" clearable style="width: 130px">
+          <el-option label="curated" value="curated" />
+          <el-option label="draft" value="draft" />
+        </el-select>
+        <el-button type="primary" :loading="loading.list" @click="loadAllLists">刷新清单</el-button>
+        <span class="dim">展开各分区查看与管理</span>
+      </div>
         <el-collapse v-model="listOpen">
           <el-collapse-item name="anomaly">
             <template #title><span class="section-title">异常类型（节点）</span><span class="dim count">{{ listAnomaly?.total ?? '—' }} 条</span></template>
@@ -30,7 +29,7 @@
               </el-table-column>
               <el-table-column label="操作" width="150" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" size="small" @click="traceCode = row.stable_code; tab = 'query'; doTrace()">trace</el-button>
+                  <el-button link type="primary" size="small" @click="goto('okb:query', row.stable_code, true)">trace</el-button>
                   <el-button link size="small" @click="doEvidence(row.stable_code)">证据</el-button>
                 </template>
               </el-table-column>
@@ -63,7 +62,7 @@
                   <el-button link type="primary" size="small" @click="doEvidence(row.id)">证据</el-button>
                   <el-button link type="success" size="small" @click="doConfirmEdge(row.id)">确认</el-button>
                   <el-button link type="danger" size="small" @click="doRejectEdge(row.id)">否决</el-button>
-                  <el-button link size="small" @click="report.edgeId = row.id; tab = 'report'">反馈</el-button>
+                  <el-button link size="small" @click="report.edgeId = row.id; goto('okb:report')">反馈</el-button>
                 </template>
               </el-table-column>
               <template #empty><el-empty description="暂无因果规则" :image-size="60" /></template>
@@ -114,9 +113,10 @@
             </el-table>
           </el-collapse-item>
         </el-collapse>
-      </el-tab-pane>
-      <!-- 知识图谱：力导向可视化 -->
-      <el-tab-pane label="知识图谱" name="graph">
+    </template>
+
+    <!-- 知识图谱：力导向可视化 -->
+    <template v-else-if="page === 'okb:graph'">
         <div class="query-bar">
           <el-button type="primary" :loading="loading.graph" @click="doGraph">加载故障知识图谱</el-button>
           <el-checkbox v-model="graphIncludeDraft">显示草稿边</el-checkbox>
@@ -133,13 +133,14 @@
         <el-dialog v-model="nodeDialogVisible" :title="nodeDialogNode?.stable_code" width="480px">
           <p v-if="nodeDialogNode">{{ nodeDialogNode.name }}（{{ nodeDialogNode.status }}）</p>
           <div class="query-bar">
-            <el-button type="primary" size="small" @click="traceCode = nodeDialogNode!.stable_code; tab = 'query'; doTrace()">从该异常 trace</el-button>
+            <el-button type="primary" size="small" @click="goto('okb:query', nodeDialogNode!.stable_code, true)">从该异常 trace</el-button>
             <el-button size="small" @click="doEvidence(nodeDialogNode!.stable_code)">查看证据</el-button>
           </div>
         </el-dialog>
-      </el-tab-pane>
-      <!-- 图谱查询：lookup + trace + evidence -->
-      <el-tab-pane label="图谱查询" name="query">
+    </template>
+
+    <!-- 图谱查询：lookup + trace + evidence -->
+    <template v-else-if="page === 'okb:query'">
         <div class="query-bar">
           <el-input v-model="alertSignature" placeholder="告警 signature，如 ALERT_GPU_ECC" clearable @keyup.enter="doLookup">
             <template #prepend>lookup</template>
@@ -216,10 +217,10 @@
             <pre class="evidence-content">{{ item.content }}</pre>
           </div>
         </el-dialog>
-      </el-tab-pane>
+    </template>
 
-      <!-- 摄取：工单/文档入库 -->
-      <el-tab-pane label="资料摄取" name="ingest">
+    <!-- 摄取：工单/文档入库 -->
+    <template v-else-if="page === 'okb:ingest'">
         <el-form label-width="90px" class="ingest-form">
           <el-form-item label="数据源">
             <el-select v-model="ingest.kind" style="width: 220px">
@@ -243,10 +244,10 @@
             </span>
           </el-form-item>
         </el-form>
-      </el-tab-pane>
+    </template>
 
-      <!-- 反馈：report 飞轮 -->
-      <el-tab-pane label="诊断反馈" name="report">
+    <!-- 反馈：report 飞轮 -->
+    <template v-else-if="page === 'okb:report'">
         <el-form label-width="110px" class="report-form">
           <el-form-item label="诊断引用">
             <el-input v-model="report.diagnosisRef" placeholder="本次诊断唯一引用，幂等键" />
@@ -270,13 +271,36 @@
             </span>
           </el-form-item>
         </el-form>
-      </el-tab-pane>
-    </el-tabs>
+    </template>
+
+    <!-- 复核队列：被否决待处理 -->
+    <template v-else-if="page === 'okb:review'">
+        <div class="query-bar">
+          <el-button type="primary" :loading="loading.review" @click="doReviewQueue">刷新复核队列</el-button>
+          <span class="dim">被否决降级后待人工复核的因果边</span>
+        </div>
+        <el-table :data="reviewEdges ?? []" size="small" border>
+          <el-table-column prop="ID" label="边 ID" min-width="260" show-overflow-tooltip />
+          <el-table-column label="置信度" width="90">
+            <template #default="{ row }">{{ row.Confidence.toFixed(2) }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }"><el-tag type="info" size="small">{{ row.Status }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="操作" width="180" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="success" size="small" @click="doConfirmEdge(row.ID)">确认恢复</el-button>
+              <el-button link type="danger" size="small" @click="doRejectEdge(row.ID)">维持否决</el-button>
+            </template>
+          </el-table-column>
+          <template #empty><el-empty description="复核队列为空" :image-size="60" /></template>
+        </el-table>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onBeforeUnmount } from 'vue'
+import { reactive, ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import {
@@ -285,7 +309,18 @@ import {
   type KnowledgeList,
 } from '../api/okb'
 
-const tab = ref('list')
+// page 由 App.vue 侧边栏驱动（okb:list / okb:graph / okb:query / okb:review / okb:ingest / okb:report）
+const props = defineProps<{ page: string }>()
+
+// 跨页跳转由父级 section 切换实现；emit 事件上抛
+const emit = defineEmits<{ (e: 'navigate', page: string): void }>()
+
+function goto(page: string, code?: string, doTraceNow = false) {
+  if (code) traceCode.value = code
+  emit('navigate', page)
+  if (doTraceNow) setTimeout(() => doTrace(), 50)
+}
+
 const loading = reactive({ lookup: false, trace: false, ingest: false, report: false, review: false, graph: false, list: false })
 const connectionError = ref('')
 
@@ -319,7 +354,12 @@ async function loadAllLists() {
     loading.list = false
   }
 }
-void loadAllLists()
+// 按当前子页面按需加载：清单 / 图谱 / 复核队列
+watch(() => props.page, page => {
+  if (page === 'okb:list' && !listAnomaly.value) loadAllLists()
+  if (page === 'okb:review' && !reviewEdges.value) doReviewQueue()
+  if (page === 'okb:graph') nextTick(() => { if (!chart) doGraph() })
+}, { immediate: true })
 
 // 图谱
 const graphContainer = ref<HTMLDivElement>()
