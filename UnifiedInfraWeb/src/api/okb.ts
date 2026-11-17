@@ -149,10 +149,43 @@ export interface GraphView {
   edges: GraphEdge[]
 }
 
+// 知识清单（/api/v1/knowledge）
+export interface KnowledgeRow {
+  id: string
+  kind: 'anomaly' | 'rule' | 'mapping'
+  stable_code?: string
+  name?: string
+  category?: string
+  source_code?: string
+  target_code?: string
+  alert_signature?: string
+  evidence_level?: EvidenceLevel
+  confidence?: number
+  case_support_count?: number
+  status: KnowledgeStatus
+  review_flagged?: boolean
+  revision_id: string
+  updated_at: string
+}
+
+export interface KnowledgeList {
+  kind: string
+  total: number
+  rows: KnowledgeRow[]
+}
+
 // ---------- API ----------
 
 export const okbApi = {
   graph: (signal?: AbortSignal) => okbRequest<GraphView>('/graph', { signal }),
+  knowledge: (kind: 'anomaly' | 'rule' | 'mapping', params: { status?: string; q?: string; limit?: number; offset?: number } = {}, signal?: AbortSignal) => {
+    const search = new URLSearchParams({ kind })
+    if (params.status) search.set('status', params.status)
+    if (params.q) search.set('q', params.q)
+    if (params.limit) search.set('limit', String(params.limit))
+    if (params.offset) search.set('offset', String(params.offset))
+    return okbRequest<KnowledgeList>(`/knowledge?${search}`, { signal })
+  },
   lookup: (alertSignature: string, includeDraft = false, signal?: AbortSignal) =>
     okbRequest<LookupResult>(`/lookup?alert_signature=${encodeURIComponent(alertSignature)}${includeDraft ? '&include_draft=true' : ''}`, { signal }),
   trace: (anomalyCode: string, maxHops = 3, includeDraft = false, signal?: AbortSignal) =>

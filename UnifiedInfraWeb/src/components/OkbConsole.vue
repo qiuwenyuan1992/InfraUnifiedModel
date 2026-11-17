@@ -4,6 +4,117 @@
       title="OKB 服务不可达"
       :description="`${connectionError}——请确认 OKB 后端已启动（默认 :18090）且 Vite 代理已配置 /api → OKB。`" />
     <el-tabs v-model="tab">
+      <!-- 知识清单：分类折叠列表 + 行内管理 -->
+      <el-tab-pane label="知识清单" name="list">
+        <div class="query-bar">
+          <el-input v-model="listFilter.q" placeholder="搜索编码 / 名称 / signature" clearable style="width: 260px"
+            @keyup.enter="loadAllLists" />
+          <el-select v-model="listFilter.status" placeholder="全部状态" clearable style="width: 130px">
+            <el-option label="curated" value="curated" />
+            <el-option label="draft" value="draft" />
+          </el-select>
+          <el-button type="primary" :loading="loading.list" @click="loadAllLists">刷新清单</el-button>
+          <span class="dim">展开各分区查看与管理</span>
+        </div>
+        <el-collapse v-model="listOpen">
+          <el-collapse-item name="anomaly">
+            <template #title><span class="section-title">异常类型（节点）</span><span class="dim count">{{ listAnomaly?.total ?? '—' }} 条</span></template>
+            <el-table :data="listAnomaly?.rows ?? []" size="small" border>
+              <el-table-column prop="stable_code" label="异常编码" min-width="200" show-overflow-tooltip />
+              <el-table-column prop="name" label="名称" min-width="140" />
+              <el-table-column label="状态" width="90">
+                <template #default="{ row }"><el-tag :type="row.status === 'curated' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag></template>
+              </el-table-column>
+              <el-table-column prop="updated_at" label="更新时间" min-width="160">
+                <template #default="{ row }">{{ new Date(row.updated_at).toLocaleString() }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="150" fixed="right">
+                <template #default="{ row }">
+                  <el-button link type="primary" size="small" @click="traceCode = row.stable_code; tab = 'query'; doTrace()">trace</el-button>
+                  <el-button link size="small" @click="doEvidence(row.stable_code)">证据</el-button>
+                </template>
+              </el-table-column>
+              <template #empty><el-empty description="暂无异常类型" :image-size="60" /></template>
+            </el-table>
+          </el-collapse-item>
+          <el-collapse-item name="rule">
+            <template #title><span class="section-title">因果规则（边）</span><span class="dim count">{{ listRule?.total ?? '—' }} 条</span></template>
+            <el-table :data="listRule?.rows ?? []" size="small" border>
+              <el-table-column label="因果（源 → 目标）" min-width="280">
+                <template #default="{ row }"><span class="mono">{{ row.source_code }}</span> → <span class="mono">{{ row.target_code }}</span></template>
+              </el-table-column>
+              <el-table-column label="证据等级" width="120">
+                <template #default="{ row }"><el-tag :type="levelTag(row.evidence_level)" size="small">{{ row.evidence_level }}</el-tag></template>
+              </el-table-column>
+              <el-table-column label="置信度" width="85">
+                <template #default="{ row }">{{ row.confidence.toFixed(2) }}</template>
+              </el-table-column>
+              <el-table-column label="印证" width="70">
+                <template #default="{ row }">{{ row.case_support_count }} 工单</template>
+              </el-table-column>
+              <el-table-column label="状态" width="90">
+                <template #default="{ row }">
+                  <el-tag :type="row.status === 'curated' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+                  <el-tag v-if="row.review_flagged" type="danger" size="small">待复核</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="200" fixed="right">
+                <template #default="{ row }">
+                  <el-button link type="primary" size="small" @click="doEvidence(row.id)">证据</el-button>
+                  <el-button link type="success" size="small" @click="doConfirmEdge(row.id)">确认</el-button>
+                  <el-button link type="danger" size="small" @click="doRejectEdge(row.id)">否决</el-button>
+                  <el-button link size="small" @click="report.edgeId = row.id; tab = 'report'">反馈</el-button>
+                </template>
+              </el-table-column>
+              <template #empty><el-empty description="暂无因果规则" :image-size="60" /></template>
+            </el-table>
+          </el-collapse-item>
+          <el-collapse-item name="mapping">
+            <template #title><span class="section-title">告警映射（入口）</span><span class="dim count">{{ listMapping?.total ?? '—' }} 条</span></template>
+            <el-table :data="listMapping?.rows ?? []" size="small" border>
+              <el-table-column prop="alert_signature" label="告警 signature" min-width="200" show-overflow-tooltip />
+              <el-table-column label="候选异常" min-width="180">
+                <template #default="{ row }"><span class="mono">{{ row.stable_code }}</span>（{{ row.name }}）</template>
+              </el-table-column>
+              <el-table-column label="置信度" width="85">
+                <template #default="{ row }">{{ row.confidence.toFixed(2) }}</template>
+              </el-table-column>
+              <el-table-column label="证据等级" width="120">
+                <template #default="{ row }"><el-tag :type="levelTag(row.evidence_level)" size="small">{{ row.evidence_level }}</el-tag></template>
+              </el-table-column>
+              <el-table-column label="状态" width="90">
+                <template #default="{ row }"><el-tag :type="row.status === 'curated' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag></template>
+              </el-table-column>
+              <el-table-column label="操作" width="150" fixed="right">
+                <template #default="{ row }">
+                  <el-button link type="primary" size="small" @click="alertSignature = row.alert_signature; doLookup()">lookup</el-button>
+                  <el-button link size="small" @click="doEvidence(row.id)">证据</el-button>
+                </template>
+              </el-table-column>
+              <template #empty><el-empty description="暂无告警映射" :image-size="60" /></template>
+            </el-table>
+          </el-collapse-item>
+          <el-collapse-item name="review">
+            <template #title><span class="section-title">复核队列（被否决待处理）</span><span class="dim count">{{ reviewEdges?.length ?? '—' }} 条</span></template>
+            <el-table :data="reviewEdges ?? []" size="small" border>
+              <el-table-column prop="ID" label="边 ID" min-width="260" show-overflow-tooltip />
+              <el-table-column label="置信度" width="90">
+                <template #default="{ row }">{{ row.Confidence.toFixed(2) }}</template>
+              </el-table-column>
+              <el-table-column label="状态" width="90">
+                <template #default="{ row }"><el-tag type="info" size="small">{{ row.Status }}</el-tag></template>
+              </el-table-column>
+              <el-table-column label="操作" width="180" fixed="right">
+                <template #default="{ row }">
+                  <el-button link type="success" size="small" @click="doConfirmEdge(row.ID)">确认恢复</el-button>
+                  <el-button link type="danger" size="small" @click="doRejectEdge(row.ID)">维持否决</el-button>
+                </template>
+              </el-table-column>
+              <template #empty><el-empty description="复核队列为空" :image-size="60" /></template>
+            </el-table>
+          </el-collapse-item>
+        </el-collapse>
+      </el-tab-pane>
       <!-- 知识图谱：力导向可视化 -->
       <el-tab-pane label="知识图谱" name="graph">
         <div class="query-bar">
@@ -160,29 +271,6 @@
           </el-form-item>
         </el-form>
       </el-tab-pane>
-
-      <!-- 复核：被否决的边 -->
-      <el-tab-pane label="复核队列" name="review">
-        <div class="query-bar">
-          <el-button type="primary" :loading="loading.review" @click="doReviewQueue">刷新复核队列</el-button>
-          <span class="dim">被否决降级后待人工复核的因果边</span>
-        </div>
-        <el-table v-if="reviewEdges" :data="reviewEdges" size="small" border>
-          <el-table-column prop="ID" label="边 ID" min-width="260" show-overflow-tooltip />
-          <el-table-column label="置信度" width="90">
-            <template #default="{ row }">{{ row.Confidence.toFixed(2) }}</template>
-          </el-table-column>
-          <el-table-column label="状态" width="90">
-            <template #default="{ row }"><el-tag type="info" size="small">{{ row.Status }}</el-tag></template>
-          </el-table-column>
-          <el-table-column label="操作" width="180">
-            <template #default="{ row }">
-              <el-button link type="success" size="small" @click="doConfirmEdge(row.ID)">确认恢复</el-button>
-              <el-button link type="danger" size="small" @click="doRejectEdge(row.ID)">维持否决</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -194,11 +282,44 @@ import * as echarts from 'echarts'
 import {
   okbApi, type LookupResult, type TraceResult, type EvidenceView,
   type IngestOutput, type ReportResult, type ReviewEdge, type SourceKind, type Verdict, type GraphView,
+  type KnowledgeList,
 } from '../api/okb'
 
-const tab = ref('graph')
-const loading = reactive({ lookup: false, trace: false, ingest: false, report: false, review: false, graph: false })
+const tab = ref('list')
+const loading = reactive({ lookup: false, trace: false, ingest: false, report: false, review: false, graph: false, list: false })
 const connectionError = ref('')
+
+// 知识清单（默认全部分区展开）
+const listOpen = ref<string[]>(['anomaly', 'rule', 'mapping', 'review'])
+const listFilter = reactive({ q: '', status: '' })
+const listAnomaly = ref<KnowledgeList | null>(null)
+const listRule = ref<KnowledgeList | null>(null)
+const listMapping = ref<KnowledgeList | null>(null)
+
+async function loadAllLists() {
+  loading.list = true
+  connectionError.value = ''
+  const params = { q: listFilter.q || undefined, status: listFilter.status || undefined, limit: 200 }
+  try {
+    const [a, r, m, q] = await Promise.all([
+      okbApi.knowledge('anomaly', params),
+      okbApi.knowledge('rule', params),
+      okbApi.knowledge('mapping', params),
+      okbApi.reviewQueue().catch(() => ({ edges: [] as ReviewEdge[] })),
+    ])
+    listAnomaly.value = a
+    listRule.value = r
+    listMapping.value = m
+    reviewEdges.value = q.edges
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('Failed to fetch')) connectionError.value = msg
+    ElMessage.error(msg)
+  } finally {
+    loading.list = false
+  }
+}
+void loadAllLists()
 
 // 图谱
 const graphContainer = ref<HTMLDivElement>()
@@ -409,6 +530,9 @@ function evalSummary(hop: { evaluations?: Array<{ result: string }> }): string {
 .evidence-summary { color: var(--el-text-color-secondary); font-size: 12px; margin-bottom: 4px; }
 .evidence-content { background: var(--el-fill-color-light); padding: 8px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-all; margin: 0; }
 .dim { color: var(--el-text-color-secondary); font-size: 12px; }
+.section-title { font-weight: 600; margin-right: 8px; }
+.dim.count { margin-right: 4px; }
+.mono { font-family: var(--el-font-family-mono, monospace); font-size: 12px; }
 .graph-container { width: 100%; height: 520px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
 .graph-legend { display: flex; gap: 16px; margin-top: 8px; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--el-text-color-secondary); }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"UnifiedInfraOKB/internal/model"
 	"UnifiedInfraOKB/internal/repository"
@@ -149,6 +150,121 @@ func (s *Service) Graph() (*GraphView, error) {
 		})
 	}
 	return view, nil
+}
+
+// KnowledgeRow 知识清单行（三类统一视图，字段对齐展示需要）。
+type KnowledgeRow struct {
+	ID            string               `json:"id"`
+	Kind          string               `json:"kind"` // anomaly / rule / mapping
+	// anomaly
+	StableCode    string               `json:"stable_code,omitempty"`
+	Name          string               `json:"name,omitempty"`
+	Category      string               `json:"category,omitempty"`
+	// rule
+	SourceCode    string               `json:"source_code,omitempty"`
+	TargetCode    string               `json:"target_code,omitempty"`
+	// mapping
+	AlertSignature string              `json:"alert_signature,omitempty"`
+	// 通用
+	EvidenceLevel model.EvidenceLevel  `json:"evidence_level,omitempty"`
+	Confidence    float64              `json:"confidence,omitempty"`
+	CaseSupport   int                  `json:"case_support_count,omitempty"`
+	Status        model.KnowledgeStatus `json:"status"`
+	ReviewFlagged bool                 `json:"review_flagged,omitempty"`
+	RevisionID    string               `json:"revision_id"`
+	UpdatedAt     string               `json:"updated_at"`
+}
+
+// KnowledgeList 知识清单查询结果。
+type KnowledgeList struct {
+	Kind  string         `json:"kind"`
+	Total int64          `json:"total"`
+	Rows  []KnowledgeRow `json:"rows"`
+}
+
+// Knowledge 按类型分页列出知识（知识清单入口）。
+// kind: anomaly / rule / mapping；status、q 可选；一次查一类，前端分区各取一次。
+func (s *Service) Knowledge(kind string, status model.KnowledgeStatus, q string, limit, offset int) (*KnowledgeList, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	out := &KnowledgeList{Kind: kind, Rows: []KnowledgeRow{}}
+
+	switch kind {
+	case "anomaly":
+		list, total, err := s.store.ListAnomaliesPage(status, q, limit, offset)
+		if err != nil {
+			return nil, fmt.Errorf("list anomalies: %w", err)
+		}
+		out.Total = total
+		for _, n := range list {
+			row := KnowledgeRow{ID: n.ID, Kind: kind, StableCode: n.StableCode, Name: n.Name,
+				Category: n.Category, Status: n.Status, UpdatedAt: n.UpdatedAt.UTC().Format(time.RFC3339)}
+			if rev, err := s.store.LatestRevision(model.EntityAnomalyType, n.ID); err == nil {
+				row.RevisionID = rev.ID
+			}
+			out.Rows = append(out.Rows, row)
+		}
+	case "rule":
+		list, total, err := s.store.ListRulesPage(status, q, limit, offset)
+		if err != nil {
+			return nil, fmt.Errorf("list rules: %w", err)
+		}
+		out.Total = total
+		// id→code 映射（节点规模小，全量取一次）
+		nodes, err := s.store.ListAllAnomalies(0)
+		if err != nil {
+			return nil, fmt.Errorf("list nodes: %w", err)
+		}
+		codeByID := make(map[string]string, len(nodes))
+		for _, n := range nodes {
+			codeByID[n.ID] = n.StableCode
+		}
+		for _, r := range list {
+			row := KnowledgeRow{ID: r.ID, Kind: kind,
+				SourceCode: codeByID[r.SourceAnomalyID], TargetCode: codeByID[r.TargetAnomalyID],
+				EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence, CaseSupport: r.CaseSupportCount,
+				Status: r.Status, ReviewFlagged: r.ReviewFlagged,
+				UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339)}
+			if rev, err := s.store.LatestRevision(model.EntityCausalRule, r.ID); err == nil {
+				row.RevisionID = rev.ID
+			}
+			out.Rows = append(out.Rows, row)
+		}
+	case "mapping":
+		list, total, err := s.store.ListMappingsPage(status, q, limit, offset)
+		if err != nil {
+			return nil, fmt.Errorf("list mappings: %w", err)
+		}
+		out.Total = total
+		nodes, err := s.store.ListAllAnomalies(0)
+		if err != nil {
+			return nil, fmt.Errorf("list nodes: %w", err)
+		}
+		byID := make(map[string]model.AnomalyType, len(nodes))
+		for _, n := range nodes {
+			byID[n.ID] = n
+		}
+		for _, m := range list {
+			row := KnowledgeRow{ID: m.ID, Kind: kind, AlertSignature: m.AlertSignature,
+				Confidence: m.Confidence, EvidenceLevel: m.EvidenceLevel, Status: m.Status,
+				UpdatedAt: m.UpdatedAt.UTC().Format(time.RFC3339)}
+			if n, ok := byID[m.AnomalyID]; ok {
+				row.StableCode = n.StableCode
+				row.Name = n.Name
+			}
+			if rev, err := s.store.LatestRevision(model.EntityAlertMapping, m.ID); err == nil {
+				row.RevisionID = rev.ID
+			}
+			out.Rows = append(out.Rows, row)
+		}
+	default:
+		return nil, fmt.Errorf("unknown kind %q (expect anomaly/rule/mapping)", kind)
+	}
+	return out, nil
 }
 
 // Lookup 告警入口：signature → 候选异常。draft 默认排除，includeDraft 须审核权限（由 handler 校验）。

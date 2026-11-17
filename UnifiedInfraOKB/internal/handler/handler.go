@@ -54,6 +54,7 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 // Routes 注册全部路由（路径与 api-boundaries.md 对齐）。
 func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/graph", h.handleGraph)
+	mux.HandleFunc("GET /api/v1/knowledge", h.handleKnowledge)
 	mux.HandleFunc("GET /api/v1/lookup", h.handleLookup)
 	mux.HandleFunc("GET /api/v1/trace", h.handleTrace)
 	mux.HandleFunc("GET /api/v1/evidence", h.handleEvidence)
@@ -65,6 +66,23 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+}
+
+// handleKnowledge GET /api/v1/knowledge?kind=anomaly|rule|mapping&status=&q=&limit=&offset=
+func (h *Handler) handleKnowledge(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	kind := query.Get("kind")
+	if kind == "" {
+		kind = "anomaly"
+	}
+	limit, _ := strconv.Atoi(query.Get("limit"))
+	offset, _ := strconv.Atoi(query.Get("offset"))
+	res, err := h.svc.Knowledge(kind, model.KnowledgeStatus(query.Get("status")), query.Get("q"), limit, offset)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // handleGraph GET /api/v1/graph —— 整图视图（可视化消费）
