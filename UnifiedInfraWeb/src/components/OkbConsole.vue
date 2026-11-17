@@ -96,17 +96,19 @@
           <el-collapse-item name="review">
             <template #title><span class="section-title">复核队列（被否决待处理）</span><span class="dim count">{{ reviewEdges?.length ?? '—' }} 条</span></template>
             <el-table :data="reviewEdges ?? []" size="small" border>
-              <el-table-column prop="ID" label="边 ID" min-width="260" show-overflow-tooltip />
+              <el-table-column label="因果（源 → 目标）" min-width="240">
+                <template #default="{ row }"><span class="mono">{{ row.source_code }}</span> → <span class="mono">{{ row.target_code }}</span></template>
+              </el-table-column>
               <el-table-column label="置信度" width="90">
-                <template #default="{ row }">{{ row.Confidence.toFixed(2) }}</template>
+                <template #default="{ row }">{{ row.confidence.toFixed(2) }}</template>
               </el-table-column>
               <el-table-column label="状态" width="90">
-                <template #default="{ row }"><el-tag type="info" size="small">{{ row.Status }}</el-tag></template>
+                <template #default="{ row }"><el-tag type="info" size="small">{{ row.status }}</el-tag></template>
               </el-table-column>
               <el-table-column label="操作" width="180" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="success" size="small" @click="doConfirmEdge(row.ID)">确认恢复</el-button>
-                  <el-button link type="danger" size="small" @click="doRejectEdge(row.ID)">维持否决</el-button>
+                  <el-button link type="success" size="small" @click="doConfirmEdge(row.id)">确认恢复</el-button>
+                  <el-button link type="danger" size="small" @click="doRejectEdge(row.id)">维持否决</el-button>
                 </template>
               </el-table-column>
               <template #empty><el-empty description="复核队列为空" :image-size="60" /></template>
@@ -280,17 +282,19 @@
           <span class="dim">被否决降级后待人工复核的因果边</span>
         </div>
         <el-table :data="reviewEdges ?? []" size="small" border>
-          <el-table-column prop="ID" label="边 ID" min-width="260" show-overflow-tooltip />
+          <el-table-column label="因果（源 → 目标）" min-width="240">
+            <template #default="{ row }"><span class="mono">{{ row.source_code }}</span> → <span class="mono">{{ row.target_code }}</span></template>
+          </el-table-column>
           <el-table-column label="置信度" width="90">
-            <template #default="{ row }">{{ row.Confidence.toFixed(2) }}</template>
+            <template #default="{ row }">{{ row.confidence.toFixed(2) }}</template>
           </el-table-column>
           <el-table-column label="状态" width="90">
-            <template #default="{ row }"><el-tag type="info" size="small">{{ row.Status }}</el-tag></template>
+            <template #default="{ row }"><el-tag type="info" size="small">{{ row.status }}</el-tag></template>
           </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
-              <el-button link type="success" size="small" @click="doConfirmEdge(row.ID)">确认恢复</el-button>
-              <el-button link type="danger" size="small" @click="doRejectEdge(row.ID)">维持否决</el-button>
+              <el-button link type="success" size="small" @click="doConfirmEdge(row.id)">确认恢复</el-button>
+              <el-button link type="danger" size="small" @click="doRejectEdge(row.id)">维持否决</el-button>
             </template>
           </el-table-column>
           <template #empty><el-empty description="复核队列为空" :image-size="60" /></template>
@@ -300,13 +304,13 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { reactive, ref, watch, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import {
   okbApi, type LookupResult, type TraceResult, type EvidenceView,
-  type IngestOutput, type ReportResult, type ReviewEdge, type SourceKind, type Verdict, type GraphView,
-  type KnowledgeList,
+  type IngestOutput, type ReportResult, type SourceKind, type Verdict, type GraphView,
+  type KnowledgeList, type KnowledgeRow,
 } from '../api/okb'
 
 // page 由 App.vue 侧边栏驱动（okb:list / okb:graph / okb:query / okb:review / okb:ingest / okb:report）
@@ -318,7 +322,8 @@ const emit = defineEmits<{ (e: 'navigate', page: string): void }>()
 function goto(page: string, code?: string, doTraceNow = false) {
   if (code) traceCode.value = code
   emit('navigate', page)
-  if (doTraceNow) setTimeout(() => doTrace(), 50)
+  // trace 结果只写入响应式状态，不依赖目标页 DOM，无需等待渲染即可发起
+  if (doTraceNow) doTrace()
 }
 
 const loading = reactive({ lookup: false, trace: false, ingest: false, report: false, review: false, graph: false, list: false })
@@ -331,6 +336,13 @@ const listAnomaly = ref<KnowledgeList | null>(null)
 const listRule = ref<KnowledgeList | null>(null)
 const listMapping = ref<KnowledgeList | null>(null)
 
+// 统一错误提示：网络失败（fetch 抛 TypeError）标记连接错误，其余弹消息
+function notifyError(err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err)
+  if (err instanceof TypeError) connectionError.value = msg
+  ElMessage.error(msg)
+}
+
 async function loadAllLists() {
   loading.list = true
   connectionError.value = ''
@@ -340,25 +352,25 @@ async function loadAllLists() {
       okbApi.knowledge('anomaly', params),
       okbApi.knowledge('rule', params),
       okbApi.knowledge('mapping', params),
-      okbApi.reviewQueue().catch(() => ({ edges: [] as ReviewEdge[] })),
+      okbApi.reviewQueue().catch(() => ({ edges: [] as KnowledgeRow[] })),
     ])
     listAnomaly.value = a
     listRule.value = r
     listMapping.value = m
     reviewEdges.value = q.edges
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    if (msg.includes('Failed to fetch')) connectionError.value = msg
-    ElMessage.error(msg)
+    notifyError(err)
   } finally {
     loading.list = false
   }
 }
 // 按当前子页面按需加载：清单 / 图谱 / 复核队列
 watch(() => props.page, page => {
+  // 图谱页离开时容器 DOM 已被卸载，必须销毁实例，否则重进时画到已脱离的节点上
+  if (page !== 'okb:graph' && chart) { chart.dispose(); chart = null }
   if (page === 'okb:list' && !listAnomaly.value) loadAllLists()
   if (page === 'okb:review' && !reviewEdges.value) doReviewQueue()
-  if (page === 'okb:graph') nextTick(() => { if (!chart) doGraph() })
+  if (page === 'okb:graph') nextTick(() => doGraph())
 }, { immediate: true })
 
 // 图谱
@@ -469,15 +481,13 @@ const report = reactive<{ diagnosisRef: string; edgeId: string; verdict: Verdict
 const reportResult = ref<ReportResult | null>(null)
 
 // 复核
-const reviewEdges = ref<ReviewEdge[] | null>(null)
+const reviewEdges = ref<KnowledgeRow[] | null>(null)
 
 function wrap<T>(key: keyof typeof loading, fn: () => Promise<T>): Promise<T | null> {
   loading[key] = true
   connectionError.value = ''
   return fn().catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err)
-    if (msg.includes('Failed to fetch') || msg.includes('服务')) connectionError.value = msg
-    ElMessage.error(msg)
+    notifyError(err)
     return null
   }).finally(() => { loading[key] = false })
 }
@@ -523,12 +533,23 @@ async function doReviewQueue() {
   if (res) reviewEdges.value = res.edges
 }
 
+// 治理操作后同时刷新复核队列与已加载的清单，避免页面间数据滞留
+async function refreshAfterGovernance() {
+  await Promise.all([doReviewQueue(), listRule.value ? loadAllLists() : Promise.resolve()])
+}
+
 async function doConfirmEdge(id: string) {
-  if (await wrap('review', () => okbApi.confirmEdge(id))) { ElMessage.success('已确认'); doReviewQueue() }
+  if (await wrap('review', () => okbApi.confirmEdge(id))) {
+    ElMessage.success('已确认')
+    void refreshAfterGovernance()
+  }
 }
 
 async function doRejectEdge(id: string) {
-  if (await wrap('review', () => okbApi.rejectEdge(id))) { ElMessage.success('已维持否决'); doReviewQueue() }
+  if (await wrap('review', () => okbApi.rejectEdge(id))) {
+    ElMessage.success('已维持否决')
+    void refreshAfterGovernance()
+  }
 }
 
 function levelTag(level: string): 'success' | 'warning' | 'info' | 'danger' {

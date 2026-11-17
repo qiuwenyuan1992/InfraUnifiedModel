@@ -211,12 +211,12 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 // handleReviewQueue GET /api/v1/review/queue —— S2 复核队列
 func (h *Handler) handleReviewQueue(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	list, err := h.svc.ReviewQueue(limit)
+	rows, err := h.svc.ReviewQueue(limit)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string][]model.CausalRule{"edges": list})
+	writeJSON(w, http.StatusOK, map[string][]service.KnowledgeRow{"edges": rows})
 }
 
 // handleConfirmEdge POST /api/v1/edges/{id}/confirm —— S2 治理

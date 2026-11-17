@@ -83,9 +83,13 @@ func (s *Service) Report(in ReportInput) (*ReportResult, error) {
 	}, nil
 }
 
-// ReviewQueue 复核队列：被否决降级后待人工复核的边（S2 专家界面消费）。
-func (s *Service) ReviewQueue(limit int) ([]model.CausalRule, error) {
-	return s.store.ListReviewFlagged(limit)
+// ReviewQueue 复核队列：被否决降级后待人工复核的因果边（与知识清单同构的行）。
+func (s *Service) ReviewQueue(limit int) ([]KnowledgeRow, error) {
+	flagged, err := s.store.ListReviewFlagged(limit)
+	if err != nil {
+		return nil, fmt.Errorf("list review flagged: %w", err)
+	}
+	return s.ruleRows(flagged)
 }
 
 // ConfirmEdge 专家确认边（S2 治理操作）：升 curated、清复核标记、追加修订。
