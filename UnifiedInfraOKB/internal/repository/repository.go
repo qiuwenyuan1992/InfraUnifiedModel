@@ -191,6 +191,60 @@ func (s *Store) ListAllCausalRules(limit int) ([]model.CausalRule, error) {
 	return list, err
 }
 
+// ListAnomaliesPage 异常节点分页列表（知识清单用）；status/q 可选过滤。
+func (s *Store) ListAnomaliesPage(status model.KnowledgeStatus, q string, limit, offset int) ([]model.AnomalyType, int64, error) {
+	tx := s.DB.Model(&model.AnomalyType{})
+	if status != "" {
+		tx = tx.Where("status = ?", status)
+	}
+	if q != "" {
+		tx = tx.Where("stable_code LIKE ? OR name LIKE ?", "%"+q+"%", "%"+q+"%")
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var list []model.AnomalyType
+	err := tx.Order("updated_at DESC").Limit(limit).Offset(offset).Find(&list).Error
+	return list, total, err
+}
+
+// ListRulesPage 因果边分页列表（知识清单用）；status/q 可选过滤。
+func (s *Store) ListRulesPage(status model.KnowledgeStatus, q string, limit, offset int) ([]model.CausalRule, int64, error) {
+	tx := s.DB.Model(&model.CausalRule{})
+	if status != "" {
+		tx = tx.Where("status = ?", status)
+	}
+	if q != "" {
+		tx = tx.Where("source_anomaly_id LIKE ? OR target_anomaly_id LIKE ?", "%"+q+"%", "%"+q+"%")
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var list []model.CausalRule
+	err := tx.Order("updated_at DESC").Limit(limit).Offset(offset).Find(&list).Error
+	return list, total, err
+}
+
+// ListMappingsPage 告警映射分页列表（知识清单用）；status/q 可选过滤。
+func (s *Store) ListMappingsPage(status model.KnowledgeStatus, q string, limit, offset int) ([]model.AlertMapping, int64, error) {
+	tx := s.DB.Model(&model.AlertMapping{})
+	if status != "" {
+		tx = tx.Where("status = ?", status)
+	}
+	if q != "" {
+		tx = tx.Where("alert_signature LIKE ?", "%"+q+"%")
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var list []model.AlertMapping
+	err := tx.Order("updated_at DESC").Limit(limit).Offset(offset).Find(&list).Error
+	return list, total, err
+}
+
 // CreateAlias 厂商别名登记（AI 建议）；ConfirmAlias 人工确认后才参与对齐。
 func (s *Store) CreateAlias(al *model.AnomalyAlias) error {
 	al.ID = NewID()
