@@ -87,7 +87,7 @@ func (f *FakeExtract) Extract(_ context.Context, _ string, fragments []model.Fra
 			res.Anomalies = append(res.Anomalies, AnomalyCandidate{
 				StableCode: payload.Code,
 				Name:       payload.Name,
-				Category:   "synthetic",
+				// Category 留空：由 service 按编码前缀推导领域，不在提取器臆造
 				Aliases:    payload.Aliases,
 				FragmentID: fid,
 			})
