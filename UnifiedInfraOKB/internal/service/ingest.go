@@ -21,6 +21,35 @@ type IngestInput struct {
 	OperatorID string // 服务端识别的操作主体
 }
 
+// domainFromCode 从 stable_code 前缀推导领域分类（场景组织维度）。
+// 约定编码带领域前缀（如 net.port.* / rack.power.* / gpu.*）；未识别前缀归 other。
+// 显式 Category 优先，此推导只是缺省值——不臆造精细分类。
+var domainPrefixes = []struct {
+	prefix  string
+	domains string
+}{
+	{"net.", "network"},
+	{"rack.power.", "power"},
+	{"rack.", "rack"},
+	{"ups.", "power"},
+	{"psu.", "power"},
+	{"gpu.", "gpu"},
+	{"hca.", "hca"},
+	{"pcie.", "pcie"},
+	{"server.", "server"},
+	{"storage.", "storage"},
+	{"action.", "action"},
+}
+
+func domainFromCode(code string) string {
+	for _, p := range domainPrefixes {
+		if strings.HasPrefix(code, p.prefix) {
+			return p.domains
+		}
+	}
+	return "other"
+}
+
 // IngestOutput 摄取结果：登记与接纳统计。
 type IngestOutput struct {
 	SourceID        string
@@ -94,7 +123,11 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 
 	// 5. 接纳异常候选（幂等），别名登记为 AI 建议（待人工确认）
 	for _, a := range res.Anomalies {
-		node := &model.AnomalyType{StableCode: a.StableCode, Name: a.Name, Category: a.Category}
+		category := a.Category
+		if category == "" {
+			category = domainFromCode(a.StableCode)
+		}
+		node := &model.AnomalyType{StableCode: a.StableCode, Name: a.Name, Category: category}
 		created, err := s.store.GetOrCreateAnomaly(node)
 		if err != nil {
 			return nil, fmt.Errorf("accept anomaly %s: %w", a.StableCode, err)

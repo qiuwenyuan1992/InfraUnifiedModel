@@ -424,6 +424,32 @@ func TestA9EdgeTypes(t *testing.T) {
 	}
 }
 
+// TestA10DomainCategory 领域推导：stable_code 前缀 → category，显式指定优先。
+func TestA10DomainCategory(t *testing.T) {
+	svc := newTestService(t)
+	content := strings.Join([]string{
+		`{"anomaly": "gpu.ecc.error", "name": "GPU ECC", "code": "gpu.ecc.error"}`,
+		`{"anomaly": "net.module.aged", "name": "光模块老化", "code": "net.module.aged"}`,
+		`{"anomaly": "rack.power.outage", "name": "机柜掉电", "code": "rack.power.outage"}`,
+		`{"anomaly": "mystery.fault", "name": "未知故障", "code": "mystery.fault"}`,
+	}, "\n\n")
+	if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "领域工单", Content: content}); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	for code, want := range map[string]string{
+		"gpu.ecc.error": "gpu", "net.module.aged": "network",
+		"rack.power.outage": "power", "mystery.fault": "other",
+	} {
+		n, err := svc.Store().GetAnomalyByCode(code)
+		if err != nil {
+			t.Fatalf("get %s: %v", code, err)
+		}
+		if n.Category != want {
+			t.Fatalf("domain(%s) = %q, want %q", code, n.Category, want)
+		}
+	}
+}
+
 // nodeID 按 stable_code 取节点 ID（A9 辅助）。
 func nodeID(t *testing.T, svc *service.Service, code string) string {
 	t.Helper()
