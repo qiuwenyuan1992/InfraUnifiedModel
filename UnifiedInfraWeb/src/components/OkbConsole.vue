@@ -21,25 +21,32 @@
           <el-collapse-item name="anomaly">
             <template #title>
               <span class="okb-section-name"><el-icon><Warning /></el-icon>异常类型（节点）</span>
-              <span class="muted">{{ listAnomaly?.total ?? '—' }} 条</span>
+              <span class="muted">{{ listAnomaly?.total ?? '—' }} 条 · {{ anomalyByDomain.length }} 个领域</span>
             </template>
-            <el-table :data="listAnomaly?.rows ?? []" size="small" class="task-table" row-key="id">
-              <el-table-column prop="stable_code" label="异常编码" min-width="200" show-overflow-tooltip />
-              <el-table-column prop="name" label="名称" min-width="140" />
-              <el-table-column label="状态" width="90">
-                <template #default="{ row }"><el-tag :type="row.status === 'curated' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag></template>
-              </el-table-column>
-              <el-table-column label="更新时间" min-width="150">
-                <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
-              </el-table-column>
-              <el-table-column label="操作" width="130" fixed="right">
-                <template #default="{ row }">
-                  <el-button link type="primary" size="small" @click="goto('okb:query', row.stable_code, true)">trace</el-button>
-                  <el-button link size="small" @click="doEvidence(row.stable_code)">证据</el-button>
-                </template>
-              </el-table-column>
-              <template #empty><el-empty description="暂无异常类型" :image-size="60" /></template>
-            </el-table>
+            <div v-for="group in anomalyByDomain" :key="group.domain" class="okb-domain-group">
+              <div class="okb-domain-head">
+                <i :style="{ background: DOMAIN_COLORS[group.domain] ?? DOMAIN_COLORS.other }" />
+                <span>{{ domainLabel(group.domain) }}</span>
+                <span class="muted">{{ group.rows.length }} 条</span>
+              </div>
+              <el-table :data="group.rows" size="small" class="task-table" row-key="id">
+                <el-table-column prop="stable_code" label="异常编码" min-width="200" show-overflow-tooltip />
+                <el-table-column prop="name" label="名称" min-width="140" />
+                <el-table-column label="状态" width="90">
+                  <template #default="{ row }"><el-tag :type="row.status === 'curated' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag></template>
+                </el-table-column>
+                <el-table-column label="更新时间" min-width="150">
+                  <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="130" fixed="right">
+                  <template #default="{ row }">
+                    <el-button link type="primary" size="small" @click="goto('okb:query', row.stable_code, true)">trace</el-button>
+                    <el-button link size="small" @click="doEvidence(row.stable_code)">证据</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <el-empty v-if="listAnomaly && anomalyByDomain.length === 0" description="暂无异常类型" :image-size="60" />
           </el-collapse-item>
           <el-collapse-item name="rule">
             <template #title>
@@ -139,8 +146,11 @@
     <!-- 知识图谱 -->
     <section v-else-if="page === 'okb:graph'" class="panel">
       <div class="panel-title">
-        <div><h2>故障因果图</h2><span class="muted">节点 = 异常类型 · 连线 = 因果边（颜色按证据等级，粗细按置信度，虚线 = 未审核）</span></div>
+        <div><h2>故障因果图</h2><span class="muted">节点色 = 领域 · 连线 = 因果边（实线因果传播 / 青虚线处置 / 灰点线症状，粗细按置信度）</span></div>
         <div class="okb-toolbar">
+          <el-select v-model="graphDomainFilter" placeholder="全部领域" clearable class="okb-select">
+            <el-option v-for="d in graphDomainOptions" :key="d" :label="domainLabel(d)" :value="d" />
+          </el-select>
           <el-checkbox v-model="graphIncludeDraft">显示草稿边</el-checkbox>
           <el-button type="primary" :icon="Refresh" :loading="loading.graph" @click="doGraph">加载图谱</el-button>
         </div>
@@ -345,7 +355,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch, nextTick, onBeforeUnmount } from 'vue'
+import { reactive, ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Warning, Link, Bell, CircleCheck, ArrowRight, Refresh } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
@@ -389,6 +399,45 @@ const listAnomaly = ref<KnowledgeList | null>(null)
 const listRule = ref<KnowledgeList | null>(null)
 const listMapping = ref<KnowledgeList | null>(null)
 const reviewEdges = ref<KnowledgeRow[] | null>(null)
+
+// ---------- 领域（场景组织维度） ----------
+// 与后端 domainFromCode 前缀推导一致；节点按领域着色与分组展示
+const DOMAIN_COLORS: Record<string, string> = {
+  network: '#3479df',
+  power: '#e6a23c',
+  gpu: '#38a078',
+  rack: '#9a67ea',
+  server: '#14a0a6',
+  hca: '#5a9bd4',
+  pcie: '#c9743a',
+  storage: '#8e7cc3',
+  action: '#6ea8b8',
+  other: '#a0aec0',
+}
+
+const DOMAIN_LABELS: Record<string, string> = {
+  network: '网络', power: '供电', gpu: 'GPU', rack: '机柜', server: '服务器',
+  hca: 'HCA 网卡', pcie: 'PCIe', storage: '存储', action: '处置动作', other: '未分类',
+}
+
+function domainLabel(d: string): string {
+  return DOMAIN_LABELS[d] ?? d
+}
+
+// 异常按领域分桶（保持后端返回顺序），供清单分组渲染
+const anomalyByDomain = computed<Array<{ domain: string; rows: KnowledgeRow[] }>>(() => {
+  const rows = listAnomaly.value?.rows ?? []
+  const buckets = new Map<string, KnowledgeRow[]>()
+  for (const row of rows) {
+    const key = row.category || 'other'
+    if (!buckets.has(key)) buckets.set(key, [])
+    buckets.get(key)!.push(row)
+  }
+  return Array.from(buckets, ([domain, groupRows]) => ({ domain, rows: groupRows }))
+})
+
+// 图谱领域过滤（空 = 全部）
+const graphDomainFilter = ref('')
 
 async function loadAllLists() {
   loading.list = true
@@ -480,9 +529,19 @@ function edgeLine(e: { edge_type?: string; status: string; evidence_level: strin
   }
 }
 
+const lastGraphView = ref<GraphView | null>(null) // 缓存图数据：领域过滤切换时无需重新请求
+
+// 图中出现的领域选项（动态）
+const graphDomainOptions = computed<string[]>(() => {
+  const view = lastGraphView.value
+  if (!view) return []
+  return Array.from(new Set(view.nodes.map(n => n.category || 'other')))
+})
+
 async function doGraph() {
   const view = await wrap('graph', () => okbApi.graph())
   if (!view) return
+  lastGraphView.value = view
   graphEmpty.value = view.nodes.length === 0
   if (graphEmpty.value) return
   graphLoaded.value = true
@@ -501,12 +560,24 @@ function ensureChart(): echarts.ECharts | null {
 function renderGraph(view: GraphView) {
   const instance = ensureChart()
   if (!instance) return
-  const visibleEdges = view.edges.filter(e => graphIncludeDraft.value || e.status === 'curated')
+  // 领域过滤：选中领域时只保留该领域节点及其关联边
+  const domain = graphDomainFilter.value
+  const filteredNodes = domain
+    ? view.nodes.filter(n => (n.category || 'other') === domain)
+    : view.nodes
+  const nodeIds = new Set(filteredNodes.map(n => n.stable_code))
+  const visibleEdges = view.edges
+    .filter(e => (graphIncludeDraft.value || e.status === 'curated')
+      && (!domain || (nodeIds.has(e.source) && nodeIds.has(e.target))))
   const presentLevels = new Set(visibleEdges.filter(e => e.edge_type === 'trigger').map(e => e.evidence_level))
   const presentTypes = new Set(visibleEdges.map(e => e.edge_type ?? 'trigger'))
-  graphLegend.value = Array.from(presentLevels).map(level => ({
-    label: levelLabel(level), color: LEVEL_COLORS[level] || '#8b98aa',
+  const presentDomains = new Set(filteredNodes.map(n => n.category || 'other'))
+  graphLegend.value = Array.from(presentDomains).map(d => ({
+    label: domainLabel(d), color: DOMAIN_COLORS[d] ?? DOMAIN_COLORS.other,
   }))
+  graphLegend.value = graphLegend.value.concat(Array.from(presentLevels).map(level => ({
+    label: levelLabel(level), color: LEVEL_COLORS[level] || '#8b98aa',
+  })))
   for (const t of presentTypes) {
     if (t !== 'trigger') {
       const style = EDGE_STYLES[t]
@@ -539,14 +610,17 @@ function renderGraph(view: GraphView) {
       type: 'graph', layout: 'force', roam: true, draggable: true,
       force: { repulsion: 320, edgeLength: [90, 180], gravity: 0.08 },
       label: { show: true, position: 'right', fontSize: 11, formatter: (p: { data: { name: string } }) => p.data.name },
-      data: view.nodes.map(n => {
+      data: filteredNodes.map(n => {
         const draftOnly = draftOnlyIds.has(n.stable_code)
+        const domainColor = DOMAIN_COLORS[n.category || 'other'] ?? DOMAIN_COLORS.other
         return {
           id: n.stable_code, name: n.name, stable_code: n.stable_code, status: n.status, draft_only: draftOnly,
+          category: n.category || 'other',
           symbolSize: 34,
+          // 领域色板着色；draft 半透明区分；仅草稿边关联节点保持虚线空圈提示
           itemStyle: draftOnly
             ? { color: '#f5f7fa', borderColor: '#d79b35', borderWidth: 2, borderType: 'dashed' }
-            : { color: n.status === 'curated' ? '#3479df' : '#a0cfff' },
+            : { color: domainColor, opacity: n.status === 'curated' ? 1 : 0.45 },
           label: draftOnly ? { color: '#9aa7b8' } : undefined,
         }
       }),
@@ -683,6 +757,9 @@ watch(() => props.page, page => {
 }, { immediate: true })
 
 watch(graphIncludeDraft, () => { if (graphLoaded.value) doGraph() })
+watch(graphDomainFilter, () => {
+  if (graphLoaded.value && lastGraphView.value) renderGraph(lastGraphView.value)
+})
 
 onBeforeUnmount(() => { chart?.dispose(); chart = null })
 </script>
