@@ -20,6 +20,9 @@
                 <el-option label="curated" value="curated" /><el-option label="draft" value="draft" />
               </el-select>
               <el-button type="primary" :icon="Refresh" :loading="loading.list" @click="loadAllLists">刷新</el-button>
+              <el-tag v-if="listFiltered" type="warning" size="small" closable @close="clearListFilter">
+                筛选中：{{ listFilter.q || listFilter.status }}
+              </el-tag>
             </template>
           </div>
         </div>
@@ -473,6 +476,13 @@ function goto(page: string, code?: string, doTraceNow = false) {
 // ---------- 知识清单 ----------
 const listOpen = ref<string[]>(['anomaly', 'rule', 'mapping', 'review'])
 const listFilter = reactive({ q: '', status: '' })
+const listFiltered = computed(() => !!(listFilter.q || listFilter.status))
+
+function clearListFilter() {
+  listFilter.q = ''
+  listFilter.status = ''
+  void loadAllLists()
+}
 const listAnomaly = ref<KnowledgeList | null>(null)
 const listRule = ref<KnowledgeList | null>(null)
 const listMapping = ref<KnowledgeList | null>(null)
