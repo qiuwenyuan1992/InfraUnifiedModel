@@ -214,26 +214,11 @@ func (s *Service) Knowledge(kind string, status model.KnowledgeStatus, q string,
 			return nil, fmt.Errorf("list rules: %w", err)
 		}
 		out.Total = total
-		// id→code 映射（节点规模小，全量取一次）
-		nodes, err := s.store.ListAllAnomalies(0)
+		rows, err := s.ruleRows(list)
 		if err != nil {
-			return nil, fmt.Errorf("list nodes: %w", err)
+			return nil, err
 		}
-		codeByID := make(map[string]string, len(nodes))
-		for _, n := range nodes {
-			codeByID[n.ID] = n.StableCode
-		}
-		for _, r := range list {
-			row := KnowledgeRow{ID: r.ID, Kind: kind,
-				SourceCode: codeByID[r.SourceAnomalyID], TargetCode: codeByID[r.TargetAnomalyID],
-				EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence, CaseSupport: r.CaseSupportCount,
-				Status: r.Status, ReviewFlagged: r.ReviewFlagged,
-				UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339)}
-			if rev, err := s.store.LatestRevision(model.EntityCausalRule, r.ID); err == nil {
-				row.RevisionID = rev.ID
-			}
-			out.Rows = append(out.Rows, row)
-		}
+		out.Rows = rows
 	case "mapping":
 		list, total, err := s.store.ListMappingsPage(status, q, limit, offset)
 		if err != nil {
@@ -265,6 +250,32 @@ func (s *Service) Knowledge(kind string, status model.KnowledgeStatus, q string,
 		return nil, fmt.Errorf("unknown kind %q (expect anomaly/rule/mapping)", kind)
 	}
 	return out, nil
+}
+
+// ruleRows 因果边 → 清单行；知识清单与复核队列共用（同构输出，字段 snake_case）。
+func (s *Service) ruleRows(rules []model.CausalRule) ([]KnowledgeRow, error) {
+	// id→code 映射（节点规模小，全量取一次）
+	nodes, err := s.store.ListAllAnomalies(0)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+	codeByID := make(map[string]string, len(nodes))
+	for _, n := range nodes {
+		codeByID[n.ID] = n.StableCode
+	}
+	rows := make([]KnowledgeRow, 0, len(rules))
+	for _, r := range rules {
+		row := KnowledgeRow{ID: r.ID, Kind: "rule",
+			SourceCode: codeByID[r.SourceAnomalyID], TargetCode: codeByID[r.TargetAnomalyID],
+			EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence, CaseSupport: r.CaseSupportCount,
+			Status: r.Status, ReviewFlagged: r.ReviewFlagged,
+			UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339)}
+		if rev, err := s.store.LatestRevision(model.EntityCausalRule, r.ID); err == nil {
+			row.RevisionID = rev.ID
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
 }
 
 // Lookup 告警入口：signature → 候选异常。draft 默认排除，includeDraft 须审核权限（由 handler 校验）。

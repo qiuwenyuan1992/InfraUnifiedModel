@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"UnifiedInfraOKB/internal/model"
@@ -83,6 +84,9 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 	}
 
 	out := &IngestOutput{SourceID: src.ID, SourceVersionID: sv.ID, ParsedVersionID: pv.ID, ExtractedModel: res.ModelVersion}
+	// 证据等级/种类生来自源，一次计算全程复用
+	level := levelFromKind(in.Kind)
+	ekind := evidenceKindFromLevel(level)
 	fragByID := make(map[string]model.Fragment, len(fragments))
 	for _, f := range fragments {
 		fragByID[f.ID] = f
@@ -103,7 +107,7 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 		}
 		if frag, ok := fragByID[a.FragmentID]; ok {
 			if _, err := s.store.AddEvidence(&model.Evidence{
-				Kind: model.EvidenceKindCase, EntityType: model.EntityAnomalyType,
+				Kind: ekind, EntityType: model.EntityAnomalyType,
 				EntityID: node.ID, FragmentID: frag.ID, SourceID: src.ID, CreatedBy: model.CreatorModel,
 			}); err != nil {
 				return nil, fmt.Errorf("add anomaly evidence: %w", err)
@@ -134,7 +138,7 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 		}
 		rule := &model.CausalRule{
 			SourceAnomalyID: srcNode.ID, TargetAnomalyID: dstNode.ID,
-			Conditions: condJSON, EvidenceLevel: levelFromKind(in.Kind), Confidence: 0.5,
+			Conditions: condJSON, EvidenceLevel: level, Confidence: 0.5,
 		}
 		created, err := s.store.GetOrCreateCausalRule(rule)
 		if err != nil {
@@ -148,7 +152,7 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 		}
 		if frag, ok := fragByID[c.FragmentID]; ok {
 			support, err := s.store.AddEvidence(&model.Evidence{
-				Kind: evidenceKindFromLevel(levelFromKind(in.Kind)), EntityType: model.EntityCausalRule,
+				Kind: ekind, EntityType: model.EntityCausalRule,
 				EntityID: rule.ID, FragmentID: frag.ID, SourceID: src.ID, CreatedBy: model.CreatorModel,
 			})
 			if err != nil {
@@ -178,7 +182,7 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 		}
 		mapping := &model.AlertMapping{
 			AlertSignature: m.AlertSignature, AnomalyID: node.ID,
-			Confidence: m.Confidence, EvidenceLevel: levelFromKind(in.Kind),
+			Confidence: m.Confidence, EvidenceLevel: level,
 		}
 		created, err := s.store.GetOrCreateAlertMapping(mapping)
 		if err != nil {
@@ -192,7 +196,7 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 		}
 		if frag, ok := fragByID[m.FragmentID]; ok {
 			support, err := s.store.AddEvidence(&model.Evidence{
-				Kind: evidenceKindFromLevel(levelFromKind(in.Kind)), EntityType: model.EntityAlertMapping,
+				Kind: ekind, EntityType: model.EntityAlertMapping,
 				EntityID: mapping.ID, FragmentID: frag.ID, SourceID: src.ID, CreatedBy: model.CreatorModel,
 			})
 			if err != nil {
@@ -215,6 +219,12 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 	return out, nil
 }
 
+// textBlock 文本块及其在原文中的起始偏移（出处回链定位用）。
+type textBlock struct {
+	start int
+	text  string
+}
+
 // createFragments 按空行切块登记片段；返回片段列表用于提取与回链。
 func (s *Service) createFragments(parsedVersionID, content string) ([]model.Fragment, error) {
 	blocks := splitBlocks(content)
@@ -222,10 +232,10 @@ func (s *Service) createFragments(parsedVersionID, content string) ([]model.Frag
 	for _, b := range blocks {
 		f := model.Fragment{
 			ParsedVersionID: parsedVersionID,
-			CharStart:       0,
-			CharEnd:         len(b),
-			Summary:         truncate(b, 120),
-			Content:         b,
+			CharStart:       b.start,
+			CharEnd:         b.start + len(b.text),
+			Summary:         truncate(b.text, 120),
+			Content:         b.text,
 			PermissionLevel: 1,
 		}
 		if err := s.store.CreateFragment(&f); err != nil {
@@ -236,34 +246,26 @@ func (s *Service) createFragments(parsedVersionID, content string) ([]model.Frag
 	return fragments, nil
 }
 
-func splitBlocks(content string) []string {
-	var out []string
+// splitBlocks 按空行切块，记录每块在原文中的字符偏移；空白块丢弃。
+func splitBlocks(content string) []textBlock {
+	var out []textBlock
 	start := 0
 	for i := 0; i+1 < len(content); i++ {
 		if content[i] == '\n' && content[i+1] == '\n' {
-			if blk := trimSpace(content[start:i]); blk != "" {
-				out = append(out, blk)
+			if blk := strings.TrimSpace(content[start:i]); blk != "" {
+				out = append(out, textBlock{start: start, text: blk})
 			}
 			start = i + 2
 			i++
 		}
 	}
-	if blk := trimSpace(content[start:]); blk != "" {
-		out = append(out, blk)
+	if blk := strings.TrimSpace(content[start:]); blk != "" {
+		out = append(out, textBlock{start: start, text: blk})
 	}
 	return out
 }
 
-func trimSpace(s string) string {
-	for len(s) > 0 && (s[0] == ' ' || s[0] == '\n' || s[0] == '\r' || s[0] == '\t') {
-		s = s[1:]
-	}
-	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\n' || s[len(s)-1] == '\r' || s[len(s)-1] == '\t') {
-		s = s[:len(s)-1]
-	}
-	return s
-}
-
+// truncate 按字符（非字节）截断，避免中文被切半个字。
 func truncate(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
