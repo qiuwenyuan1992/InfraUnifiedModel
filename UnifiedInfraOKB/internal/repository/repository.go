@@ -263,10 +263,15 @@ func (s *Store) ConfirmAlias(id string) error {
 	return nil
 }
 
-// GetOrCreateCausalRule 按（源,目标）幂等建边，返回边与是否新建。
+// GetOrCreateCausalRule 按（源,目标,边类型）幂等建边，返回边与是否新建。
+// 同一对节点可并存多条不同语义的边（如 trigger + mitigate）。
 func (s *Store) GetOrCreateCausalRule(r *model.CausalRule) (bool, error) {
+	if r.EdgeType == "" {
+		r.EdgeType = model.EdgeTrigger
+	}
 	var exist model.CausalRule
-	err := s.DB.Where("source_anomaly_id = ? AND target_anomaly_id = ?", r.SourceAnomalyID, r.TargetAnomalyID).First(&exist).Error
+	err := s.DB.Where("source_anomaly_id = ? AND target_anomaly_id = ? AND edge_type = ?",
+		r.SourceAnomalyID, r.TargetAnomalyID, r.EdgeType).First(&exist).Error
 	if err == nil {
 		*r = exist
 		return false, nil
@@ -304,10 +309,24 @@ func (s *Store) UpdateCausalRule(r *model.CausalRule) error {
 	return s.DB.Save(r).Error
 }
 
-// ListEdgesFrom 遍历：取某节点的全部出边（trace BFS 用）。
-// status 为空串时不过滤；draft 是否入结果由 service 决定。
-func (s *Store) ListEdgesFrom(anomalyID string, status model.KnowledgeStatus) ([]model.CausalRule, error) {
+// ListEdgesFrom 遍历：取某节点的出边（trace BFS / 处置查询用）。
+// status/edgeType 为空串时不过滤；draft 是否入结果由 service 决定。
+func (s *Store) ListEdgesFrom(anomalyID string, status model.KnowledgeStatus, edgeType model.EdgeType) ([]model.CausalRule, error) {
 	q := s.DB.Where("source_anomaly_id = ?", anomalyID)
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	if edgeType != "" {
+		q = q.Where("edge_type = ?", edgeType)
+	}
+	var list []model.CausalRule
+	err := q.Find(&list).Error
+	return list, err
+}
+
+// MitigationsFor 处置查询：指向某异常的全部 mitigate 入边（手段 → 被缓解异常）。
+func (s *Store) MitigationsFor(anomalyID string, status model.KnowledgeStatus) ([]model.CausalRule, error) {
+	q := s.DB.Where("target_anomaly_id = ? AND edge_type = ?", anomalyID, model.EdgeMitigate)
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}

@@ -47,8 +47,13 @@
               <span class="muted">{{ listRule?.total ?? '—' }} 条</span>
             </template>
             <el-table :data="listRule?.rows ?? []" size="small" class="task-table" row-key="id">
-              <el-table-column label="因果（源 → 目标）" min-width="280">
+              <el-table-column label="因果（源 → 目标）" min-width="260">
                 <template #default="{ row }"><span class="mono">{{ row.source_code }}</span><el-icon class="okb-arrow"><ArrowRight /></el-icon><span class="mono">{{ row.target_code }}</span></template>
+              </el-table-column>
+              <el-table-column label="类型" width="95">
+                <template #default="{ row }">
+                  <el-tag :type="row.edge_type === 'mitigate' ? '' : row.edge_type === 'indicate' ? 'info' : 'primary'" size="small">{{ edgeTypeLabel(row.edge_type) }}</el-tag>
+                </template>
               </el-table-column>
               <el-table-column label="证据等级" width="120">
                 <template #default="{ row }"><el-tag :type="levelTag(row.evidence_level)" size="small">{{ levelLabel(row.evidence_level) }}</el-tag></template>
@@ -148,11 +153,20 @@
       <el-alert v-if="graphDraftHiddenCount > 0" type="info" :closable="false" class="spaced"
         :title="`有 ${graphDraftHiddenCount} 个节点当前仅通过未审核（草稿）边关联，图中以虚线空心圈标注`"
         description="这些知识已入库但尚未通过印证或人工审核，不参与正式 trace。勾选「显示草稿边」可查看其关联。" />
-      <el-dialog v-model="nodeDialogVisible" :title="nodeDialogNode?.name" width="480px">
+      <el-dialog v-model="nodeDialogVisible" :title="nodeDialogNode?.name" width="560px">
         <p class="dialog-intro">{{ nodeDialogNode?.stable_code }}（{{ nodeDialogNode?.status }}）</p>
         <div class="drawer-actions">
           <el-button type="primary" size="small" @click="goto('okb:query', nodeDialogNode!.stable_code, true)">从该异常 trace</el-button>
           <el-button size="small" @click="doEvidence(nodeDialogNode!.stable_code)">查看证据</el-button>
+          <el-button size="small" :loading="loading.mitigations" @click="doMitigations(nodeDialogNode!.stable_code)">处置建议</el-button>
+        </div>
+        <div v-if="mitigations.length" class="okb-mitigations">
+          <div class="muted okb-mitigations-title">缓解该异常的处置手段（mitigate 边）</div>
+          <div v-for="m in mitigations" :key="m.edge_id" class="okb-mitigation-row">
+            <span class="okb-hop-name">{{ m.mitigation_name }}</span>
+            <el-tag :type="levelTag(m.evidence_level)" size="small">{{ levelLabel(m.evidence_level) }}</el-tag>
+            <span class="muted">置信度 {{ m.confidence.toFixed(2) }} · 印证 {{ m.case_support_count }} 工单</span>
+          </div>
         </div>
       </el-dialog>
     </section>
@@ -338,14 +352,14 @@ import * as echarts from 'echarts'
 import {
   okbApi, type LookupResult, type TraceResult, type EvidenceView,
   type IngestOutput, type ReportResult, type SourceKind, type Verdict, type GraphView,
-  type KnowledgeList, type KnowledgeRow,
+  type KnowledgeList, type KnowledgeRow, type MitigationRow,
 } from '../api/okb'
 
 // page 由 App.vue 侧边栏驱动（okb:list / okb:graph / okb:query / okb:review / okb:ingest / okb:report）
 const props = defineProps<{ page: string }>()
 const emit = defineEmits<{ (e: 'navigate', page: string): void }>()
 
-const loading = reactive({ lookup: false, trace: false, ingest: false, report: false, review: false, graph: false, list: false })
+const loading = reactive({ lookup: false, trace: false, ingest: false, report: false, review: false, graph: false, list: false, mitigations: false })
 const connectionError = ref('')
 
 // 统一错误提示：网络失败（fetch 抛 TypeError）标记连接错误，其余弹消息
@@ -443,6 +457,29 @@ const LEVEL_COLORS: Record<string, string> = {
   expert_only: '#8e7cc3',
 }
 
+// 边类型视觉编码：trigger 实线（按证据等级着色）、mitigate 青色粗虚线、indicate 灰点线
+const EDGE_STYLES: Record<string, { color: string; type: 'solid' | 'dashed' | 'dotted'; widthBoost: number }> = {
+  trigger: { color: '', type: 'solid', widthBoost: 0 },
+  mitigate: { color: '#14a0a6', type: 'dashed', widthBoost: 1 },
+  indicate: { color: '#aeb9c9', type: 'dotted', widthBoost: 0 },
+  prevent: { color: '#8e7cc3', type: 'dotted', widthBoost: 1 },
+}
+
+function edgeTypeLabel(t?: string): string {
+  return ({ trigger: '因果传播', indicate: '症状表现', mitigate: '处置手段', prevent: '预防措施' } as Record<string, string>)[t ?? 'trigger'] ?? t ?? '因果传播'
+}
+
+function edgeLine(e: { edge_type?: string; status: string; evidence_level: string; confidence: number }) {
+  const base = EDGE_STYLES[e.edge_type ?? 'trigger'] ?? EDGE_STYLES.trigger
+  const color = base.color || LEVEL_COLORS[e.evidence_level] || '#8b98aa'
+  return {
+    color,
+    width: 1 + Math.round(e.confidence * 3) + (base.widthBoost ?? 0),
+    type: e.status === 'curated' ? base.type : 'dashed',
+    curveness: 0.15,
+  }
+}
+
 async function doGraph() {
   const view = await wrap('graph', () => okbApi.graph())
   if (!view) return
@@ -465,10 +502,17 @@ function renderGraph(view: GraphView) {
   const instance = ensureChart()
   if (!instance) return
   const visibleEdges = view.edges.filter(e => graphIncludeDraft.value || e.status === 'curated')
-  const presentLevels = new Set(visibleEdges.map(e => e.evidence_level))
+  const presentLevels = new Set(visibleEdges.filter(e => e.edge_type === 'trigger').map(e => e.evidence_level))
+  const presentTypes = new Set(visibleEdges.map(e => e.edge_type ?? 'trigger'))
   graphLegend.value = Array.from(presentLevels).map(level => ({
     label: levelLabel(level), color: LEVEL_COLORS[level] || '#8b98aa',
   }))
+  for (const t of presentTypes) {
+    if (t !== 'trigger') {
+      const style = EDGE_STYLES[t]
+      if (style?.color) graphLegend.value.push({ label: edgeTypeLabel(t), color: style.color })
+    }
+  }
   // 因草稿边被过滤而孤立的节点：提示而非隐藏（用户需要知道知识存在、只是未审核）
   const draftOnlyIds = new Set<string>()
   if (!graphIncludeDraft.value) {
@@ -485,7 +529,7 @@ function renderGraph(view: GraphView) {
       formatter: (params: { dataType: string; data: Record<string, unknown> }) => {
         const d = params.data
         if (params.dataType === 'edge') {
-          return `<b>${d.source} → ${d.target}</b><br/>证据：${d.evidence_level} · 置信度 ${Number(d.confidence).toFixed(2)}<br/>状态：${d.status} · 印证 ${d.case_support_count} 工单`
+          return `<b>${d.source} → ${d.target}</b><br/>类型：${edgeTypeLabel(d.edge_type as string)} · 证据：${d.evidence_level} · 置信度 ${Number(d.confidence).toFixed(2)}<br/>状态：${d.status} · 印证 ${d.case_support_count} 工单`
         }
         const isolated = d.draft_only ? '<br/><span style="color:#b26205">存在未审核（草稿）关联边，勾选「显示草稿边」可见</span>' : ''
         return `<b>${d.name}</b><br/>${d.stable_code}<br/>状态：${d.status}${isolated}`
@@ -507,14 +551,10 @@ function renderGraph(view: GraphView) {
         }
       }),
       edges: visibleEdges.map(e => ({
-        source: e.source, target: e.target, evidence_level: e.evidence_level,
+        source: e.source, target: e.target, edge_type: e.edge_type ?? 'trigger',
+        evidence_level: e.evidence_level,
         confidence: e.confidence, status: e.status, case_support_count: e.case_support_count,
-        lineStyle: {
-          color: LEVEL_COLORS[e.evidence_level] || '#8b98aa',
-          width: 1 + Math.round(e.confidence * 3),
-          type: e.status === 'curated' ? 'solid' : 'dashed',
-          curveness: 0.15,
-        },
+        lineStyle: edgeLine(e),
       })),
       emphasis: { focus: 'adjacency' },
     }],
@@ -527,6 +567,15 @@ function renderGraph(view: GraphView) {
       nodeDialogVisible.value = true
     }
   })
+}
+
+// ---------- 处置建议 ----------
+const mitigations = ref<MitigationRow[]>([])
+
+async function doMitigations(code: string) {
+  mitigations.value = []
+  const res = await wrap('mitigations', () => okbApi.mitigations(code, true))
+  if (res) mitigations.value = res.mitigations
 }
 
 // ---------- 摄取 ----------
@@ -666,4 +715,7 @@ onBeforeUnmount(() => { chart?.dispose(); chart = null })
 .okb-evidence-item:first-of-type { border-top: 0; }
 .okb-evidence-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
 .okb-evidence-content { background: #f6f8fc; padding: 10px; border-radius: 6px; font: 11px/1.7 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; }
+.okb-mitigations { margin-top: 14px; border-top: 1px solid #eef2f7; padding-top: 10px; }
+.okb-mitigations-title { margin-bottom: 8px; }
+.okb-mitigation-row { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 12px; }
 </style>

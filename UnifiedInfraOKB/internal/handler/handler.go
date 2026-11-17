@@ -57,6 +57,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/knowledge", h.handleKnowledge)
 	mux.HandleFunc("GET /api/v1/lookup", h.handleLookup)
 	mux.HandleFunc("GET /api/v1/trace", h.handleTrace)
+	mux.HandleFunc("GET /api/v1/mitigations", h.handleMitigations)
 	mux.HandleFunc("GET /api/v1/evidence", h.handleEvidence)
 	mux.HandleFunc("POST /api/v1/report", h.handleReport)
 	mux.HandleFunc("POST /api/v1/sources", h.handleIngest)
@@ -157,6 +158,26 @@ func (h *Handler) handleEvidence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// handleMitigations GET /api/v1/mitigations?anomaly_code=<code>&include_draft=true
+func (h *Handler) handleMitigations(w http.ResponseWriter, r *http.Request) {
+	code := r.URL.Query().Get("anomaly_code")
+	if code == "" {
+		writeErr(w, http.StatusBadRequest, "anomaly_code is required")
+		return
+	}
+	includeDraft := r.URL.Query().Get("include_draft") == "true"
+	rows, err := h.svc.Mitigations(code, includeDraft)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "anomaly not found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"anomaly_code": code, "mitigations": rows})
 }
 
 // handleReport POST /api/v1/report
