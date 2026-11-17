@@ -430,7 +430,7 @@ func TestA9EdgeTypes(t *testing.T) {
 	}
 
 	// 处置查询：链路降级 → 更换光模块
-	rows, err := svc.Mitigations("et.link.degraded", false)
+	rows, err := svc.Mitigations("et.link.degraded", "", false)
 	if err != nil || len(rows) != 1 || rows[0].MitigationCode != "et.replace_module" {
 		t.Fatalf("mitigations: %+v err=%v", rows, err)
 	}
@@ -558,6 +558,71 @@ func TestA12ReviewGuard(t *testing.T) {
 	edge, _ = svc.Store().GetCausalRule(edgeID)
 	if edge.Status != model.StatusCurated || edge.ReviewFlagged {
 		t.Fatal("expert confirm must restore curated and clear flag")
+	}
+}
+
+// TestA13MitigationViaAndIndications mitigate 根因挂靠过滤 + indicate 双向反查。
+func TestA13MitigationViaAndIndications(t *testing.T) {
+	svc := newTestService(t)
+	// 场景：模块老化或板卡故障都会导致链路降级；
+	// "更换光模块"仅当根因是模块老化时适用（via）；"重启板卡"无条件适用（无 via）。
+	content := strings.Join([]string{
+		`{"anomaly": "net13.module.aged", "name": "光模块老化", "code": "net13.module.aged"}`,
+		`{"anomaly": "net13.board.fault", "name": "板卡故障", "code": "net13.board.fault"}`,
+		`{"anomaly": "net13.link.down", "name": "链路中断", "code": "net13.link.down"}`,
+		`{"anomaly": "action13.replace.module", "name": "更换光模块", "code": "action13.replace.module"}`,
+		`{"anomaly": "action13.reset.board", "name": "重启板卡", "code": "action13.reset.board"}`,
+		`{"anomaly": "net13.retrans.spike", "name": "重传尖刺", "code": "net13.retrans.spike"}`,
+		`{"source": "net13.module.aged", "target": "net13.link.down"}`,
+		`{"source": "net13.board.fault", "target": "net13.link.down"}`,
+		`{"source": "action13.replace.module", "target": "net13.link.down", "rel": "mitigate", "via": "net13.module.aged"}`,
+		`{"source": "action13.reset.board", "target": "net13.link.down", "rel": "mitigate"}`,
+		`{"source": "net13.module.aged", "target": "net13.retrans.spike", "rel": "indicate"}`,
+	}, "\n\n")
+	for i, note := range []string{"独立事件甲", "独立事件乙"} {
+		if _, err := svc.Ingest(context.Background(), service.IngestInput{
+			Kind: model.SourceInternalCase, Title: fmt.Sprintf("挂靠工单-%d", i+1), Content: content + "\n\n备注：" + note,
+		}); err != nil {
+			t.Fatalf("ingest %d: %v", i+1, err)
+		}
+	}
+
+	// 无根因过滤：两条处置都返回（via 通用排序在前）
+	all, err := svc.Mitigations("net13.link.down", "", false)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("mitigations unfiltered: %+v err=%v", all, err)
+	}
+	if all[0].MitigationCode != "action13.reset.board" || all[0].ViaRootCause != "" {
+		t.Fatalf("generic mitigation must sort first: %+v", all[0])
+	}
+	if all[1].MitigationCode != "action13.replace.module" || all[1].ViaRootCause != "net13.module.aged" {
+		t.Fatalf("via mitigation must expose root cause: %+v", all[1])
+	}
+
+	// 根因 = 板卡故障：只剩无条件的"重启板卡"（换模块被正确过滤——防张冠李戴）
+	filtered, err := svc.Mitigations("net13.link.down", "net13.board.fault", false)
+	if err != nil || len(filtered) != 1 || filtered[0].MitigationCode != "action13.reset.board" {
+		t.Fatalf("mitigations filtered by board.fault: %+v err=%v", filtered, err)
+	}
+	// 根因 = 模块老化：两条都适用（via 命中 + 通用）
+	filtered, err = svc.Mitigations("net13.link.down", "net13.module.aged", false)
+	if err != nil || len(filtered) != 2 {
+		t.Fatalf("mitigations filtered by module.aged: %+v err=%v", filtered, err)
+	}
+
+	// indicate 反查（诊断核心）：看到"重传尖刺" → 指示"光模块老化"
+	inc, err := svc.Indications("net13.retrans.spike", "incoming", false)
+	if err != nil || len(inc) != 1 || inc[0].OtherCode != "net13.module.aged" || inc[0].Direction != "incoming" {
+		t.Fatalf("indications incoming: %+v err=%v", inc, err)
+	}
+	// indicate 正查：光模块老化 → 表现为重传尖刺
+	out, err := svc.Indications("net13.module.aged", "outgoing", false)
+	if err != nil || len(out) != 1 || out[0].OtherCode != "net13.retrans.spike" {
+		t.Fatalf("indications outgoing: %+v err=%v", out, err)
+	}
+	// 非法方向
+	if _, err := svc.Indications("net13.retrans.spike", "both", false); err == nil {
+		t.Fatal("invalid direction must be rejected")
 	}
 }
 

@@ -172,6 +172,9 @@ type CausalRule struct {
 	SourceAnomalyID   string    `gorm:"size:36;index"`
 	TargetAnomalyID   string    `gorm:"size:36;index"`
 	EdgeType          EdgeType  `gorm:"size:16;default:trigger;index"` // trigger / indicate / mitigate / prevent
+	// MitigatedViaRootCause：mitigate 边的根因挂靠——"处置手段 A 缓解异常 B（当根因是 C 时）"。
+	// 空 = 无条件适用；非空 = 仅当诊断结论的根因路径包含 C 时该处置建议生效（防张冠李戴）。
+	MitigatedViaRootCause *string   `gorm:"size:36"`
 	Conditions        string    // JSON []ConditionClause，可为空（无条件边）
 	TimeConstraints   string    `gorm:"type:text"` // JSON，时间约束
 	EvidenceLevel     EvidenceLevel `gorm:"size:20"`

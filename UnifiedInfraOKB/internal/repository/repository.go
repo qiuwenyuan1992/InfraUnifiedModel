@@ -278,15 +278,20 @@ func (s *Store) ConfirmAlias(id string) error {
 	return nil
 }
 
-// GetOrCreateCausalRule 按（源,目标,边类型）幂等建边，返回边与是否新建。
-// 同一对节点可并存多条不同语义的边（如 trigger + mitigate）。
+// GetOrCreateCausalRule 按（源,目标,边类型,根因挂靠）幂等建边，返回边与是否新建。
+// 同一对节点可并存多条不同语义的边（如 trigger + mitigate）；
+// 同语义同对节点也可并存不同根因挂靠的 mitigate 边（"换模块·根因=老化" 与 "换模块·无条件"）。
 func (s *Store) GetOrCreateCausalRule(r *model.CausalRule) (bool, error) {
 	if r.EdgeType == "" {
 		r.EdgeType = model.EdgeTrigger
 	}
+	via := ""
+	if r.MitigatedViaRootCause != nil {
+		via = *r.MitigatedViaRootCause
+	}
 	var exist model.CausalRule
-	err := s.DB.Where("source_anomaly_id = ? AND target_anomaly_id = ? AND edge_type = ?",
-		r.SourceAnomalyID, r.TargetAnomalyID, r.EdgeType).First(&exist).Error
+	err := s.DB.Where("source_anomaly_id = ? AND target_anomaly_id = ? AND edge_type = ? AND COALESCE(mitigated_via_root_cause, '') = ?",
+		r.SourceAnomalyID, r.TargetAnomalyID, r.EdgeType, via).First(&exist).Error
 	if err == nil {
 		*r = exist
 		return false, nil
@@ -340,8 +345,35 @@ func (s *Store) ListEdgesFrom(anomalyID string, status model.KnowledgeStatus, ed
 }
 
 // MitigationsFor 处置查询：指向某异常的全部 mitigate 入边（手段 → 被缓解异常）。
-func (s *Store) MitigationsFor(anomalyID string, status model.KnowledgeStatus) ([]model.CausalRule, error) {
+// rootCauseID 非空时只返回"无条件适用"或"挂靠该根因"的边（根因挂靠过滤）。
+func (s *Store) MitigationsFor(anomalyID, rootCauseID string, status model.KnowledgeStatus) ([]model.CausalRule, error) {
 	q := s.DB.Where("target_anomaly_id = ? AND edge_type = ?", anomalyID, model.EdgeMitigate)
+	if rootCauseID != "" {
+		q = q.Where("mitigated_via_root_cause IS NULL OR mitigated_via_root_cause = ?", rootCauseID)
+	}
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	var list []model.CausalRule
+	err := q.Find(&list).Error
+	return list, err
+}
+
+// IndicationsFrom indicate 正查：根因异常 → 全部症状边（"A 发生时会看到什么"）。
+func (s *Store) IndicationsFrom(anomalyID string, status model.KnowledgeStatus) ([]model.CausalRule, error) {
+	q := s.DB.Where("source_anomaly_id = ? AND edge_type = ?", anomalyID, model.EdgeIndicate)
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	var list []model.CausalRule
+	err := q.Find(&list).Error
+	return list, err
+}
+
+// IndicationsFor indicate 反查：症状异常 ← 全部指示边（"看到 B 说明可能是什么"）。
+// 诊断核心：由观测症状反推候选根因集合。
+func (s *Store) IndicationsFor(symptomAnomalyID string, status model.KnowledgeStatus) ([]model.CausalRule, error) {
+	q := s.DB.Where("target_anomaly_id = ? AND edge_type = ?", symptomAnomalyID, model.EdgeIndicate)
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}

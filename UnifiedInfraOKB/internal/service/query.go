@@ -110,6 +110,7 @@ type MitigationRow struct {
 	MitigationCode string              `json:"mitigation_code"` // 处置手段（边源，如"更换光模块"）
 	MitigationName string              `json:"mitigation_name"`
 	EdgeID         string              `json:"edge_id"`
+	ViaRootCause   string              `json:"via_root_cause,omitempty"` // 根因挂靠（stable_code）：非空时仅当诊断根因路径含此节点才建议
 	EvidenceLevel  model.EvidenceLevel `json:"evidence_level"`
 	Confidence     float64             `json:"confidence"`
 	Status         model.KnowledgeStatus `json:"status"`
@@ -117,18 +118,26 @@ type MitigationRow struct {
 	FragmentRef    string              `json:"fragment_ref"` // 证据回链 ref
 }
 
-// Mitigations 处置查询：对某异常，返回缓解它的全部手段（沿 mitigate 边的入边）。
-// 语义方向：手段 → 被缓解异常；查询"谁指向我"而非"我指向谁"。
-func (s *Service) Mitigations(anomalyCode string, includeDraft bool) ([]MitigationRow, error) {
+// Mitigations 处置查询：对某异常返回缓解手段（沿 mitigate 边入边）。
+// rootCauseCode 非空时按根因挂靠过滤：无条件边 + 挂靠该根因的边（防张冠李戴）。
+func (s *Service) Mitigations(anomalyCode, rootCauseCode string, includeDraft bool) ([]MitigationRow, error) {
 	node, err := s.store.GetAnomalyByCode(anomalyCode)
 	if err != nil {
 		return nil, fmt.Errorf("anomaly: %w", err)
+	}
+	rootCauseID := ""
+	if rootCauseCode != "" {
+		rc, err := s.store.GetAnomalyByCode(rootCauseCode)
+		if err != nil {
+			return nil, fmt.Errorf("root cause: %w", err)
+		}
+		rootCauseID = rc.ID
 	}
 	status := model.StatusCurated
 	if includeDraft {
 		status = ""
 	}
-	rules, err := s.store.MitigationsFor(node.ID, status)
+	rules, err := s.store.MitigationsFor(node.ID, rootCauseID, status)
 	if err != nil {
 		return nil, fmt.Errorf("list mitigations: %w", err)
 	}
@@ -143,9 +152,74 @@ func (s *Service) Mitigations(anomalyCode string, includeDraft bool) ([]Mitigati
 			EdgeID: r.ID, EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence,
 			Status: r.Status, CaseSupport: r.CaseSupportCount, FragmentRef: r.ID,
 		}
+		if r.MitigatedViaRootCause != nil {
+			if via, err := s.store.GetAnomalyByID(*r.MitigatedViaRootCause); err == nil {
+				row.ViaRootCause = via.StableCode
+			}
+		}
 		rows = append(rows, row)
 	}
-	// 置信度降序
+	// 置信度降序；无根因挂靠的通用手段优先
+	sort.SliceStable(rows, func(i, j int) bool {
+		if (rows[i].ViaRootCause == "") != (rows[j].ViaRootCause == "") {
+			return rows[i].ViaRootCause == ""
+		}
+		return rows[i].Confidence > rows[j].Confidence
+	})
+	return rows, nil
+}
+
+// IndicationRow 症状指示行（indicate 边双向查询的行）。
+type IndicationRow struct {
+	EdgeID        string              `json:"edge_id"`
+	OtherCode     string              `json:"other_code"` // 对端节点 stable_code
+	OtherName     string              `json:"other_name"`
+	Direction     string              `json:"direction"` // outgoing：我会表现为此症状 / incoming：此症状指示我
+	EvidenceLevel model.EvidenceLevel `json:"evidence_level"`
+	Confidence    float64             `json:"confidence"`
+	Status        model.KnowledgeStatus `json:"status"`
+}
+
+// Indications 症状查询（indicate 边）：
+// direction=outgoing：根因异常 → 会表现哪些症状（正向解释）；
+// direction=incoming：症状异常 ← 可能指示哪些根因（诊断反查，Agent 核心入口之一）。
+func (s *Service) Indications(anomalyCode, direction string, includeDraft bool) ([]IndicationRow, error) {
+	node, err := s.store.GetAnomalyByCode(anomalyCode)
+	if err != nil {
+		return nil, fmt.Errorf("anomaly: %w", err)
+	}
+	if direction != "outgoing" && direction != "incoming" {
+		return nil, fmt.Errorf("direction must be outgoing or incoming")
+	}
+	status := model.StatusCurated
+	if includeDraft {
+		status = ""
+	}
+	var rules []model.CausalRule
+	if direction == "outgoing" {
+		rules, err = s.store.IndicationsFrom(node.ID, status)
+	} else {
+		rules, err = s.store.IndicationsFor(node.ID, status)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list indications: %w", err)
+	}
+	rows := make([]IndicationRow, 0, len(rules))
+	for _, r := range rules {
+		otherID := r.TargetAnomalyID
+		if direction == "incoming" {
+			otherID = r.SourceAnomalyID
+		}
+		other, err := s.store.GetAnomalyByID(otherID)
+		if err != nil {
+			continue
+		}
+		rows = append(rows, IndicationRow{
+			EdgeID: r.ID, OtherCode: other.StableCode, OtherName: other.Name,
+			Direction: direction, EvidenceLevel: r.EvidenceLevel,
+			Confidence: r.Confidence, Status: r.Status,
+		})
+	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Confidence > rows[j].Confidence })
 	return rows, nil
 }

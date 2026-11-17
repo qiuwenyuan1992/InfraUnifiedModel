@@ -35,11 +35,13 @@ type AnomalyCandidate struct {
 }
 
 // CausalChainCandidate 因果边候选。Rel 为边语义类型（trigger/mitigate/indicate/prevent），
-// 缺省 trigger；由数据源语义决定，不由提取器臆造。
+// 缺省 trigger；Via 为 mitigate 边的根因挂靠（"当根因是 X 时"），仅 rel=mitigate 时有意义。
+// 由数据源语义决定，不由提取器臆造。
 type CausalChainCandidate struct {
 	SourceCode string              `json:"source_code"`
 	TargetCode string              `json:"target_code"`
 	Rel        model.EdgeType      `json:"rel,omitempty"`
+	Via        string              `json:"via,omitempty"`
 	Conditions []model.ConditionClause `json:"conditions,omitempty"`
 	FragmentID string              `json:"fragment_id"`
 }
@@ -77,6 +79,7 @@ func (f *FakeExtract) Extract(_ context.Context, _ string, fragments []model.Fra
 			Source  string   `json:"source"`
 			Target  string   `json:"target"`
 			Rel     string   `json:"rel"`
+			Via     string   `json:"via"`
 		}
 		if err := json.Unmarshal([]byte(frag.Content), &payload); err != nil {
 			// 片段不是结构化标记，跳过，不生成候选
@@ -104,6 +107,7 @@ func (f *FakeExtract) Extract(_ context.Context, _ string, fragments []model.Fra
 				SourceCode: payload.Source,
 				TargetCode: payload.Target,
 				Rel:        rel,
+				Via:        payload.Via, // mitigate 根因挂靠；非 mitigate 边由 service 忽略
 				FragmentID: fid,
 			})
 		}
