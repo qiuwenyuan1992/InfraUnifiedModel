@@ -8,15 +8,53 @@
     <template v-if="page === 'okb:list'">
       <section class="panel">
         <div class="panel-title">
-          <div><h2>知识总览</h2><span class="muted">按类型浏览库内全部知识，行内直达 trace / 证据 / 治理</span></div>
+          <div><h2>知识总览</h2><span class="muted">按场景或类型浏览库内全部知识</span></div>
           <div class="okb-toolbar">
-            <el-input v-model="listFilter.q" placeholder="搜索编码 / 名称 / signature" clearable class="okb-search" @keyup.enter="loadAllLists" />
-            <el-select v-model="listFilter.status" placeholder="全部状态" clearable class="okb-select">
-              <el-option label="curated" value="curated" /><el-option label="draft" value="draft" />
-            </el-select>
-            <el-button type="primary" :icon="Refresh" :loading="loading.list" @click="loadAllLists">刷新</el-button>
+            <el-radio-group v-model="listView" size="small">
+              <el-radio-button value="scenarios">场景卡片</el-radio-button>
+              <el-radio-button value="groups">分类列表</el-radio-button>
+            </el-radio-group>
+            <template v-if="listView === 'groups'">
+              <el-input v-model="listFilter.q" placeholder="搜索编码 / 名称 / signature" clearable class="okb-search" @keyup.enter="loadAllLists" />
+              <el-select v-model="listFilter.status" placeholder="全部状态" clearable class="okb-select">
+                <el-option label="curated" value="curated" /><el-option label="draft" value="draft" />
+              </el-select>
+              <el-button type="primary" :icon="Refresh" :loading="loading.list" @click="loadAllLists">刷新</el-button>
+            </template>
           </div>
         </div>
+
+        <!-- 场景卡片墙 -->
+        <div v-if="listView === 'scenarios'">
+          <el-empty v-if="scenarioCards && scenarioCards.length === 0"
+            description="尚无场景；场景是领域内有主题的知识分组，可经 POST /api/v1/scenarios 定义" :image-size="80" />
+          <div v-else class="okb-cards">
+            <div v-for="card in scenarioCards ?? []" :key="card.code" class="okb-card"
+              :style="{ '--domain-color': DOMAIN_COLORS[card.domain] ?? DOMAIN_COLORS.other }"
+              @click="doScenarioDetail(card.code)">
+              <div class="okb-card-head">
+                <i class="okb-card-dot" />
+                <span class="okb-card-name">{{ card.name }}</span>
+                <span class="muted">{{ domainLabel(card.domain) }}</span>
+              </div>
+              <div class="okb-card-desc">{{ card.description || card.code }}</div>
+              <div class="okb-card-stats">
+                <span><b>{{ card.node_count }}</b> 节点</span>
+                <span><b>{{ card.edge_count }}</b> 边<template v-if="card.draft_edges > 0">（含 {{ card.draft_edges }} 草稿）</template></span>
+                <span><b>{{ card.alert_count }}</b> 告警入口</span>
+                <span v-if="card.mitigation_count > 0"><b>{{ card.mitigation_count }}</b> 处置</span>
+              </div>
+              <div class="okb-card-health">
+                <el-progress :percentage="edgeHealth(card)" :stroke-width="6"
+                  :color="edgeHealth(card) === 100 ? '#38a078' : '#d79b35'" />
+                <span class="muted">{{ card.curated_edges }}/{{ card.edge_count }} 边已核</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分类折叠列表（原视图） -->
+        <template v-else>
         <el-collapse v-model="listOpen" class="okb-collapse">
           <el-collapse-item name="anomaly">
             <template #title>
@@ -140,7 +178,47 @@
             </el-table>
           </el-collapse-item>
         </el-collapse>
+        </template>
       </section>
+
+      <!-- 场景详情对话框 -->
+      <el-dialog v-model="scenarioVisible" :title="scenarioDetail?.scenario?.name" width="860px">
+        <div v-if="scenarioDetail">
+          <div class="okb-scenario-head">
+            <el-tag size="small">{{ domainLabel(scenarioDetail.scenario.domain) }}</el-tag>
+            <span class="muted">{{ scenarioDetail.scenario.description || scenarioDetail.scenario.code }}</span>
+          </div>
+          <div class="okb-section-name" style="margin:12px 0 6px">异常节点（{{ scenarioDetail.nodes.length }}）</div>
+          <el-table :data="scenarioDetail.nodes" size="small" class="task-table" row-key="id">
+            <el-table-column prop="stable_code" label="异常编码" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="name" label="名称" min-width="140" />
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }"><el-tag :type="row.status === 'curated' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag></template>
+            </el-table-column>
+            <el-table-column label="操作" width="130" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="goto('okb:query', row.stable_code, true)">trace</el-button>
+                <el-button link size="small" @click="doEvidence(row.stable_code)">证据</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="okb-section-name" style="margin:14px 0 6px">场景内因果边（{{ scenarioDetail.edges.length }}）</div>
+          <el-table :data="scenarioDetail.edges" size="small" class="task-table" row-key="id">
+            <el-table-column label="因果（源 → 目标）" min-width="260">
+              <template #default="{ row }"><span class="mono">{{ row.source_code }}</span><el-icon class="okb-arrow"><ArrowRight /></el-icon><span class="mono">{{ row.target_code }}</span></template>
+            </el-table-column>
+            <el-table-column label="类型" width="95">
+              <template #default="{ row }"><el-tag :type="row.edge_type === 'mitigate' ? '' : row.edge_type === 'indicate' ? 'info' : 'primary'" size="small">{{ edgeTypeLabel(row.edge_type) }}</el-tag></template>
+            </el-table-column>
+            <el-table-column label="证据等级" width="110">
+              <template #default="{ row }"><el-tag :type="levelTag(row.evidence_level)" size="small">{{ levelLabel(row.evidence_level) }}</el-tag></template>
+            </el-table-column>
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }"><el-tag :type="row.status === 'curated' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag></template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </el-dialog>
     </template>
 
     <!-- 知识图谱 -->
@@ -362,7 +440,7 @@ import * as echarts from 'echarts'
 import {
   okbApi, type LookupResult, type TraceResult, type EvidenceView,
   type IngestOutput, type ReportResult, type SourceKind, type Verdict, type GraphView,
-  type KnowledgeList, type KnowledgeRow, type MitigationRow,
+  type KnowledgeList, type KnowledgeRow, type MitigationRow, type ScenarioCard, type ScenarioDetail,
 } from '../api/okb'
 
 // page 由 App.vue 侧边栏驱动（okb:list / okb:graph / okb:query / okb:review / okb:ingest / okb:report）
@@ -459,6 +537,26 @@ async function loadAllLists() {
   } finally {
     loading.list = false
   }
+}
+
+// ---------- 场景卡片 ----------
+const listView = ref<'scenarios' | 'groups'>('scenarios')
+const scenarioCards = ref<ScenarioCard[] | null>(null)
+const scenarioVisible = ref(false)
+const scenarioDetail = ref<ScenarioDetail | null>(null)
+
+function edgeHealth(card: ScenarioCard): number {
+  return card.edge_count === 0 ? 0 : Math.round((card.curated_edges / card.edge_count) * 100)
+}
+
+async function loadScenarioCards() {
+  const res = await wrap('list', () => okbApi.scenarioCards())
+  if (res) scenarioCards.value = res.scenarios
+}
+
+async function doScenarioDetail(code: string) {
+  const detail = await wrap('list', () => okbApi.scenarioDetail(code))
+  if (detail) { scenarioDetail.value = detail; scenarioVisible.value = true }
 }
 
 // ---------- 查询 ----------
@@ -752,6 +850,7 @@ function hopClass(hop: { evaluations?: Array<{ result: string }> }): string {
 watch(() => props.page, page => {
   if (page !== 'okb:graph' && chart) { chart.dispose(); chart = null } // 容器随 v-show 常驻，但离开仍释放实例
   if (page === 'okb:list' && !listAnomaly.value) loadAllLists()
+  if (page === 'okb:list' && !scenarioCards.value) loadScenarioCards()
   if (page === 'okb:review' && !reviewEdges.value) doReviewQueue()
   if (page === 'okb:graph' && !graphLoaded.value) doGraph()
 }, { immediate: true })
@@ -795,4 +894,16 @@ onBeforeUnmount(() => { chart?.dispose(); chart = null })
 .okb-mitigations { margin-top: 14px; border-top: 1px solid #eef2f7; padding-top: 10px; }
 .okb-mitigations-title { margin-bottom: 8px; }
 .okb-mitigation-row { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 12px; }
+.okb-scenario-head { display: flex; gap: 10px; align-items: center; }
+.okb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-top: 18px; }
+.okb-card { --domain-color: #a0aec0; border: 1px solid #e5ebf2; border-top: 3px solid var(--domain-color); border-radius: 10px; padding: 14px 16px; cursor: pointer; background: #fbfcff; transition: box-shadow .15s, transform .15s; }
+.okb-card:hover { box-shadow: 0 4px 14px #3479df1a; transform: translateY(-2px); }
+.okb-card-head { display: flex; align-items: center; gap: 8px; }
+.okb-card-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--domain-color); }
+.okb-card-name { font-weight: 600; font-size: 14px; color: #203249; }
+.okb-card-desc { color: #7b899d; font-size: 12px; margin: 8px 0 10px; min-height: 32px; }
+.okb-card-stats { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: #52627a; }
+.okb-card-stats b { color: #203249; }
+.okb-card-health { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.okb-card-health .el-progress { flex: 1; }
 </style>

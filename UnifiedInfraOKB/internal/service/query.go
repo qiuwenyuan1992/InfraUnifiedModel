@@ -325,6 +325,170 @@ func (s *Service) ruleRows(rules []model.CausalRule) ([]KnowledgeRow, error) {
 	return rows, nil
 }
 
+// ---------- 场景 ----------
+
+// ScenarioCard 场景卡片：按场景聚合的统计视图（前端卡片墙用）。
+type ScenarioCard struct {
+	Code          string `json:"code"`
+	Name          string `json:"name"`
+	Domain        string `json:"domain"`
+	Description   string `json:"description"`
+	NodeCount     int    `json:"node_count"`
+	EdgeCount     int    `json:"edge_count"`       // 两端均在场景内的边
+	CuratedEdges  int    `json:"curated_edges"`
+	DraftEdges    int    `json:"draft_edges"`
+	AlertCount    int    `json:"alert_count"`       // 场景内节点关联的 distinct 告警入口
+	MitigationCount int  `json:"mitigation_count"` // 场景内 mitigate 边数
+}
+
+// ScenarioDetail 场景详情：成员节点与场景内边（行结构与知识清单同构）。
+type ScenarioDetail struct {
+	Scenario ScenarioCard  `json:"scenario"`
+	Nodes    []KnowledgeRow `json:"nodes"`
+	Edges    []KnowledgeRow `json:"edges"`
+}
+
+// ScenarioCards 全部场景卡片：领域 → 场景 → 知识的组织维度。
+func (s *Service) ScenarioCards() ([]ScenarioCard, error) {
+	scenarios, err := s.store.ListScenarios()
+	if err != nil {
+		return nil, fmt.Errorf("list scenarios: %w", err)
+	}
+	allRules, err := s.store.ListAllCausalRules(0)
+	if err != nil {
+		return nil, fmt.Errorf("list rules: %w", err)
+	}
+	allMaps, _, err := s.store.ListMappingsPage("", "", 1000, 0)
+	if err != nil {
+		return nil, fmt.Errorf("list mappings: %w", err)
+	}
+
+	cards := make([]ScenarioCard, 0, len(scenarios))
+	for _, sc := range scenarios {
+		members, err := s.store.ListScenarioNodes(sc.ID)
+		if err != nil {
+			return nil, fmt.Errorf("list scenario nodes: %w", err)
+		}
+		card := ScenarioCard{Code: sc.Code, Name: sc.Name, Domain: sc.Domain, Description: sc.Description, NodeCount: len(members)}
+		memberIDs := make(map[string]bool, len(members))
+		for _, m := range members {
+			memberIDs[m.AnomalyID] = true
+		}
+		for _, r := range allRules {
+			if memberIDs[r.SourceAnomalyID] && memberIDs[r.TargetAnomalyID] {
+				card.EdgeCount++
+				if r.Status == model.StatusCurated {
+					card.CuratedEdges++
+				} else {
+					card.DraftEdges++
+				}
+				if r.EdgeType == model.EdgeMitigate {
+					card.MitigationCount++
+				}
+			}
+		}
+		alerts := map[string]bool{}
+		for _, m := range allMaps {
+			if memberIDs[m.AnomalyID] {
+				alerts[m.AlertSignature] = true
+			}
+		}
+		card.AlertCount = len(alerts)
+		cards = append(cards, card)
+	}
+	return cards, nil
+}
+
+// ScenarioDetailByCode 单场景详情：成员节点行 + 场景内边行。
+func (s *Service) ScenarioDetailByCode(code string) (*ScenarioDetail, error) {
+	sc, err := s.store.GetScenarioByCode(code)
+	if err != nil {
+		return nil, err
+	}
+	members, err := s.store.ListScenarioNodes(sc.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list scenario nodes: %w", err)
+	}
+	detail := &ScenarioDetail{Nodes: []KnowledgeRow{}, Edges: []KnowledgeRow{}}
+	nodeRows := make([]model.AnomalyType, 0, len(members))
+	for _, m := range members {
+		if n, err := s.store.GetAnomalyByID(m.AnomalyID); err == nil {
+			nodeRows = append(nodeRows, *n)
+		}
+	}
+	// 节点行
+	for _, n := range nodeRows {
+		row := KnowledgeRow{ID: n.ID, Kind: "anomaly", StableCode: n.StableCode, Name: n.Name,
+			Category: n.Category, Status: n.Status, UpdatedAt: n.UpdatedAt.UTC().Format(time.RFC3339)}
+		if rev, err := s.store.LatestRevision(model.EntityAnomalyType, n.ID); err == nil {
+			row.RevisionID = rev.ID
+		}
+		detail.Nodes = append(detail.Nodes, row)
+	}
+	// 场景内边行（复用 ruleRows 的行结构）
+	memberIDs := make(map[string]bool, len(members))
+	for _, m := range members {
+		memberIDs[m.AnomalyID] = true
+	}
+	allRules, err := s.store.ListAllCausalRules(0)
+	if err != nil {
+		return nil, fmt.Errorf("list rules: %w", err)
+	}
+	inScenario := make([]model.CausalRule, 0)
+	for _, r := range allRules {
+		if memberIDs[r.SourceAnomalyID] && memberIDs[r.TargetAnomalyID] {
+			inScenario = append(inScenario, r)
+		}
+	}
+	edgeRows, err := s.ruleRows(inScenario)
+	if err != nil {
+		return nil, err
+	}
+	detail.Edges = edgeRows
+	// 卡片统计复用
+	cards, err := s.ScenarioCards()
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range cards {
+		if c.Code == code {
+			detail.Scenario = c
+			break
+		}
+	}
+	return detail, nil
+}
+
+// UpsertScenario 创建/更新场景（专家或管线显式定义；不做自动聚类）。
+func (s *Service) UpsertScenario(sc *model.Scenario) error {
+	if sc.Code == "" || sc.Name == "" {
+		return fmt.Errorf("scenario code and name are required")
+	}
+	_, err := s.store.GetOrCreateScenario(sc)
+	return err
+}
+
+// AssignScenarioNodes 把异常节点指派进场景（幂等；不存在的 stable_code 报错不静默跳过）。
+func (s *Service) AssignScenarioNodes(scenarioCode string, stableCodes []string, operator string) (int, error) {
+	sc, err := s.store.GetScenarioByCode(scenarioCode)
+	if err != nil {
+		return 0, err
+	}
+	assigned := 0
+	for _, code := range stableCodes {
+		n, err := s.store.GetAnomalyByCode(code)
+		if err != nil {
+			return assigned, fmt.Errorf("anomaly %s: %w", code, err)
+		}
+		if err := s.store.AddScenarioNode(sc.ID, n.ID); err != nil {
+			return assigned, fmt.Errorf("assign %s: %w", code, err)
+		}
+		assigned++
+	}
+	_ = operator // 审计记录后置 S3；先保持签名一致
+	return assigned, nil
+}
+
 // Lookup 告警入口：signature → 候选异常。draft 默认排除，includeDraft 须审核权限（由 handler 校验）。
 func (s *Service) Lookup(alertSignature string, includeDraft bool) (*LookupResult, error) {
 	status := model.StatusCurated
