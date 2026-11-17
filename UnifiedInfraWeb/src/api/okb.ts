@@ -123,9 +123,36 @@ export interface ReviewEdge {
   Confidence: number
 }
 
+// 整图视图（/api/v1/graph，可视化消费）
+export interface GraphNode {
+  id: string
+  stable_code: string
+  name: string
+  category: string
+  status: KnowledgeStatus
+  revision_id: string
+}
+
+export interface GraphEdge {
+  id: string
+  source: string
+  target: string
+  evidence_level: EvidenceLevel
+  confidence: number
+  status: KnowledgeStatus
+  review_flagged: boolean
+  case_support_count: number
+}
+
+export interface GraphView {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
+
 // ---------- API ----------
 
 export const okbApi = {
+  graph: (signal?: AbortSignal) => okbRequest<GraphView>('/graph', { signal }),
   lookup: (alertSignature: string, includeDraft = false, signal?: AbortSignal) =>
     okbRequest<LookupResult>(`/lookup?alert_signature=${encodeURIComponent(alertSignature)}${includeDraft ? '&include_draft=true' : ''}`, { signal }),
   trace: (anomalyCode: string, maxHops = 3, includeDraft = false, signal?: AbortSignal) =>

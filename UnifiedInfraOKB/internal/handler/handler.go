@@ -53,6 +53,7 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 
 // Routes 注册全部路由（路径与 api-boundaries.md 对齐）。
 func (h *Handler) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/graph", h.handleGraph)
 	mux.HandleFunc("GET /api/v1/lookup", h.handleLookup)
 	mux.HandleFunc("GET /api/v1/trace", h.handleTrace)
 	mux.HandleFunc("GET /api/v1/evidence", h.handleEvidence)
@@ -64,6 +65,16 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+}
+
+// handleGraph GET /api/v1/graph —— 整图视图（可视化消费）
+func (h *Handler) handleGraph(w http.ResponseWriter, r *http.Request) {
+	res, err := h.svc.Graph()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // handleLookup GET /api/v1/lookup?alert_signature=<sig>

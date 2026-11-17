@@ -88,6 +88,69 @@ type EvidenceItem struct {
 	CreatedBy    model.CreatorKind   `json:"created_by"`
 }
 
+// GraphView 整图视图：全部节点与边（图谱可视化消费）。
+type GraphView struct {
+	Nodes []GraphNode `json:"nodes"`
+	Edges []GraphEdge `json:"edges"`
+}
+
+// GraphNode 可视化节点。
+type GraphNode struct {
+	ID           string             `json:"id"`
+	StableCode   string             `json:"stable_code"`
+	Name         string             `json:"name"`
+	Category     string             `json:"category"`
+	Status       model.KnowledgeStatus `json:"status"`
+	RevisionID   string             `json:"revision_id"`
+}
+
+// GraphEdge 可视化边（源/目标用 stable_code，便于前端直连）。
+type GraphEdge struct {
+	ID            string               `json:"id"`
+	Source        string               `json:"source"`
+	Target        string               `json:"target"`
+	EvidenceLevel model.EvidenceLevel  `json:"evidence_level"`
+	Confidence    float64              `json:"confidence"`
+	Status        model.KnowledgeStatus `json:"status"`
+	ReviewFlagged bool                 `json:"review_flagged"`
+	CaseSupport   int                  `json:"case_support_count"`
+}
+
+// Graph 返回整图（节点 + 边），供前端力导向可视化。
+func (s *Service) Graph() (*GraphView, error) {
+	nodes, err := s.store.ListAllAnomalies(0)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+	rules, err := s.store.ListAllCausalRules(0)
+	if err != nil {
+		return nil, fmt.Errorf("list edges: %w", err)
+	}
+	codeByID := make(map[string]string, len(nodes))
+	view := &GraphView{Nodes: []GraphNode{}, Edges: []GraphEdge{}}
+	for _, n := range nodes {
+		codeByID[n.ID] = n.StableCode
+		gn := GraphNode{ID: n.ID, StableCode: n.StableCode, Name: n.Name, Category: n.Category, Status: n.Status}
+		if rev, err := s.store.LatestRevision(model.EntityAnomalyType, n.ID); err == nil {
+			gn.RevisionID = rev.ID
+		}
+		view.Nodes = append(view.Nodes, gn)
+	}
+	for _, r := range rules {
+		src, ok1 := codeByID[r.SourceAnomalyID]
+		dst, ok2 := codeByID[r.TargetAnomalyID]
+		if !ok1 || !ok2 {
+			continue // 孤儿边跳过
+		}
+		view.Edges = append(view.Edges, GraphEdge{
+			ID: r.ID, Source: src, Target: dst,
+			EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence,
+			Status: r.Status, ReviewFlagged: r.ReviewFlagged, CaseSupport: r.CaseSupportCount,
+		})
+	}
+	return view, nil
+}
+
 // Lookup 告警入口：signature → 候选异常。draft 默认排除，includeDraft 须审核权限（由 handler 校验）。
 func (s *Service) Lookup(alertSignature string, includeDraft bool) (*LookupResult, error) {
 	status := model.StatusCurated
