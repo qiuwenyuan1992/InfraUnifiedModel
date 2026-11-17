@@ -4,6 +4,29 @@
       title="OKB 服务不可达"
       :description="`${connectionError}——请确认 OKB 后端已启动（默认 :18090）且 Vite 代理已配置 /api → OKB。`" />
     <el-tabs v-model="tab">
+      <!-- 知识图谱：力导向可视化 -->
+      <el-tab-pane label="知识图谱" name="graph">
+        <div class="query-bar">
+          <el-button type="primary" :loading="loading.graph" @click="doGraph">加载故障知识图谱</el-button>
+          <el-checkbox v-model="graphIncludeDraft">显示草稿边</el-checkbox>
+          <span class="dim">节点 = 异常类型；连线 = 因果边（颜色按证据等级，粗细按置信度）</span>
+        </div>
+        <div ref="graphContainer" class="graph-container" v-loading="loading.graph"
+          element-loading-text="正在从 OKB 加载图谱…" />
+        <div v-if="graphLegend.length" class="graph-legend">
+          <span v-for="item in graphLegend" :key="item.label" class="legend-item">
+            <i :style="{ background: item.color }" />{{ item.label }}
+          </span>
+        </div>
+        <el-empty v-if="graphEmpty" description="图中没有节点，请先在资料摄取页入库工单" :image-size="80" />
+        <el-dialog v-model="nodeDialogVisible" :title="nodeDialogNode?.stable_code" width="480px">
+          <p v-if="nodeDialogNode">{{ nodeDialogNode.name }}（{{ nodeDialogNode.status }}）</p>
+          <div class="query-bar">
+            <el-button type="primary" size="small" @click="traceCode = nodeDialogNode!.stable_code; tab = 'query'; doTrace()">从该异常 trace</el-button>
+            <el-button size="small" @click="doEvidence(nodeDialogNode!.stable_code)">查看证据</el-button>
+          </div>
+        </el-dialog>
+      </el-tab-pane>
       <!-- 图谱查询：lookup + trace + evidence -->
       <el-tab-pane label="图谱查询" name="query">
         <div class="query-bar">
@@ -165,16 +188,100 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
+import * as echarts from 'echarts'
 import {
   okbApi, type LookupResult, type TraceResult, type EvidenceView,
-  type IngestOutput, type ReportResult, type ReviewEdge, type SourceKind, type Verdict,
+  type IngestOutput, type ReportResult, type ReviewEdge, type SourceKind, type Verdict, type GraphView,
 } from '../api/okb'
 
-const tab = ref('query')
-const loading = reactive({ lookup: false, trace: false, ingest: false, report: false, review: false })
+const tab = ref('graph')
+const loading = reactive({ lookup: false, trace: false, ingest: false, report: false, review: false, graph: false })
 const connectionError = ref('')
+
+// 图谱
+const graphContainer = ref<HTMLDivElement>()
+const graphIncludeDraft = ref(false)
+const graphEmpty = ref(false)
+const graphLegend = ref<Array<{ label: string; color: string }>>([])
+const nodeDialogVisible = ref(false)
+const nodeDialogNode = ref<GraphView['nodes'][number] | null>(null)
+let chart: echarts.ECharts | null = null
+
+const LEVEL_COLORS: Record<string, string> = {
+  case_verified: '#67c23a',
+  doc_explicit: '#e6a23c',
+  inferred: '#909399',
+  expert_only: '#b199df',
+}
+
+async function doGraph() {
+  const view = await wrap('graph', () => okbApi.graph())
+  if (!view) return
+  graphEmpty.value = view.nodes.length === 0
+  if (graphEmpty.value) return
+  renderGraph(view)
+}
+
+function renderGraph(view: GraphView) {
+  if (!graphContainer.value) return
+  if (!chart) chart = echarts.init(graphContainer.value)
+  const edgeVisible = (e: GraphView['edges'][number]) => graphIncludeDraft.value || e.status === 'curated'
+  const edges = view.edges.filter(edgeVisible)
+  const usedNodeIds = new Set<string>()
+  edges.forEach(e => { usedNodeIds.add(e.source); usedNodeIds.add(e.target) })
+  view.nodes.forEach(n => usedNodeIds.add(n.id))
+  const presentLevels = new Set(edges.map(e => e.evidence_level))
+  graphLegend.value = Array.from(presentLevels).map(level => ({
+    label: { case_verified: '案例实证', doc_explicit: '文档明示', inferred: '模型推导', expert_only: '专家经验' }[level] || level,
+    color: LEVEL_COLORS[level] || '#909399',
+  }))
+  chart.setOption({
+    tooltip: {
+      formatter: (params: { dataType: string; data: Record<string, unknown> & { source?: string; target?: string } }) => {
+        if (params.dataType === 'edge') {
+          const d = params.data
+          return `<b>${d.source} → ${d.target}</b><br/>证据：${String(d.evidence_level ?? '')} · 置信度 ${Number(d.confidence ?? 0).toFixed(2)}<br/>状态：${String(d.status ?? '')} · 印证 ${String(d.case_support_count ?? 0)} 工单`
+        }
+        const n = params.data
+        return `<b>${n.name}</b><br/>${String(n.stable_code ?? '')}<br/>状态：${String(n.status ?? '')}`
+      },
+    },
+    series: [{
+      type: 'graph', layout: 'force', roam: true, draggable: true,
+      force: { repulsion: 320, edgeLength: [90, 180], gravity: 0.08 },
+      label: { show: true, position: 'right', fontSize: 11, formatter: (p: { data: { name: string } }) => p.data.name },
+      edgeLabel: { show: false },
+      data: view.nodes.map(n => ({
+        id: n.stable_code, name: n.name, stable_code: n.stable_code, status: n.status,
+        category: n.category, symbolSize: 34,
+        itemStyle: { color: n.status === 'curated' ? '#409eff' : '#a0cfff' },
+      })),
+      edges: edges.map(e => ({
+        source: e.source, target: e.target, evidence_level: e.evidence_level,
+        confidence: e.confidence, status: e.status, case_support_count: e.case_support_count,
+        lineStyle: {
+          color: LEVEL_COLORS[e.evidence_level] || '#909399',
+          width: 1 + Math.round(e.confidence * 3),
+          type: e.status === 'curated' ? 'solid' : 'dashed',
+          curveness: 0.15,
+        },
+      })),
+      emphasis: { focus: 'adjacency' },
+    }],
+  })
+  chart.off('click')
+  chart.on('click', (params: echarts.ECElementEvent) => {
+    const data = (params.data ?? {}) as { stable_code?: string }
+    if (params.dataType === 'node' && data.stable_code) {
+      nodeDialogNode.value = view.nodes.find(n => n.stable_code === data.stable_code) ?? null
+      nodeDialogVisible.value = true
+    }
+  })
+}
+
+onBeforeUnmount(() => { chart?.dispose(); chart = null })
 
 // 查询
 const alertSignature = ref('')
@@ -302,6 +409,10 @@ function evalSummary(hop: { evaluations?: Array<{ result: string }> }): string {
 .evidence-summary { color: var(--el-text-color-secondary); font-size: 12px; margin-bottom: 4px; }
 .evidence-content { background: var(--el-fill-color-light); padding: 8px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-all; margin: 0; }
 .dim { color: var(--el-text-color-secondary); font-size: 12px; }
+.graph-container { width: 100%; height: 520px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
+.graph-legend { display: flex; gap: 16px; margin-top: 8px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--el-text-color-secondary); }
+.legend-item i { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
 .ingest-form, .report-form { max-width: 720px; }
 .ingest-result { margin-left: 12px; color: var(--el-color-success); font-size: 12px; }
 </style>

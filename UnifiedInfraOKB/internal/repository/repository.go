@@ -171,6 +171,26 @@ func (s *Store) SearchAnomalies(keyword string, limit int) ([]model.AnomalyType,
 	return list, err
 }
 
+// ListAllAnomalies 全部异常节点（图谱可视化视图用）。
+func (s *Store) ListAllAnomalies(limit int) ([]model.AnomalyType, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	var list []model.AnomalyType
+	err := s.DB.Limit(limit).Find(&list).Error
+	return list, err
+}
+
+// ListAllCausalRules 全部因果边（图谱可视化视图用）。
+func (s *Store) ListAllCausalRules(limit int) ([]model.CausalRule, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	var list []model.CausalRule
+	err := s.DB.Limit(limit).Find(&list).Error
+	return list, err
+}
+
 // CreateAlias 厂商别名登记（AI 建议）；ConfirmAlias 人工确认后才参与对齐。
 func (s *Store) CreateAlias(al *model.AnomalyAlias) error {
 	al.ID = NewID()
