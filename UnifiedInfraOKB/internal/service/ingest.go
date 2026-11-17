@@ -185,6 +185,14 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 			SourceAnomalyID: srcNode.ID, TargetAnomalyID: dstNode.ID,
 			EdgeType: c.Rel, Conditions: condJSON, EvidenceLevel: level, Confidence: 0.5,
 		}
+		// mitigate 根因挂靠：via 节点必须存在；非 mitigate 边忽略 via（语义不混用）
+		if c.Rel == model.EdgeMitigate && c.Via != "" {
+			viaNode, err := s.store.GetAnomalyByCode(c.Via)
+			if err != nil {
+				return nil, fmt.Errorf("mitigate via root cause %s unresolved: %w", c.Via, err)
+			}
+			rule.MitigatedViaRootCause = &viaNode.ID
+		}
 		created, err := s.store.GetOrCreateCausalRule(rule)
 		if err != nil {
 			return nil, fmt.Errorf("accept causal rule %s->%s: %w", c.SourceCode, c.TargetCode, err)

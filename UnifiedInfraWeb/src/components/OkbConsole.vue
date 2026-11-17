@@ -250,13 +250,24 @@
           <el-button type="primary" size="small" @click="goto('okb:query', nodeDialogNode!.stable_code, true)">从该异常 trace</el-button>
           <el-button size="small" @click="doEvidence(nodeDialogNode!.stable_code)">查看证据</el-button>
           <el-button size="small" :loading="loading.mitigations" @click="doMitigations(nodeDialogNode!.stable_code)">处置建议</el-button>
+          <el-button size="small" :loading="loading.indications" @click="doIndications(nodeDialogNode!.stable_code, 'incoming')">症状反查</el-button>
         </div>
         <div v-if="mitigations.length" class="okb-mitigations">
           <div class="muted okb-mitigations-title">缓解该异常的处置手段（mitigate 边）</div>
           <div v-for="m in mitigations" :key="m.edge_id" class="okb-mitigation-row">
             <span class="okb-hop-name">{{ m.mitigation_name }}</span>
+            <el-tag v-if="m.via_root_cause" type="warning" size="small">根因为 {{ m.via_root_cause }} 时</el-tag>
             <el-tag :type="levelTag(m.evidence_level)" size="small">{{ levelLabel(m.evidence_level) }}</el-tag>
             <span class="muted">置信度 {{ m.confidence.toFixed(2) }} · 印证 {{ m.case_support_count }} 工单</span>
+          </div>
+        </div>
+        <div v-if="indications.length" class="okb-mitigations">
+          <div class="muted okb-mitigations-title">该症状可能指示的根因（indicate 反查）</div>
+          <div v-for="ind in indications" :key="ind.edge_id" class="okb-mitigation-row">
+            <el-tag :type="levelTag(ind.evidence_level)" size="small">{{ levelLabel(ind.evidence_level) }}</el-tag>
+            <span class="okb-hop-name">{{ ind.other_name }}</span>
+            <span class="muted mono">{{ ind.other_code }}</span>
+            <el-button link type="primary" size="small" @click="goto('okb:query', ind.other_code, true)">trace</el-button>
           </div>
         </div>
       </el-dialog>
@@ -324,6 +335,7 @@
               <el-icon v-if="j < chain.hops.length - 1" class="okb-arrow"><ArrowRight /></el-icon>
             </template>
             <el-button link type="primary" size="small" @click="doEvidence(chain.hops[chain.hops.length - 1].edge_id)">边证据</el-button>
+            <el-button link size="small" @click="chainMitigations(chain)">处置</el-button>
           </div>
           <div v-if="chain.combined_note" class="okb-chain-note">{{ chain.combined_note }}</div>
         </div>
@@ -441,16 +453,17 @@ import { ElMessage } from 'element-plus'
 import { Warning, Link, Bell, CircleCheck, ArrowRight, Refresh } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import {
-  okbApi, type LookupResult, type TraceResult, type EvidenceView,
+  okbApi, type LookupResult, type TraceResult, type TraceChain, type EvidenceView,
   type IngestOutput, type ReportResult, type SourceKind, type Verdict, type GraphView,
   type KnowledgeList, type KnowledgeRow, type MitigationRow, type ScenarioCard, type ScenarioDetail,
+  type IndicationRow,
 } from '../api/okb'
 
 // page 由 App.vue 侧边栏驱动（okb:list / okb:graph / okb:query / okb:review / okb:ingest / okb:report）
 const props = defineProps<{ page: string }>()
 const emit = defineEmits<{ (e: 'navigate', page: string): void }>()
 
-const loading = reactive({ lookup: false, trace: false, ingest: false, report: false, review: false, graph: false, list: false, mitigations: false })
+const loading = reactive({ lookup: false, trace: false, ingest: false, report: false, review: false, graph: false, list: false, mitigations: false, indications: false })
 const connectionError = ref('')
 
 // 统一错误提示：网络失败（fetch 抛 TypeError）标记连接错误，其余弹消息
@@ -754,10 +767,29 @@ function renderGraph(view: GraphView) {
 // ---------- 处置建议 ----------
 const mitigations = ref<MitigationRow[]>([])
 
-async function doMitigations(code: string) {
+async function doMitigations(code: string, rootCauseCode?: string) {
   mitigations.value = []
-  const res = await wrap('mitigations', () => okbApi.mitigations(code, true))
+  const res = await wrap('mitigations', () => okbApi.mitigations(code, rootCauseCode, true))
   if (res) mitigations.value = res.mitigations
+}
+
+// ---------- 症状反查 ----------
+const indications = ref<IndicationRow[]>([])
+
+async function doIndications(code: string, direction: 'incoming' | 'outgoing') {
+  indications.value = []
+  const res = await wrap('indications', () => okbApi.indications(code, direction, true))
+  if (res) indications.value = res.indications
+}
+
+// trace 链处置：以链尾（候选根因）为被缓解异常、起点为根因挂靠过滤处置建议
+async function chainMitigations(chain: TraceChain) {
+  if (chain.hops.length === 0) return
+  const start = traceCode.value.trim()
+  const target = chain.hops[chain.hops.length - 1].target_stable_code
+  await doMitigations(target, start)
+  nodeDialogNode.value = { id: '', stable_code: target, name: target, category: '', status: 'curated', revision_id: '' }
+  nodeDialogVisible.value = true
 }
 
 // ---------- 摄取 ----------
