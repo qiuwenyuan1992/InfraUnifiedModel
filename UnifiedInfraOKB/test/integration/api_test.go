@@ -58,7 +58,7 @@ func TestA1IngestAndTraceback(t *testing.T) {
 
 	// 证据回链：边的证据必须指向片段
 	node, _ := svc.Store().GetAnomalyByCode("gpu.ecc.error")
-	edges, err := svc.Store().ListEdgesFrom(node.ID, "")
+	edges, err := svc.Store().ListEdgesFrom(node.ID, "", "")
 	if err != nil || len(edges) != 1 {
 		t.Fatalf("list edges: %v len=%d", err, len(edges))
 	}
@@ -100,7 +100,7 @@ func TestA3Corroboration(t *testing.T) {
 		t.Fatalf("ingest 1: %v", err)
 	}
 	src, _ := svc.Store().GetAnomalyByCode("a.source")
-	edges, _ := svc.Store().ListEdgesFrom(src.ID, "")
+	edges, _ := svc.Store().ListEdgesFrom(src.ID, "", "")
 	if len(edges) != 1 || edges[0].Status != model.StatusDraft {
 		t.Fatalf("first case must leave edge draft: %+v", edges)
 	}
@@ -112,7 +112,7 @@ func TestA3Corroboration(t *testing.T) {
 	if out.CuratedRules != 1 {
 		t.Fatalf("second independent case must auto-curate edge: %+v", out)
 	}
-	edges, _ = svc.Store().ListEdgesFrom(src.ID, "")
+	edges, _ = svc.Store().ListEdgesFrom(src.ID, "", "")
 	if edges[0].Status != model.StatusCurated || edges[0].CaseSupportCount != 2 {
 		t.Fatalf("edge must be curated with support 2: %+v", edges[0])
 	}
@@ -121,7 +121,7 @@ func TestA3Corroboration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest 3: %v", err)
 	}
-	edges, _ = svc.Store().ListEdgesFrom(src.ID, "")
+	edges, _ = svc.Store().ListEdgesFrom(src.ID, "", "")
 	if edges[0].CaseSupportCount != 3 || edges[0].Status != model.StatusCurated {
 		t.Fatalf("support should count distinct sources: %+v", edges[0])
 	}
@@ -319,7 +319,7 @@ func TestA6EvidenceFullContent(t *testing.T) {
 		t.Fatalf("ingest: %v", err)
 	}
 	node, _ := svc.Store().GetAnomalyByCode("perm.a")
-	edges, _ := svc.Store().ListEdgesFrom(node.ID, "")
+	edges, _ := svc.Store().ListEdgesFrom(node.ID, "", "")
 	edgeID := edges[0].ID
 
 	// 权限门槛移除后：摘要与原文均直返
@@ -371,6 +371,67 @@ func TestA7NodeAlignment(t *testing.T) {
 	if len(l1.Candidates) != 1 || len(l2.Candidates) != 1 || l1.Candidates[0].AnomalyID != l2.Candidates[0].AnomalyID {
 		t.Fatalf("aliases must map to the same node: l1=%+v l2=%+v", l1.Candidates, l2.Candidates)
 	}
+}
+
+// TestA9EdgeTypes 边语义类型：mitigate 不污染 trace；处置查询可用；同节点对可并存多语义边。
+func TestA9EdgeTypes(t *testing.T) {
+	svc := newTestService(t)
+	// 建三个节点：手段、根因、症状
+	for _, n := range []*model.AnomalyType{
+		{StableCode: "et.replace_module", Name: "更换光模块"},
+		{StableCode: "et.link.degraded", Name: "链路降级"},
+		{StableCode: "et.traffic_alarm", Name: "流量告警"},
+	} {
+		if _, err := svc.Store().GetOrCreateAnomaly(n); err != nil {
+			t.Fatalf("create node %s: %v", n.StableCode, err)
+		}
+	}
+	// 三条不同语义的边
+	mitigate := &model.CausalRule{SourceAnomalyID: nodeID(t, svc, "et.replace_module"), TargetAnomalyID: nodeID(t, svc, "et.link.degraded"), EdgeType: model.EdgeMitigate, EvidenceLevel: model.EvidenceCaseVerified, Status: model.StatusCurated}
+	indicate := &model.CausalRule{SourceAnomalyID: nodeID(t, svc, "et.link.degraded"), TargetAnomalyID: nodeID(t, svc, "et.traffic_alarm"), EdgeType: model.EdgeIndicate, EvidenceLevel: model.EvidenceDocExplicit, Status: model.StatusCurated}
+	trigger := &model.CausalRule{SourceAnomalyID: nodeID(t, svc, "et.replace_module"), TargetAnomalyID: nodeID(t, svc, "et.link.degraded"), EdgeType: model.EdgeTrigger, EvidenceLevel: model.EvidenceCaseVerified, Status: model.StatusCurated}
+	for _, e := range []*model.CausalRule{mitigate, indicate, trigger} {
+		if _, err := svc.Store().GetOrCreateCausalRule(e); err != nil {
+			t.Fatalf("create edge: %v", err)
+		}
+	}
+
+	// trace 从"更换光模块"出发：只应得到 trigger 边到链路降级；mitigate/indicate 不入根因链
+	trace, err := svc.Trace("et.replace_module", 3, 5, nil, false)
+	if err != nil {
+		t.Fatalf("trace: %v", err)
+	}
+	if len(trace.Chains) != 1 || len(trace.Chains[0].Hops) != 1 {
+		t.Fatalf("trace must walk trigger edge only: %+v", trace.Chains)
+	}
+	if trace.Chains[0].Hops[0].TargetCode != "et.link.degraded" {
+		t.Fatalf("unexpected trace target: %+v", trace.Chains[0].Hops[0])
+	}
+
+	// 处置查询：链路降级 → 更换光模块
+	rows, err := svc.Mitigations("et.link.degraded", false)
+	if err != nil || len(rows) != 1 || rows[0].MitigationCode != "et.replace_module" {
+		t.Fatalf("mitigations: %+v err=%v", rows, err)
+	}
+	if rows[0].EvidenceLevel != model.EvidenceCaseVerified || rows[0].Status != model.StatusCurated {
+		t.Fatalf("mitigation row: %+v", rows[0])
+	}
+
+	// 同节点对并存两条边：trigger + mitigate（幂等键含 EdgeType）
+	all, err := svc.Store().ListEdgesFrom(nodeID(t, svc, "et.replace_module"), "", "")
+	if err != nil || len(all) != 2 {
+		t.Fatalf("same pair must hold trigger+mitigate edges: %d err=%v", len(all), err)
+	}
+}
+
+// nodeID 按 stable_code 取节点 ID（A9 辅助）。
+func nodeID(t *testing.T, svc *service.Service, code string) string {
+	t.Helper()
+	n, err := svc.Store().GetAnomalyByCode(code)
+	if err != nil {
+		t.Fatalf("get node %s: %v", code, err)
+	}
+	return n.ID
 }
 
 // TestA8KnowledgeListGraphReview 知识清单/整图/复核队列端点：分页、过滤、行结构与回链。
@@ -440,7 +501,7 @@ func TestA8KnowledgeListGraphReview(t *testing.T) {
 	if q, _ := svc.ReviewQueue(10); len(q) != 0 {
 		t.Fatalf("review queue should be empty: %+v", q)
 	}
-	edges, _ := svc.Store().ListEdgesFrom(mustAnomalyID(t, svc, "list.a"), "")
+	edges, _ := svc.Store().ListEdgesFrom(mustAnomalyID(t, svc, "list.a"), "", "")
 	if _, err := svc.Report(service.ReportInput{DiagnosisRef: "d1", EdgeID: edges[0].ID, Verdict: model.VerdictRejected}); err != nil {
 		t.Fatalf("report: %v", err)
 	}

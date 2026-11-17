@@ -34,10 +34,12 @@ type AnomalyCandidate struct {
 	FragmentID string   `json:"fragment_id"` // 出处回链
 }
 
-// CausalChainCandidate 因果边候选。
+// CausalChainCandidate 因果边候选。Rel 为边语义类型（trigger/mitigate/indicate/prevent），
+// 缺省 trigger；由数据源语义决定，不由提取器臆造。
 type CausalChainCandidate struct {
 	SourceCode string              `json:"source_code"`
 	TargetCode string              `json:"target_code"`
+	Rel        model.EdgeType      `json:"rel,omitempty"`
 	Conditions []model.ConditionClause `json:"conditions,omitempty"`
 	FragmentID string              `json:"fragment_id"`
 }
@@ -74,6 +76,7 @@ func (f *FakeExtract) Extract(_ context.Context, _ string, fragments []model.Fra
 			Alert   string   `json:"alert"`
 			Source  string   `json:"source"`
 			Target  string   `json:"target"`
+			Rel     string   `json:"rel"`
 		}
 		if err := json.Unmarshal([]byte(frag.Content), &payload); err != nil {
 			// 片段不是结构化标记，跳过，不生成候选
@@ -90,9 +93,17 @@ func (f *FakeExtract) Extract(_ context.Context, _ string, fragments []model.Fra
 			})
 		}
 		if payload.Source != "" && payload.Target != "" {
+			// rel 仅接受受控枚举，非法值回退 trigger（不臆造语义）
+			rel := model.EdgeType(payload.Rel)
+			switch rel {
+			case model.EdgeTrigger, model.EdgeMitigate, model.EdgeIndicate, model.EdgePrevent:
+			default:
+				rel = model.EdgeTrigger
+			}
 			res.CausalChains = append(res.CausalChains, CausalChainCandidate{
 				SourceCode: payload.Source,
 				TargetCode: payload.Target,
+				Rel:        rel,
 				FragmentID: fid,
 			})
 		}

@@ -138,7 +138,7 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 		}
 		rule := &model.CausalRule{
 			SourceAnomalyID: srcNode.ID, TargetAnomalyID: dstNode.ID,
-			Conditions: condJSON, EvidenceLevel: level, Confidence: 0.5,
+			EdgeType: c.Rel, Conditions: condJSON, EvidenceLevel: level, Confidence: 0.5,
 		}
 		created, err := s.store.GetOrCreateCausalRule(rule)
 		if err != nil {
