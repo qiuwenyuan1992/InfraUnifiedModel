@@ -107,6 +107,7 @@ export interface IngestOutput {
   new_rules: number
   new_mappings: number
   curated_rules: number
+  duplicate_content?: boolean // 同内容已入库：本次未新增证据（不虚增印证）
 }
 
 export interface ReportResult {

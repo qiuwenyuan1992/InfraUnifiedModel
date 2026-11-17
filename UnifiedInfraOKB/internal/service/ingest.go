@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"UnifiedInfraOKB/internal/model"
+	"UnifiedInfraOKB/internal/repository"
 )
 
 // IngestInput 摄取一份资料（internal_case/vendor_doc/expert_input）。
@@ -52,14 +53,15 @@ func domainFromCode(code string) string {
 
 // IngestOutput 摄取结果：登记与接纳统计。
 type IngestOutput struct {
-	SourceID        string
-	SourceVersionID string
-	ParsedVersionID string
-	ExtractedModel  string
-	NewAnomalies    int
-	NewRules        int
-	NewMappings     int
-	CuratedRules    int // 本次自动升 curated 的边数
+	SourceID        string `json:"source_id"`
+	SourceVersionID string `json:"source_version_id"`
+	ParsedVersionID string `json:"parsed_version_id"`
+	ExtractedModel  string `json:"extracted_model"`
+	NewAnomalies    int    `json:"new_anomalies"`
+	NewRules        int    `json:"new_rules"`
+	NewMappings     int    `json:"new_mappings"`
+	CuratedRules    int    `json:"curated_rules"` // 本次自动升 curated 的边数
+	DuplicateContent bool  `json:"duplicate_content"` // 同内容已入库：本次不新增证据（防重复提交虚增印证）
 }
 
 // Ingest 一条龙摄取：脱敏校验门禁 → 登记来源 → 固定版本 → 提取 → 接纳候选。
@@ -70,6 +72,17 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 	}
 	if ok, reason := SanitizeCheck(in.Content); !ok {
 		return nil, fmt.Errorf("sensitivity check failed: %s", reason)
+	}
+
+	// 内容寻址查重：同内容（=同一份知识素材）重复提交时不登记来源、不新增证据。
+	// 印证的"独立性"指不同内容的来源；同内容重复提交会虚增印证计数、误触发自动升级。
+	// 重新解析（新 parser 版本对同一原件）走解析版本工作流，不属于摄取。
+	sum := sha256.Sum256([]byte(in.Content))
+	contentHash := fmt.Sprintf("%x", sum)
+	if _, err := s.store.SourceVersionByHash(contentHash); err == nil {
+		return &IngestOutput{DuplicateContent: true}, nil
+	} else if err != repository.ErrNotFound {
+		return nil, fmt.Errorf("check duplicate: %w", err)
 	}
 
 	// 1. 登记来源（过门禁后 sensitivity_cleared=true）
@@ -84,8 +97,7 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 	}
 
 	// 2. 原件版本（内容寻址）+ 解析版本
-	sum := sha256.Sum256([]byte(in.Content))
-	sv := &model.SourceVersion{SourceID: src.ID, ContentHash: fmt.Sprintf("%x", sum)}
+	sv := &model.SourceVersion{SourceID: src.ID, ContentHash: contentHash}
 	if err := s.store.CreateSourceVersion(sv); err != nil {
 		return nil, fmt.Errorf("create source version: %w", err)
 	}
@@ -191,9 +203,10 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 			if err != nil {
 				return nil, fmt.Errorf("add causal evidence: %w", err)
 			}
-			// 印证计数：独立来源支撑达到阈值自动升 curated（requirements.md 5.2）
+			// 印证计数：独立来源支撑达到阈值自动升 curated（requirements.md 5.2）。
+			// ReviewFlagged 的边是反馈飞轮否决过的——须专家确认恢复，摄取不得绕过复核队列。
 			rule.CaseSupportCount = support
-			if support >= s.cfg.CaseCurateThreshold && rule.Status == model.StatusDraft {
+			if support >= s.cfg.CaseCurateThreshold && rule.Status == model.StatusDraft && !rule.ReviewFlagged {
 				rule.Status = model.StatusCurated
 				out.CuratedRules++
 				if err := s.appendRevision(model.EntityCausalRule, rule.ID, rule, in.OperatorID,
@@ -235,8 +248,9 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 			if err != nil {
 				return nil, fmt.Errorf("add mapping evidence: %w", err)
 			}
-			// 印证计数：告警映射与因果边同规则升级（lookup 默认只返回 curated）
-			if support >= s.cfg.CaseCurateThreshold && mapping.Status == model.StatusDraft {
+			// 印证计数：告警映射与因果边同规则升级（lookup 默认只返回 curated）；
+			// ReviewFlagged 守卫同边——否决过的映射须专家确认，不得被摄取静默恢复。
+			if support >= s.cfg.CaseCurateThreshold && mapping.Status == model.StatusDraft && !mapping.ReviewFlagged {
 				mapping.Status = model.StatusCurated
 				if err := s.appendRevision(model.EntityAlertMapping, mapping.ID, mapping, in.OperatorID,
 					fmt.Sprintf("auto-curated: %d independent sources", support)); err != nil {

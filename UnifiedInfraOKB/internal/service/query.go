@@ -525,8 +525,10 @@ func (s *Service) Lookup(alertSignature string, includeDraft bool) (*LookupResul
 // Trace 候选根因链遍历：从起始异常沿出边 BFS，条件求值，输出 top-k 链。
 // facts 为调用方已知观测；求值失败的边不可走（防止可能性被放大成必然性）。
 func (s *Service) Trace(startCode string, maxHops, topK int, facts map[string]interface{}, includeDraft bool) (*TraceResult, error) {
-	if maxHops <= 0 || maxHops > s.cfg.MaxHops {
-		maxHops = s.cfg.MaxHops
+	if maxHops <= 0 {
+		maxHops = s.cfg.MaxHops // 缺省取配置默认（3）；显式传值允许超过默认
+	} else if maxHops > 10 {
+		maxHops = 10 // 硬上限防滥用；cfg.MaxHops 是缺省值而非用户上限
 	}
 	if topK <= 0 || topK > 20 {
 		topK = s.cfg.TopK
