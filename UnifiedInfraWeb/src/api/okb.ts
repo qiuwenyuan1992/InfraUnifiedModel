@@ -115,14 +115,6 @@ export interface ReportResult {
   review_flagged: boolean
 }
 
-export interface ReviewEdge {
-  ID: string
-  SourceAnomalyID: string
-  TargetAnomalyID: string
-  Status: KnowledgeStatus
-  Confidence: number
-}
-
 // 整图视图（/api/v1/graph，可视化消费）
 export interface GraphNode {
   id: string
@@ -197,7 +189,7 @@ export const okbApi = {
   ingest: (payload: { kind: SourceKind; title: string; content: string }) =>
     okbRequest<IngestOutput>('/sources', { method: 'POST', body: JSON.stringify(payload) }),
   reviewQueue: (limit = 50, signal?: AbortSignal) =>
-    okbRequest<{ edges: ReviewEdge[] }>(`/review/queue?limit=${limit}`, { signal }),
+    okbRequest<{ edges: KnowledgeRow[] }>(`/review/queue?limit=${limit}`, { signal }),
   confirmEdge: (edgeId: string) =>
     okbRequest<{ status: string }>(`/edges/${encodeURIComponent(edgeId)}/confirm`, { method: 'POST' }),
   rejectEdge: (edgeId: string) =>

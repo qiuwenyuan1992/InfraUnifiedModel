@@ -289,7 +289,7 @@ func TestA5Feedback(t *testing.T) {
 		t.Fatalf("reject must degrade and flag: %+v err=%v", r3, err)
 	}
 	queue, err := svc.ReviewQueue(10)
-	if err != nil || len(queue) != 1 || queue[0].ID != rule.ID {
+	if err != nil || len(queue) != 1 || queue[0].ID != rule.ID || queue[0].SourceCode != "fb.a" {
 		t.Fatalf("rejected edge must enter review queue: %+v err=%v", queue, err)
 	}
 
@@ -371,6 +371,102 @@ func TestA7NodeAlignment(t *testing.T) {
 	if len(l1.Candidates) != 1 || len(l2.Candidates) != 1 || l1.Candidates[0].AnomalyID != l2.Candidates[0].AnomalyID {
 		t.Fatalf("aliases must map to the same node: l1=%+v l2=%+v", l1.Candidates, l2.Candidates)
 	}
+}
+
+// TestA8KnowledgeListGraphReview 知识清单/整图/复核队列端点：分页、过滤、行结构与回链。
+func TestA8KnowledgeListGraphReview(t *testing.T) {
+	svc := newTestService(t)
+	content := caseContent("ALERT-L", "list.a", "A", "list.a", "list.b")
+	for i := 1; i <= 2; i++ {
+		if _, err := svc.Ingest(context.Background(), service.IngestInput{Kind: model.SourceInternalCase, Title: "清单工单", Content: content}); err != nil {
+			t.Fatalf("ingest %d: %v", i, err)
+		}
+	}
+
+	// 异常清单：2 行，钉修订
+	anomalies, err := svc.Knowledge("anomaly", "", "", 10, 0)
+	if err != nil || anomalies.Total != 2 || len(anomalies.Rows) != 2 {
+		t.Fatalf("knowledge anomaly: %+v err=%v", anomalies, err)
+	}
+	for _, row := range anomalies.Rows {
+		if row.RevisionID == "" {
+			t.Fatal("anomaly row must pin revision_id")
+		}
+	}
+	// 分页：limit=1 只出一行，total 仍是 2
+	page1, _ := svc.Knowledge("anomaly", "", "", 1, 0)
+	if len(page1.Rows) != 1 || page1.Total != 2 {
+		t.Fatalf("pagination: %+v", page1)
+	}
+	// 关键字过滤
+	filtered, _ := svc.Knowledge("anomaly", "", "list.b", 10, 0)
+	if filtered.Total != 1 || filtered.Rows[0].StableCode != "list.b" {
+		t.Fatalf("filter: %+v", filtered)
+	}
+	// 片段偏移回链：第二块 CharStart 必须指向原文真实位置，不再是 0
+	frag := firstFragment(t, svc)
+	if frag.CharStart < 0 || frag.CharEnd <= frag.CharStart {
+		t.Fatalf("fragment offsets invalid: start=%d end=%d", frag.CharStart, frag.CharEnd)
+	}
+
+	// 因果边清单：源/目标编码已解析，2 工单印证后 curated
+	rules, err := svc.Knowledge("rule", "", "", 10, 0)
+	if err != nil || rules.Total != 1 {
+		t.Fatalf("knowledge rule: %+v err=%v", rules, err)
+	}
+	r0 := rules.Rows[0]
+	if r0.SourceCode != "list.a" || r0.TargetCode != "list.b" || r0.Status != model.StatusCurated ||
+		r0.EvidenceLevel != model.EvidenceCaseVerified || r0.CaseSupport != 2 {
+		t.Fatalf("rule row: %+v", r0)
+	}
+
+	// 映射清单
+	maps, _ := svc.Knowledge("mapping", "", "", 10, 0)
+	if maps.Total != 1 || maps.Rows[0].AlertSignature != "ALERT-L" ||
+		maps.Rows[0].StableCode != "list.a" || maps.Rows[0].Status != model.StatusCurated {
+		t.Fatalf("mapping rows: %+v", maps)
+	}
+
+	// 整图
+	g, err := svc.Graph()
+	if err != nil || len(g.Nodes) != 2 || len(g.Edges) != 1 {
+		t.Fatalf("graph: %+v err=%v", g, err)
+	}
+	if g.Edges[0].Source != "list.a" || g.Edges[0].Target != "list.b" || g.Edges[0].Status != model.StatusCurated {
+		t.Fatalf("graph edge: %+v", g.Edges[0])
+	}
+
+	// 复核队列：初始为空；否决后一行，snake_case 且源/目标可读
+	if q, _ := svc.ReviewQueue(10); len(q) != 0 {
+		t.Fatalf("review queue should be empty: %+v", q)
+	}
+	edges, _ := svc.Store().ListEdgesFrom(mustAnomalyID(t, svc, "list.a"), "")
+	if _, err := svc.Report(service.ReportInput{DiagnosisRef: "d1", EdgeID: edges[0].ID, Verdict: model.VerdictRejected}); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	q, err := svc.ReviewQueue(10)
+	if err != nil || len(q) != 1 || q[0].SourceCode != "list.a" || q[0].TargetCode != "list.b" || !q[0].ReviewFlagged {
+		t.Fatalf("review queue rows: %+v err=%v", q, err)
+	}
+}
+
+func mustAnomalyID(t *testing.T, svc *service.Service, code string) string {
+	t.Helper()
+	node, err := svc.Store().GetAnomalyByCode(code)
+	if err != nil {
+		t.Fatalf("get anomaly %s: %v", code, err)
+	}
+	return node.ID
+}
+
+// firstFragment 取库里第一个非零偏移片段，验证 CharStart 回链定位真实有效。
+func firstFragment(t *testing.T, svc *service.Service) model.Fragment {
+	t.Helper()
+	var frags []model.Fragment
+	if err := svc.Store().DB.Where("char_start > 0 OR char_end > 0").Order("char_start ASC").Limit(5).Find(&frags).Error; err != nil || len(frags) == 0 {
+		t.Fatalf("query fragments: %v len=%d", err, len(frags))
+	}
+	return frags[len(frags)-1] // 末块偏移必然 >0，验证累积定位
 }
 
 func countRevisions(t *testing.T, svc *service.Service, et model.EntityType, entityID string) int {
