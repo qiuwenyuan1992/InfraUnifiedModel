@@ -20,10 +20,10 @@ type ReportInput struct {
 
 // ReportResult report 原语输出。
 type ReportResult struct {
-	Recorded     bool   // false = 重复上报（幂等忽略）
-	NewConfidence float64
-	NewStatus    model.KnowledgeStatus
-	ReviewFlagged bool
+	Recorded      bool                 `json:"recorded"`       // false = 重复上报（幂等忽略）
+	NewConfidence float64             `json:"new_confidence"`
+	NewStatus     model.KnowledgeStatus `json:"new_status"`
+	ReviewFlagged bool                 `json:"review_flagged"`
 }
 
 // Report 处理一条反馈：

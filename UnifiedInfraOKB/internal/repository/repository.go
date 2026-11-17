@@ -90,6 +90,20 @@ func (s *Store) CreateSourceVersion(sv *model.SourceVersion) error {
 	return s.DB.Create(sv).Error
 }
 
+// SourceVersionByHash 内容寻址查重：同哈希原件版本是否已存在。
+// 印证的"独立性"以内容为准——同内容重复提交不得虚增印证计数。
+func (s *Store) SourceVersionByHash(hash string) (*model.SourceVersion, error) {
+	var sv model.SourceVersion
+	err := s.DB.First(&sv, "content_hash = ?", hash).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &sv, nil
+}
+
 // CreateParsedVersion 解析版本：绑定固定原件版本。
 func (s *Store) CreateParsedVersion(pv *model.ParsedVersion) error {
 	pv.ID = NewID()

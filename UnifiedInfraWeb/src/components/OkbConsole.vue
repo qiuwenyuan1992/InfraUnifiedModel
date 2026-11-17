@@ -771,7 +771,11 @@ async function doIngest() {
   const out = await wrap('ingest', () => okbApi.ingest({ ...ingest }))
   if (out) {
     ingestResult.value = out
-    ElMessage.success('摄取成功')
+    if (out.duplicate_content) {
+      ElMessage.warning('该内容已入库过，本次未新增证据（印证不重复计数）')
+    } else {
+      ElMessage.success('摄取成功')
+    }
   }
 }
 
