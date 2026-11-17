@@ -177,11 +177,23 @@ export interface MitigationRow {
   mitigation_code: string
   mitigation_name: string
   edge_id: string
+  via_root_cause?: string // 根因挂靠：非空时仅当诊断根因为此才建议
   evidence_level: EvidenceLevel
   confidence: number
   status: KnowledgeStatus
   case_support_count: number
   fragment_ref: string
+}
+
+// 症状指示（/api/v1/indications）
+export interface IndicationRow {
+  edge_id: string
+  other_code: string
+  other_name: string
+  direction: 'outgoing' | 'incoming'
+  evidence_level: EvidenceLevel
+  confidence: number
+  status: KnowledgeStatus
 }
 
 // 场景（/api/v1/scenarios）
@@ -220,8 +232,15 @@ export const okbApi = {
     okbRequest<TraceResult>(`/trace?anomaly_code=${encodeURIComponent(anomalyCode)}&max_hops=${maxHops}${includeDraft ? '&include_draft=true' : ''}`, { signal }),
   evidence: (ref: string, signal?: AbortSignal) =>
     okbRequest<EvidenceView>(`/evidence?ref=${encodeURIComponent(ref)}`, { signal }),
-  mitigations: (anomalyCode: string, includeDraft = false, signal?: AbortSignal) =>
-    okbRequest<{ anomaly_code: string; mitigations: MitigationRow[] }>(`/mitigations?anomaly_code=${encodeURIComponent(anomalyCode)}${includeDraft ? '&include_draft=true' : ''}`, { signal }),
+  mitigations: (anomalyCode: string, rootCauseCode?: string, includeDraft = false, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ anomaly_code: anomalyCode })
+    if (rootCauseCode) params.set('root_cause_code', rootCauseCode)
+    if (includeDraft) params.set('include_draft', 'true')
+    return okbRequest<{ anomaly_code: string; mitigations: MitigationRow[] }>(`/mitigations?${params}`, { signal })
+  },
+  indications: (anomalyCode: string, direction: 'outgoing' | 'incoming', includeDraft = false, signal?: AbortSignal) =>
+    okbRequest<{ anomaly_code: string; direction: string; indications: IndicationRow[] }>(
+      `/indications?anomaly_code=${encodeURIComponent(anomalyCode)}&direction=${direction}${includeDraft ? '&include_draft=true' : ''}`, { signal }),
   report: (payload: { diagnosis_ref: string; edge_id: string; verdict: Verdict; notes?: string }) =>
     okbRequest<ReportResult>('/report', { method: 'POST', body: JSON.stringify(payload) }),
   ingest: (payload: { kind: SourceKind; title: string; content: string }) =>

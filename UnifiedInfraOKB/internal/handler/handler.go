@@ -62,6 +62,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/lookup", h.handleLookup)
 	mux.HandleFunc("GET /api/v1/trace", h.handleTrace)
 	mux.HandleFunc("GET /api/v1/mitigations", h.handleMitigations)
+	mux.HandleFunc("GET /api/v1/indications", h.handleIndications)
 	mux.HandleFunc("GET /api/v1/evidence", h.handleEvidence)
 	mux.HandleFunc("POST /api/v1/report", h.handleReport)
 	mux.HandleFunc("POST /api/v1/sources", h.handleIngest)
@@ -230,7 +231,8 @@ func (h *Handler) handleEvidence(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-// handleMitigations GET /api/v1/mitigations?anomaly_code=<code>&include_draft=true
+// handleMitigations GET /api/v1/mitigations?anomaly_code=<code>&root_cause_code=<code>&include_draft=true
+// root_cause_code 可选：诊断结论的根因，用于按根因挂靠过滤处置建议（防张冠李戴）。
 func (h *Handler) handleMitigations(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("anomaly_code")
 	if code == "" {
@@ -238,7 +240,7 @@ func (h *Handler) handleMitigations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	includeDraft := r.URL.Query().Get("include_draft") == "true"
-	rows, err := h.svc.Mitigations(code, includeDraft)
+	rows, err := h.svc.Mitigations(code, r.URL.Query().Get("root_cause_code"), includeDraft)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeErr(w, http.StatusNotFound, "anomaly not found")
@@ -248,6 +250,31 @@ func (h *Handler) handleMitigations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"anomaly_code": code, "mitigations": rows})
+}
+
+// handleIndications GET /api/v1/indications?anomaly_code=<code>&direction=outgoing|incoming
+// outgoing：该异常会表现为什么症状；incoming：该症状可能指示哪些根因（诊断反查）。
+func (h *Handler) handleIndications(w http.ResponseWriter, r *http.Request) {
+	code := r.URL.Query().Get("anomaly_code")
+	if code == "" {
+		writeErr(w, http.StatusBadRequest, "anomaly_code is required")
+		return
+	}
+	direction := r.URL.Query().Get("direction")
+	if direction == "" {
+		direction = "incoming" // 诊断反查是主消费场景，作缺省
+	}
+	includeDraft := r.URL.Query().Get("include_draft") == "true"
+	rows, err := h.svc.Indications(code, direction, includeDraft)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "anomaly not found")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"anomaly_code": code, "direction": direction, "indications": rows})
 }
 
 // handleReport POST /api/v1/report
