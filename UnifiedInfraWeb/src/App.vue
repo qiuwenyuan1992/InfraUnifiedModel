@@ -9,6 +9,7 @@ import DetailDrawer from './components/DetailDrawer.vue'
 import DiagnosticDrawer from './components/DiagnosticDrawer.vue'
 const TopologyBrowser = defineAsyncComponent(() => import('./components/TopologyBrowser.vue'))
 const SpatialBrowser = defineAsyncComponent(() => import('./components/SpatialBrowser.vue'))
+const OkbConsole = defineAsyncComponent(() => import('./components/OkbConsole.vue'))
 
 const {
   items, loading, error, nextCursor, history, load, next, previous, section,
@@ -19,8 +20,8 @@ const {
 watch(section, value => {
   if (value === 'topology' || value === 'spatial') { closeDetail(); diagnostic.value = null; createOpen.value = false }
 })
-const sectionTitle = computed(() => ({ rounds: '同步任务', sources: '数据来源', topology: '业务关联拓扑', spatial: '空间三维' })[section.value as 'rounds' | 'sources' | 'topology' | 'spatial'])
-const sectionDescription = computed(() => ({ rounds: '以完整同步轮次为单位，跟踪采集进度、阶段结果与诊断。', sources: '读取后端真实来源清单；一期不提供来源增删改。', topology: '从数据中心或 POD 浏览设备，自动展示真实供电、GPU 与网络关联。', spatial: '以示意三维空间查看机柜与设备，按 CMDB role 查看网络层级。' })[section.value as 'rounds' | 'sources' | 'topology' | 'spatial'])
+const sectionTitle = computed(() => ({ rounds: '同步任务', sources: '数据来源', topology: '业务关联拓扑', spatial: '空间三维', okb: '故障知识图谱' })[section.value as 'rounds' | 'sources' | 'topology' | 'spatial' | 'okb'])
+const sectionDescription = computed(() => ({ rounds: '以完整同步轮次为单位，跟踪采集进度、阶段结果与诊断。', sources: '读取后端真实来源清单；一期不提供来源增删改。', topology: '从数据中心或 POD 浏览设备，自动展示真实供电、GPU 与网络关联。', spatial: '以示意三维空间查看机柜与设备，按 CMDB role 查看网络层级。', okb: 'OKB 故障知识图谱：告警 lookup、候选因果链 trace、证据回链、工单摄取与诊断反馈。' })[section.value as 'rounds' | 'sources' | 'topology' | 'spatial' | 'okb'])
 const summary = computed(() => [
   { label: '本页任务', value: items.value.length, note: '当前筛选 · 非全量统计', icon: DataLine, tone: 'blue' },
   { label: '本页活动任务', value: items.value.filter(item => isActive(item.status)).length, note: '排队 / 执行 / 校验 / 发布', icon: Clock, tone: 'amber' },
@@ -40,6 +41,7 @@ const summary = computed(() => [
         <button :class="{ active: section === 'sources' }" @click="section = 'sources'"><el-icon><Connection /></el-icon>数据来源</button>
         <button :class="{ active: section === 'topology' }" @click="section = 'topology'"><el-icon><Connection /></el-icon>拓扑浏览</button>
         <button :class="{ active: section === 'spatial' }" @click="section = 'spatial'"><el-icon><DataLine /></el-icon>空间三维</button>
+        <button :class="{ active: section === 'okb' }" @click="section = 'okb'"><el-icon><Warning /></el-icon>故障知识</button>
       </nav>
       <div class="sidebar-foot"><span class="local-dot" />本地开发控制台<p>一期 · 来源同步管理<br />仅手动创建，无自动调度</p></div>
     </aside>
@@ -80,6 +82,7 @@ const summary = computed(() => [
         </section>
         <TopologyBrowser v-else-if="section === 'topology'" :sources="sources" :sources-loading="sourcesLoading" :sources-loaded="sourcesLoaded" :sources-error="sourcesError" />
         <SpatialBrowser v-else-if="section === 'spatial'" :sources="sources" :sources-loading="sourcesLoading" :sources-loaded="sourcesLoaded" :sources-error="sourcesError" />
+        <OkbConsole v-else-if="section === 'okb'" />
       </main>
     </div>
     <CreateRoundDialog v-model="createOpen" :sources="sources" @created="created" />
