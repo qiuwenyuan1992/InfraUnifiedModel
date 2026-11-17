@@ -13,6 +13,14 @@ nav button { display: flex; width: 100%; gap: 12px; align-items: center; border:
 nav button:hover { background: #ffffff09; }
 nav button.active { background: #3479df25; color: #83b3ff; }
 .nav-indicator { width: 5px; height: 5px; border-radius: 50%; background: #83b3ff; margin-left: auto; }
+.nav-arrow { margin-left: auto; transition: transform .15s; font-size: 12px; }
+.nav-arrow.open { transform: rotate(90deg); }
+.nav-group.open { color: #83b3ff; }
+.nav-submenu { margin: 2px 0 10px 14px; padding-left: 10px; border-left: 1px solid #ffffff14; }
+.nav-submenu-label { font-size: 10px; letter-spacing: .08em; color: #6d7f96; margin: 8px 0 4px; text-transform: uppercase; }
+.nav-submenu button { display: block; width: 100%; border: 0; background: transparent; color: #9fb0c6; font-size: 13px; padding: 8px 12px; border-radius: 7px; cursor: pointer; text-align: left; margin-bottom: 2px; transition: background .15s; }
+.nav-submenu button:hover { background: #ffffff09; color: #c6d4e6; }
+.nav-submenu button.active { background: #3479df25; color: #83b3ff; }
 .sidebar-foot { margin-top: auto; padding: 18px 12px 0; border-top: 1px solid #ffffff0d; font-size: 12px; }
 .sidebar-foot p { color: #778ba7; line-height: 1.9; margin-bottom: 0; font-size: 11px; }
 .local-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #55c6a5; margin-right: 8px; }
