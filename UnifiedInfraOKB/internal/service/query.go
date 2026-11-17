@@ -105,11 +105,57 @@ type GraphNode struct {
 	RevisionID   string             `json:"revision_id"`
 }
 
+// MitigationRow 处置建议行。
+type MitigationRow struct {
+	MitigationCode string              `json:"mitigation_code"` // 处置手段（边源，如"更换光模块"）
+	MitigationName string              `json:"mitigation_name"`
+	EdgeID         string              `json:"edge_id"`
+	EvidenceLevel  model.EvidenceLevel `json:"evidence_level"`
+	Confidence     float64             `json:"confidence"`
+	Status         model.KnowledgeStatus `json:"status"`
+	CaseSupport    int                 `json:"case_support_count"`
+	FragmentRef    string              `json:"fragment_ref"` // 证据回链 ref
+}
+
+// Mitigations 处置查询：对某异常，返回缓解它的全部手段（沿 mitigate 边的入边）。
+// 语义方向：手段 → 被缓解异常；查询"谁指向我"而非"我指向谁"。
+func (s *Service) Mitigations(anomalyCode string, includeDraft bool) ([]MitigationRow, error) {
+	node, err := s.store.GetAnomalyByCode(anomalyCode)
+	if err != nil {
+		return nil, fmt.Errorf("anomaly: %w", err)
+	}
+	status := model.StatusCurated
+	if includeDraft {
+		status = ""
+	}
+	rules, err := s.store.MitigationsFor(node.ID, status)
+	if err != nil {
+		return nil, fmt.Errorf("list mitigations: %w", err)
+	}
+	rows := make([]MitigationRow, 0, len(rules))
+	for _, r := range rules {
+		src, err := s.store.GetAnomalyByID(r.SourceAnomalyID)
+		if err != nil {
+			continue
+		}
+		row := MitigationRow{
+			MitigationCode: src.StableCode, MitigationName: src.Name,
+			EdgeID: r.ID, EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence,
+			Status: r.Status, CaseSupport: r.CaseSupportCount, FragmentRef: r.ID,
+		}
+		rows = append(rows, row)
+	}
+	// 置信度降序
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Confidence > rows[j].Confidence })
+	return rows, nil
+}
+
 // GraphEdge 可视化边（源/目标用 stable_code，便于前端直连）。
 type GraphEdge struct {
 	ID            string               `json:"id"`
 	Source        string               `json:"source"`
 	Target        string               `json:"target"`
+	EdgeType      model.EdgeType       `json:"edge_type"`
 	EvidenceLevel model.EvidenceLevel  `json:"evidence_level"`
 	Confidence    float64              `json:"confidence"`
 	Status        model.KnowledgeStatus `json:"status"`
@@ -144,7 +190,7 @@ func (s *Service) Graph() (*GraphView, error) {
 			continue // 孤儿边跳过
 		}
 		view.Edges = append(view.Edges, GraphEdge{
-			ID: r.ID, Source: src, Target: dst,
+			ID: r.ID, Source: src, Target: dst, EdgeType: r.EdgeType,
 			EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence,
 			Status: r.Status, ReviewFlagged: r.ReviewFlagged, CaseSupport: r.CaseSupportCount,
 		})
@@ -166,6 +212,7 @@ type KnowledgeRow struct {
 	// mapping
 	AlertSignature string              `json:"alert_signature,omitempty"`
 	// 通用
+	EdgeType      model.EdgeType       `json:"edge_type,omitempty"`
 	EvidenceLevel model.EvidenceLevel  `json:"evidence_level,omitempty"`
 	Confidence    float64              `json:"confidence,omitempty"`
 	CaseSupport   int                  `json:"case_support_count,omitempty"`
@@ -267,7 +314,7 @@ func (s *Service) ruleRows(rules []model.CausalRule) ([]KnowledgeRow, error) {
 	for _, r := range rules {
 		row := KnowledgeRow{ID: r.ID, Kind: "rule",
 			SourceCode: codeByID[r.SourceAnomalyID], TargetCode: codeByID[r.TargetAnomalyID],
-			EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence, CaseSupport: r.CaseSupportCount,
+			EdgeType: r.EdgeType, EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence, CaseSupport: r.CaseSupportCount,
 			Status: r.Status, ReviewFlagged: r.ReviewFlagged,
 			UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339)}
 		if rev, err := s.store.LatestRevision(model.EntityCausalRule, r.ID); err == nil {
@@ -336,7 +383,8 @@ func (s *Service) Trace(startCode string, maxHops, topK int, facts map[string]in
 		if len(hops) >= maxHops {
 			return
 		}
-		edges, err := s.store.ListEdgesFrom(nodeID, status)
+		// trace 语义 = 根因传播：只遍历 trigger 边，mitigate/indicate/prevent 不入根因链
+		edges, err := s.store.ListEdgesFrom(nodeID, status, model.EdgeTrigger)
 		if err != nil {
 			return
 		}

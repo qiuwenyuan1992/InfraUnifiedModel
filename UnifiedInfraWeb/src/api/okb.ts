@@ -30,6 +30,7 @@ export type EvidenceLevel = 'case_verified' | 'doc_explicit' | 'inferred' | 'exp
 export type KnowledgeStatus = 'draft' | 'curated'
 export type Verdict = 'confirmed' | 'rejected'
 export type SourceKind = 'internal_case' | 'vendor_doc' | 'expert_input'
+export type EdgeType = 'trigger' | 'indicate' | 'mitigate' | 'prevent'
 
 export interface LookupCandidate {
   anomaly_id: string
@@ -129,6 +130,7 @@ export interface GraphEdge {
   id: string
   source: string
   target: string
+  edge_type: EdgeType
   evidence_level: EvidenceLevel
   confidence: number
   status: KnowledgeStatus
@@ -151,6 +153,7 @@ export interface KnowledgeRow {
   source_code?: string
   target_code?: string
   alert_signature?: string
+  edge_type?: EdgeType
   evidence_level?: EvidenceLevel
   confidence?: number
   case_support_count?: number
@@ -168,6 +171,18 @@ export interface KnowledgeList {
 
 // ---------- API ----------
 
+// 处置建议（/api/v1/mitigations）
+export interface MitigationRow {
+  mitigation_code: string
+  mitigation_name: string
+  edge_id: string
+  evidence_level: EvidenceLevel
+  confidence: number
+  status: KnowledgeStatus
+  case_support_count: number
+  fragment_ref: string
+}
+
 export const okbApi = {
   graph: (signal?: AbortSignal) => okbRequest<GraphView>('/graph', { signal }),
   knowledge: (kind: 'anomaly' | 'rule' | 'mapping', params: { status?: string; q?: string; limit?: number; offset?: number } = {}, signal?: AbortSignal) => {
@@ -184,6 +199,8 @@ export const okbApi = {
     okbRequest<TraceResult>(`/trace?anomaly_code=${encodeURIComponent(anomalyCode)}&max_hops=${maxHops}${includeDraft ? '&include_draft=true' : ''}`, { signal }),
   evidence: (ref: string, signal?: AbortSignal) =>
     okbRequest<EvidenceView>(`/evidence?ref=${encodeURIComponent(ref)}`, { signal }),
+  mitigations: (anomalyCode: string, includeDraft = false, signal?: AbortSignal) =>
+    okbRequest<{ anomaly_code: string; mitigations: MitigationRow[] }>(`/mitigations?anomaly_code=${encodeURIComponent(anomalyCode)}${includeDraft ? '&include_draft=true' : ''}`, { signal }),
   report: (payload: { diagnosis_ref: string; edge_id: string; verdict: Verdict; notes?: string }) =>
     okbRequest<ReportResult>('/report', { method: 'POST', body: JSON.stringify(payload) }),
   ingest: (payload: { kind: SourceKind; title: string; content: string }) =>

@@ -46,6 +46,22 @@ const (
 	StatusCurated KnowledgeStatus = "curated"
 )
 
+// EdgeType 边的语义类型（对照 XiHe 因果图的边分类）。
+// 方向约定：trigger/mitigate/prevent 从"因"指向"果"（处置手段 → 被缓解异常）；
+// indicate 从"根因异常"指向"表现症状"。trace 只遍历 trigger。
+type EdgeType string
+
+const (
+	// EdgeTrigger A 导致/传播 B：根因链遍历的唯一合法路径
+	EdgeTrigger EdgeType = "trigger"
+	// EdgeIndicate A 表现为症状 B：正向症状解释（A 发生时会看到 B）
+	EdgeIndicate EdgeType = "indicate"
+	// EdgeMitigate 手段 A 缓解异常 B：处置建议（更换 X 后 B 恢复）
+	EdgeMitigate EdgeType = "mitigate"
+	// EdgePrevent 措施 A 预防异常 B：长期运维建议
+	EdgePrevent EdgeType = "prevent"
+)
+
 // CreatorKind 知识创建者与依据分别记录。
 type CreatorKind string
 
@@ -148,13 +164,14 @@ type ConditionClause struct {
 	Value   interface{} `json:"value"`
 }
 
-// CausalRule 图边：源异常 → 目标异常。
+// CausalRule 图边：源异常 → 目标异常，语义由 EdgeType 决定。
 // Conditions / TimeConstraints 为受 Schema 约束的 JSON 数组文本（[]ConditionClause）。
 // 印证计数：>=2 个独立工单证据支持才可升 curated。
 type CausalRule struct {
 	ID                string    `gorm:"primaryKey;size:36"`
 	SourceAnomalyID   string    `gorm:"size:36;index"`
 	TargetAnomalyID   string    `gorm:"size:36;index"`
+	EdgeType          EdgeType  `gorm:"size:16;default:trigger;index"` // trigger / indicate / mitigate / prevent
 	Conditions        string    // JSON []ConditionClause，可为空（无条件边）
 	TimeConstraints   string    `gorm:"type:text"` // JSON，时间约束
 	EvidenceLevel     EvidenceLevel `gorm:"size:20"`
