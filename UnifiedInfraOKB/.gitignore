@@ -1,0 +1,24 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+config/local.*
+config/prod.*
+.secrets/
+
+# Runtime files and source documents
+/runtime/
+/storage/
+/uploads/
+/artifacts/
+/tmp/
+/logs/
+/bin/
+/coverage/
+*.log
+*.out
+*.test
+
+# Local tools
+.venv/
+__pycache__/

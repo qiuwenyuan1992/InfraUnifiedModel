@@ -4,7 +4,7 @@ import type { Source } from '../api/types'
 import type { TopologyNode, TopologySelection } from '../api/topologyTypes'
 import { useTopology } from '../composables/useTopology'
 import { useTopologyDirectory } from '../composables/useTopologyDirectory'
-import { edgeColors, edgeLabels, entityLabels, validIdentity, topologyDisplayName, directoryCountSummary, deviceCardSummary } from '../services/topology'
+import { edgeColors, edgeLabels, entityLabels, validIdentity, topologyDisplayName, directoryCountSummary, deviceCardSummary, podCardSummary } from '../services/topology'
 import TopologyCanvas from './TopologyCanvas.vue'
 import TopologyDetails from './TopologyDetails.vue'
 import DeviceTopologyView from './DeviceTopologyView.vue'
@@ -131,6 +131,7 @@ async function reloadDirectory() { backToDirectory(); await directory.reload() }
               <span v-if="item.entity_type === 'device'" class="muted">SN {{ item.stable_id }}</span>
               <span v-if="item.entity_type === 'device'" class="muted">{{ deviceCardSummary(item) }}</span>
               <span v-else-if="item.entity_type === 'data_center' || item.entity_type === 'room' || item.entity_type === 'cabinet'" class="muted">{{ directoryCountSummary(item) }}</span>
+              <span v-else-if="item.entity_type === 'pod'" class="muted">{{ podCardSummary(item) }}</span>
               <span v-else class="muted">UUID · {{ item.stable_id }}</span>
               <span class="topology-card-action">{{ item.entity_type === 'device' ? '查看关联拓扑' : '查看下级' }} →</span>
             </button>

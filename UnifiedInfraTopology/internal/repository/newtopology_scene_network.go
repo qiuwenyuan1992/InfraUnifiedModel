@@ -102,7 +102,7 @@ func (r *topologyReadRepository) sceneNetworkStages(ctx context.Context, seeds [
 					return nil, ErrInventoryNotReady
 				}
 				if previous, exists := edges[edge.ID]; exists {
-					if !reflect.DeepEqual(previous, edge) {
+					if !topologyEdgeSameIdentity(previous, edge) {
 						return nil, ErrInventoryNotReady
 					}
 					continue
@@ -156,6 +156,15 @@ func topologySceneNodeIDs(nodes map[string]TopologyNode, entity model.EntityType
 	return ids
 }
 
+// topologyEdgeSameIdentity 判断同 relation_id 的两条边是否为同一结构身份：
+// 端点、方向(rank)、边类型、关系种类、来源一致即同一条边。
+// created_at/synced_at 等快照属性不参与身份判定——多轮同步后，
+// 出向/入向两种查询形态可能读到不同轮次写入的属性快照，快照差异不构成边冲突。
+func topologyEdgeSameIdentity(a, b TopologyEdge) bool {
+	return a.From == b.From && a.To == b.To && a.Rank == b.Rank &&
+		a.SourceID == b.SourceID && a.EdgeType == b.EdgeType && a.RelationKind == b.RelationKind
+}
+
 func (r *topologyReadRepository) sceneNetworkEdges(ctx context.Context, source string, seeds []string, query TopologyNeighborQuery, limit int) ([]TopologyEdge, error) {
 	if query.Direction == "both" {
 		// 分别从已知 VID 展开，避免双端 OR 使规划器退化为全边扫描。
@@ -168,7 +177,7 @@ func (r *topologyReadRepository) sceneNetworkEdges(ctx context.Context, source s
 				return nil, err
 			}
 			for _, edge := range edges {
-				if previous, exists := unique[edge.ID]; exists && !reflect.DeepEqual(previous, edge) {
+				if previous, exists := unique[edge.ID]; exists && !topologyEdgeSameIdentity(previous, edge) {
 					return nil, ErrInventoryNotReady
 				}
 				unique[edge.ID] = edge

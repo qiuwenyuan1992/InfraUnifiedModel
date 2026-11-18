@@ -338,6 +338,60 @@ func TestSceneNetworkRejectsWrongDirectionalScope(t *testing.T) {
 	}
 }
 
+func TestSceneNetworkPeersToleratesSnapshotDivergenceAcrossStages(t *testing.T) {
+	device := model.EntityIdentity{SourceID: "s", EntityType: model.EntityDevice, StableID: "d"}
+	port := model.EntityIdentity{SourceID: "s", EntityType: model.EntityInterface, StableID: "p"}
+	own := model.RelationIdentity{SourceID: "s", EdgeType: model.EdgeComposition, Kind: model.RelationOwnsInterface, From: device, To: port}
+	// 同一条边在不同阶段（设备锚点出向 / 端口锚点入向）可能读到不同轮次写入的时间戳快照，
+	// 身份以 relation_id 为准，快照差异不得使整个视图失败。
+	first := map[string]*nebula.Value{
+		"created_at": {DtVal: &nebula.DateTime{Year: 2026, Month: 11, Day: 17, Hour: 2, Minute: 21, Sec: 11}},
+		"synced_at":  {DtVal: &nebula.DateTime{Year: 2026, Month: 11, Day: 17, Hour: 2, Minute: 21, Sec: 11}},
+	}
+	second := map[string]*nebula.Value{
+		"created_at": {DtVal: &nebula.DateTime{Year: 2026, Month: 11, Day: 17, Hour: 3, Minute: 11, Sec: 26}},
+		"synced_at":  {DtVal: &nebula.DateTime{Year: 2026, Month: 11, Day: 17, Hour: 3, Minute: 11, Sec: 26}},
+	}
+	columns := []string{"src_vid", "dst_vid", "edge_rank", "props"}
+	fake := &topologyGraphFake{results: []*nebulago.ResultSet{
+		readResult(t, columns, readEdge(t, own, first)),
+		readResult(t, []string{"node"}, []*nebula.Value{readPeer(t, port)}),
+		readResult(t, columns), readResult(t, columns),
+		readResult(t, columns, readEdge(t, own, second)),
+	}}
+	page, err := (&topologyReadRepository{client: fake}).SceneNetworkPeers(context.Background(), []TopologyNode{sceneNetworkSeed(t, device)}, 600)
+	require.NoError(t, err)
+	require.Len(t, page.Edges, 1)
+}
+
+func TestSceneNetworkBothDirectionsMergeDivergentSnapshots(t *testing.T) {
+	local := model.EntityIdentity{SourceID: "s", EntityType: model.EntityInterface, StableID: "local"}
+	remote := local
+	remote.StableID = "remote"
+	link := model.RelationIdentity{SourceID: "s", EdgeType: model.EdgeNetwork, Kind: model.RelationLinksTo, From: local, To: remote}
+	first := map[string]*nebula.Value{
+		"created_at": {DtVal: &nebula.DateTime{Year: 2026, Month: 11, Day: 17, Hour: 2, Minute: 21, Sec: 11}},
+		"synced_at":  {DtVal: &nebula.DateTime{Year: 2026, Month: 11, Day: 17, Hour: 2, Minute: 21, Sec: 11}},
+	}
+	second := map[string]*nebula.Value{
+		"created_at": {DtVal: &nebula.DateTime{Year: 2026, Month: 11, Day: 17, Hour: 3, Minute: 11, Sec: 26}},
+		"synced_at":  {DtVal: &nebula.DateTime{Year: 2026, Month: 11, Day: 17, Hour: 3, Minute: 11, Sec: 26}},
+	}
+	localID, err := local.VID()
+	require.NoError(t, err)
+	remoteID, err := remote.VID()
+	require.NoError(t, err)
+	columns := []string{"src_vid", "dst_vid", "edge_rank", "props"}
+	fake := &topologyGraphFake{results: []*nebulago.ResultSet{
+		readResult(t, columns, readEdge(t, link, first)),
+		readResult(t, columns, readEdge(t, link, second)),
+	}}
+	// 种子包含两端：出向以 local 为锚点、入向以 remote 为锚点，两个子查询读到同一条边。
+	edges, err := (&topologyReadRepository{client: fake}).sceneNetworkEdges(context.Background(), "s", []string{localID, remoteID}, TopologyNeighborQuery{Direction: "both", EdgeType: model.EdgeNetwork, RelationKind: model.RelationLinksTo, PeerEntityType: model.EntityInterface}, 600)
+	require.NoError(t, err)
+	require.Len(t, edges, 1)
+}
+
 func TestSceneNetworkExactFinalBudgetIsComplete(t *testing.T) {
 	device := model.EntityIdentity{SourceID: "s", EntityType: model.EntityDevice, StableID: "d"}
 	port := model.EntityIdentity{SourceID: "s", EntityType: model.EntityInterface, StableID: "p"}
