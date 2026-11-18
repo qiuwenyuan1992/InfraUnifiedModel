@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeNeighborhood, planeLabel, propertyText, validIdentity, topologyDisplayName, directoryCountSummary, deviceCardSummary } from './topology'
+import { mergeNeighborhood, planeLabel, propertyText, validIdentity, topologyDisplayName, directoryCountSummary, deviceCardSummary, podCardSummary } from './topology'
 import type { TopologyEdge, TopologyNode } from '../api/topologyTypes'
 import { phaseNames } from './display'
 
@@ -73,5 +73,26 @@ describe('topology atomic merge', () => {
     expect(deviceCardSummary(unknown)).toBe('类型 999')
     const bare = { ...node('SN-5'), entity_type: 'device' as const, properties: {} }
     expect(deviceCardSummary(bare)).toBe('—')
+  })
+  it('displays POD full_name carrying the data center and never falls back to UUID', () => {
+    const pod = {
+      ...node('764f199c-c1e9-44f0-b948-82719f516a09'),
+      entity_type: 'pod' as const,
+      stable_id: '764f199c-c1e9-44f0-b948-82719f516a09',
+      label: 'POD000',
+      properties: { full_name: '中卫算力网络B1-POD000', name: 'POD000', basic_code: 'ZWU13-POD000', plane: 1 },
+    }
+    expect(topologyDisplayName(pod)).toBe('中卫算力网络B1-POD000')
+    expect(topologyDisplayName({ ...pod, properties: {} })).toBe('POD000')
+  })
+  it('summarizes POD cards with basic code and plane instead of UUID', () => {
+    const pod = {
+      ...node('764f199c-c1e9-44f0-b948-82719f516a09'),
+      entity_type: 'pod' as const,
+      properties: { basic_code: 'ZWU13-POD000', plane: 1 },
+    }
+    expect(podCardSummary(pod)).toBe('ZWU13-POD000 · 管理平面（1）')
+    expect(podCardSummary({ ...pod, properties: { plane: 2 } })).toBe('计算平面（2）')
+    expect(podCardSummary({ ...pod, properties: {} })).toBe('—')
   })
 })

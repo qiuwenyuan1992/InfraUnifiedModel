@@ -22,6 +22,12 @@ export function topologyDisplayName(node: TopologyNode): string {
     const code = typeof node.properties.code === 'string' ? node.properties.code.trim() : node.label
     if (cnName) return code && code !== cnName ? `${cnName}（${code}）` : cnName
   }
+  if (node.entity_type === 'pod') {
+    // POD 的 full_name 已含数据中心前缀（如「中卫算力网络B1-POD000」），
+    // 不同站点的 POD 同名（都叫 POD000），靠 full_name 区分；缺失时回退 label。
+    const fullName = typeof node.properties.full_name === 'string' ? node.properties.full_name.trim() : ''
+    if (fullName) return fullName
+  }
   return node.label || entityLabels[node.entity_type]
 }
 export function validIdentity(type: EntityType, value: string) {
@@ -76,6 +82,17 @@ export function directoryCountSummary(node: TopologyNode) {
         ['网络设备', node.properties.network_device_num],
       ]
   return entries.map(([label, value]) => `${label} ${value == null ? '—' : String(value)}`).join(' · ')
+}
+
+// POD 卡片摘要：基础编码与平面（均为 CMDB 返回字段），不展示 UUID；
+// 数据中心信息由卡片标题的 full_name 携带。
+export function podCardSummary(node: TopologyNode) {
+  const parts: string[] = []
+  const code = typeof node.properties.basic_code === 'string' ? node.properties.basic_code.trim() : ''
+  if (code) parts.push(code)
+  const plane = planeLabel(node.properties.plane)
+  if (plane !== '—') parts.push(plane)
+  return parts.length ? parts.join(' · ') : '—'
 }
 
 // 设备子类型字典：与 docs/cmdb/dict_device_type.md 一一对应；parent_type_id 54 为网络设备。
