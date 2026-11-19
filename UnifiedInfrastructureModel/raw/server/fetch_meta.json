@@ -1,0 +1,7 @@
+{
+  "source": "http://cloudbee-api.jd.local/api/v1/event-strategy-main/search",
+  "fetched_at": "2026-11-19T14:10:33+0800",
+  "total_reported": 926,
+  "total_fetched": 926,
+  "page_size": 50
+}
