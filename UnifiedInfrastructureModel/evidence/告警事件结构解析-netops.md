@@ -72,6 +72,6 @@ uniqueKey = `fault_type_id:ip:port[:direction]`（173:10.237.80.3:40GE1/0/3:out 
 ## 四、待办
 
 1. ~~A1/A3/A7/A9 各档样本（定 A→P）~~ 已定论（既有系统 NetworkLevel 映射，2026-11-19）
-2. 网络域探活/波分/BGP 告警样本（补齐 rootCause 族映射实证）
+2. 网络域探活/波分/BGP 告警样本（补齐 rootCause 族映射实证）——**IB 首样本已到（2026-11-19）**：Link is Down（Mellanox UFM，A7=P3，北京中云信 POD002 LEAF-SPINE）。IB 特有形态：无 ip/port，定位靠 cluster_id（UFM 集群）+ short_message 内嵌双端交换机:端口 + GUID 对 + **cable S/N**（线缆级定位，比数通精细）；**集成缺口实证**：B 端设备解析失败（GUID 映射不到 CMDB）+ "推送故障影响范围失败:ip和端口都为空"；另新见 workStatus=5（批量结单）、群聊通知（nims_group_notify_result）、**通告等级 L1**（通告刻度与告警刻度 A/P 分立，又一刻度体系）
 3. OKB 对接点评估：netops 的 AI 排障处置建议 ↔ 诊断字典（模板句→结构化诊断的升级路径）
-4. 电力域预告：既有系统已有 PowerLevel 映射（L1→P0…L4→P3）——电力域数据接入时直接使用
+4. 电力域预告：既有系统已有 PowerLevel 映射（L1→P0…L4→P3）——电力域数据接入时直接使用（注意：IB 样本的"通告等级 L1"是通告刻度，勿与电力 L 刻度混淆）
