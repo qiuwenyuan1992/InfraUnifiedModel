@@ -1,0 +1,2090 @@
+[
+ {
+  "id": 2611,
+  "name": " 带内-expoter-DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 128",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 128",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2612,
+  "name": " 带内-expoter-DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 136",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 136",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2613,
+  "name": " 带内-expoter-DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 192",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 192",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2614,
+  "name": " 带内-expoter-DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 200",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 200",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2609,
+  "name": " 带内-expoter-DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 64",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 64",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2610,
+  "name": " 带内-expoter-DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 72",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 72",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2615,
+  "name": " 带内-expoter-DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 8",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_CLOCK_THROTTLE_REASONS == 8",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2682,
+  "name": "带内-Exporter-GPU-6H 内卡数变化",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "count by (instance, modelName) (DCGM_FI_DEV_GPU_UTIL) - m... == 1",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2022,
+  "name": "带内-Exporter-GPU-XID 119",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 119",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2036,
+  "name": "带内-Exporter-GPU-XID 120",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 120",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2019,
+  "name": "带内-Exporter-GPU-XID 149",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 149",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2017,
+  "name": "带内-Exporter-GPU-XID 48",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 48",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2018,
+  "name": "带内-Exporter-GPU-XID 79",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 79",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2020,
+  "name": "带内-Exporter-GPU-XID 95",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 95",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1935,
+  "name": "带内-Exporter-GPU-不可纠正错误行重映射数-NO",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1939,
+  "name": "带内-Exporter-GPU-发生的 SXID 故障总数-NO",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_NVSWITCH_FATAL_ERRORS > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2504,
+  "name": "带内-Exporter-GPU-掉卡",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "count by (instance) (DCGM_FI_DEV_GPU_UTIL) - count by (in... < 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1979,
+  "name": "带内-Exporter-GPU-显存多比特错误计数",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_ECC_DBE_VOL_TOTAL > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1936,
+  "name": "带内-Exporter-GPU-累积未纠正的易失性和非易失性 ECC 错误的总数【无法重置】- NO",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_ECC_DBE_AGG_TOTAL > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1937,
+  "name": "带内-Exporter-GPU-重新映射行失败",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_ROW_REMAP_FAILURE > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2496,
+  "name": "带内-Exporter-MLU-Chip超温",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_chip_temperature >= 102",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2523,
+  "name": "带内-Exporter-MLU-DRAM电压过低",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_memory_voltage < 1000",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2522,
+  "name": "带内-Exporter-MLU-DRAM电压过高",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_memory_voltage > 1400",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2502,
+  "name": "带内-Exporter-MLU-DRAM电流超限",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_memory_current > 105000",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2497,
+  "name": "带内-Exporter-MLU-DRAM超温",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_memory_temperature >= 102",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2493,
+  "name": "带内-Exporter-MLU-PCIe链路降带宽",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "delta(mlu_pcie_current_width[5m])  < 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2492,
+  "name": "带内-Exporter-MLU-PCIe链路降速",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "delta(mlu_pcie_current_speed[5m])  < 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2521,
+  "name": "带内-Exporter-MLU-SoC电压过低",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_soc_voltage < 675",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2520,
+  "name": "带内-Exporter-MLU-SoC电压过高",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_soc_voltage > 835",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2501,
+  "name": "带内-Exporter-MLU-SoC电流超限",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_soc_current > 70000",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2487,
+  "name": "带内-Exporter-MLU-内存错误修复失败",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_repair_failure > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2488,
+  "name": "带内-Exporter-MLU-内存错误修复挂起",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_repair_pending > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2489,
+  "name": "带内-Exporter-MLU-内存页面错误退休挂起",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_repair_retire_pending > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2499,
+  "name": "带内-Exporter-MLU-功耗超限",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_power_usage > 700",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2490,
+  "name": "带内-Exporter-MLU-历史总计SRAM ECC计数超阈值",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_aggr_sram_ecc_threshold_exceed > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2486,
+  "name": "带内-Exporter-MLU-多比特错误-NO",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_aggr_dram_ecc_dbe_count > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2503,
+  "name": "带内-Exporter-MLU-掉卡",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "delta(mlu_machine_mlu_nums[5m])  < 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2519,
+  "name": "带内-Exporter-MLU-核心电压过低",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_core_voltage < 665",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2518,
+  "name": "带内-Exporter-MLU-核心电压过高",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_core_voltage > 1100",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2500,
+  "name": "带内-Exporter-MLU-核心电流超限",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_core_current > 850000",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2491,
+  "name": "带内-Exporter-MLU-端口事件计数",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_mlulink_link_down_total > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2498,
+  "name": "带内-Exporter-MLU-触发超温降频",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_thermal_slow_down > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2495,
+  "name": "带内-Exporter-MLU-超温断电次数",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_over_temp_power_off_total > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2494,
+  "name": "带内-Exporter-MLU-超温降频次数",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "mlu_over_temp_under_clock_total > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2528,
+  "name": "带内-Exporter-NPU-ACSQ资源挂死异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2163706883",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2576,
+  "name": "带内-Exporter-NPU-AIC Dispatch多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2168160264",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2575,
+  "name": "带内-Exporter-NPU-AIC Dispatch输入错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2168160258",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2597,
+  "name": "带内-Exporter-NPU-AIC Timeout",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160689162",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2526,
+  "name": "带内-Exporter-NPU-AICORE指令数据校验失败",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160689152",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2604,
+  "name": "带内-Exporter-NPU-AIC复位失败",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160689153",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2544,
+  "name": "带内-Exporter-NPU-AIC多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160689160",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2545,
+  "name": "带内-Exporter-NPU-AIC总线访问错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160689161",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2543,
+  "name": "带内-Exporter-NPU-AIC检测到外部输入错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160689154",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2596,
+  "name": "带内-Exporter-NPU-AIV Timeout",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160820234",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2603,
+  "name": "带内-Exporter-NPU-AIV复位失败",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160820225",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2593,
+  "name": "带内-Exporter-NPU-AIV多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160820232",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2590,
+  "name": "带内-Exporter-NPU-AIV总线访问错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160820233",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2594,
+  "name": "带内-Exporter-NPU-AIV检测到外部输入错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160820226",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2516,
+  "name": "带内-Exporter-NPU-AI处理器健康状态异常",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_health_status == 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2582,
+  "name": "带内-Exporter-NPU-DSA Dispatch多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2173927432",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2581,
+  "name": "带内-Exporter-NPU-DSA Dispatch输入错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2173927426",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2572,
+  "name": "带内-Exporter-NPU-DSA 内部memory两bit ECC",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2167504904",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2530,
+  "name": "带内-Exporter-NPU-DVPP AA 配置错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2169077764",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2578,
+  "name": "带内-Exporter-NPU-DVPP Dispatch多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2168946696",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2577,
+  "name": "带内-Exporter-NPU-DVPP Dispatch输入错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2168946690",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2712,
+  "name": "带内-Exporter-NPU-ErrCode不为零",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code != 0",
+  "alarm_period": 300,
+  "touch": 2
+ },
+ {
+  "id": 2713,
+  "name": "带内-Exporter-NPU-ErrCode不为零（单次即报）",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code != 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2602,
+  "name": "带内-Exporter-NPU-HBM UCE故障风暴屏蔽",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162263044",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2568,
+  "name": "带内-Exporter-NPU-HBMA/MATA镜像错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2163349517",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2569,
+  "name": "带内-Exporter-NPU-HBMA多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2163441672",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2531,
+  "name": "带内-Exporter-NPU-HBMC Ca Parity错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162262021",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2559,
+  "name": "带内-Exporter-NPU-HBMC同上下游交互超时异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162262026",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2558,
+  "name": "带内-Exporter-NPU-HBMC多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162262024",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2557,
+  "name": "带内-Exporter-NPU-HBMC模块故障",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162262016",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2556,
+  "name": "带内-Exporter-NPU-HBM用户内存空间内存颗粒访问多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162169857",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2591,
+  "name": "带内-Exporter-NPU-HCCS端口部分LANE故障",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2174453253",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2589,
+  "name": "带内-Exporter-NPU-HCCS链路诊断异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2174978060",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2564,
+  "name": "带内-Exporter-NPU-HSM密码算法模块错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162527746",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2565,
+  "name": "带内-Exporter-NPU-HSM密钥管理模块错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162527747",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2570,
+  "name": "带内-Exporter-NPU-HWTS内部软件配置错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2163703811",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2571,
+  "name": "带内-Exporter-NPU-HWTS多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2163703816",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2550,
+  "name": "带内-Exporter-NPU-JPEGE总线访问错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2161475593",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2549,
+  "name": "带内-Exporter-NPU-JPEGE硬件编码异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2161475584",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2546,
+  "name": "带内-Exporter-NPU-L2BUFF多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160951304",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2534,
+  "name": "带内-Exporter-NPU-L3T多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2158329864",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2561,
+  "name": "带内-Exporter-NPU-LPM 检测到Tsensor模块异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162397696",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2563,
+  "name": "带内-Exporter-NPU-LPM 检测到芯片电流检测功能异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162401795",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2562,
+  "name": "带内-Exporter-NPU-LPM 检测到调压功能异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162401793",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2584,
+  "name": "带内-Exporter-NPU-NIC Dispatch多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2174058504",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2583,
+  "name": "带内-Exporter-NPU-NIC Dispatch输入错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2174058498",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2540,
+  "name": "带内-Exporter-NPU-NIC多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2159902728",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2539,
+  "name": "带内-Exporter-NPU-NIC模块异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2159902720",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2529,
+  "name": "带内-Exporter-NPU-PCIE DMA通道资源挂死异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2163706884",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2586,
+  "name": "带内-Exporter-NPU-PCIE Dispatch多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2174189576",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2585,
+  "name": "带内-Exporter-NPU-PCIE Dispatch输入错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2174189570",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2536,
+  "name": "带内-Exporter-NPU-PCIE多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2159640584",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2535,
+  "name": "带内-Exporter-NPU-PCIE模块异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2159640576",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2580,
+  "name": "带内-Exporter-NPU-PERI Dispatch多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2170519560",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2579,
+  "name": "带内-Exporter-NPU-PERI Dispatch输入错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2170519554",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2537,
+  "name": "带内-Exporter-NPU-ROCE多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2159771656",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2538,
+  "name": "带内-Exporter-NPU-ROCE总线访问异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2159771657",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2592,
+  "name": "带内-Exporter-NPU-ROH多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2175500296",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2599,
+  "name": "带内-Exporter-NPU-ROH配置错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2175500291",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2527,
+  "name": "带内-Exporter-NPU-RTSQ资源挂死异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2163706882",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2598,
+  "name": "带内-Exporter-NPU-RoCE端口部分LANE故障",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2164753925",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2601,
+  "name": "带内-Exporter-NPU-RoH硬件链路发生错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2175500301",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2600,
+  "name": "带内-Exporter-NPU-RoH端口部分LANE故障",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2175632901",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2547,
+  "name": "带内-Exporter-NPU-SDMAM多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2161082376",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2606,
+  "name": "带内-Exporter-NPU-SDMA复位失败",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2161082368",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2548,
+  "name": "带内-Exporter-NPU-SDMA模块bus error",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2161082377",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2524,
+  "name": "带内-Exporter-NPU-SIOE模块故障",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2159378432",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2525,
+  "name": "带内-Exporter-NPU-SLLC模块故障",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2159509504",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2567,
+  "name": "带内-Exporter-NPU-TEEDrv侧硬件多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162655240",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2566,
+  "name": "带内-Exporter-NPU-TEEDrv硬件模块错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162655232",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2574,
+  "name": "带内-Exporter-NPU-TS Dispatch多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2167635976",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2573,
+  "name": "带内-Exporter-NPU-TS Dispatch输入错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2167635970",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2541,
+  "name": "带内-Exporter-NPU-TS多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2160558088",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2533,
+  "name": "带内-Exporter-NPU-TaishanCore多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2158067720",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2551,
+  "name": "带内-Exporter-NPU-VDEC多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2161737736",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2552,
+  "name": "带内-Exporter-NPU-VPC功能异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2161999872",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2554,
+  "name": "带内-Exporter-NPU-VPC单bit ECC错误不可纠错",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2161999879",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2553,
+  "name": "带内-Exporter-NPU-VPC图像处理配置异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2161999875",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2555,
+  "name": "带内-Exporter-NPU-VPC多bit ECC错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2161999880",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2587,
+  "name": "带内-Exporter-NPU-aicpu检测到精度敏感特征异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2155973632",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2505,
+  "name": "带内-Exporter-NPU-掉卡",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "abs(delta(machine_npu_nums[5m]) + 8) < 8",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2605,
+  "name": "带内-Exporter-NPU-硬件计算检测低风险异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2155973638",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2595,
+  "name": "带内-Exporter-NPU-硬件计算检测高风险异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2155973637",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2588,
+  "name": "带内-Exporter-NPU-网口Link状态变化（Up->Down）",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2164753923",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2560,
+  "name": "带内-Exporter-NPU-设备的HBM总的多bit ECC隔离行数达到64个",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 2162263042",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2532,
+  "name": "带内-Exporter-NPU-跨板心跳检测异常",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_error_code == 1090014720",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2485,
+  "name": "带内-Exporter-NPU-链路失效",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "max_over_time(npu_chip_link_up_num[10m]) - min_over_time(... > 0 AND npu_chip_link_up_num > 10",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2482,
+  "name": "带内-Exporter-NPU-链路异常",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_network_status == 0 AND npu_chip_link_up_num > 10",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2483,
+  "name": "带内-Exporter-NPU-链路断开",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "npu_chip_info_link_status == 0 AND npu_chip_link_up_num > 10",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2735,
+  "name": "带内-GPU-DRAM/HBM 不可纠正错误（当前运行中持续发生）> 0",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.dram_uncorrectable_volatile > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2734,
+  "name": "带内-GPU-DRAM/HBM 不可纠正错误（累计）> 0 【仅参考，核心关注volatile】",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.dram_uncorrectable_aggregate > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2740,
+  "name": "带内-GPU-GPU 温度过高 / 热降频  > 83℃",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.gpu_temp > 83",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2736,
+  "name": "带内-GPU-HBM 可纠正错误率升高（硬件退化预警）> 10000000 或持续增长",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.dram_correctable_volatile > 10000000",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2739,
+  "name": "带内-GPU-NVLink 链路 Down",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.nvlink_state_all_down == down",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2738,
+  "name": "带内-GPU-PCIe 接口相关 SRAM 不可纠正错误 > 0 【仅告警】",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.sram_pcie_source > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2731,
+  "name": "带内-GPU-SRAM 不可纠正 SECDED 错误 > 2",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.sram_uncorrectable_secded_aggregate > 2",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2733,
+  "name": "带内-GPU-SRAM 不可纠正 SECDED 错误（当前运行中持续发生）> 0",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.sram_uncorrectable_secded_volatile > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2730,
+  "name": "带内-GPU-SRAM 不可纠正奇偶错误 > 4",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.sram_uncorrectable_parity_aggregate > 4",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2732,
+  "name": "带内-GPU-SRAM 不可纠正奇偶错误（当前运行中持续发生）> 0",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.sram_uncorrectable_parity_volatile > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2737,
+  "name": "带内-GPU-SRAM 可纠正错误率升高（硬件退化预警） > 0  【需持续增长】",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.sram_correctable_volatile > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2654,
+  "name": "带内-exporter-GPU-PCIe链路代际降级-model",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": "(DCGM_FI_DEV_PCIE_LINK_GEN{modelName=~\".*(H100|H200|H800|... > 0",
+  "alarm_period": 300,
+  "touch": 1
+ },
+ {
+  "id": 2655,
+  "name": "带内-exporter-GPU-PCIe链路宽度降级-5m",
+  "level": "S2-高",
+  "fault_type": "GPU故障",
+  "expr": " (DCGM_FI_DEV_PCIE_MAX_LINK_WIDTH - on(Hostname,gpu,UUID,... > 0",
+  "alarm_period": 300,
+  "touch": 1
+ },
+ {
+  "id": 2715,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_MEMORY_STATUS==1",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_MEMORY_STATUS == 1",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2716,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==1-初始化失败固件无法启动",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 1",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2726,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==100663297- PCIe 链路异常掉卡",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 100663297",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2727,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==117440513- MTLink 链路断连",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 117440513",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2728,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==117440515- MTLink 永久性不可恢复错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 117440515",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2729,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==167772161- DMA 传输超时/描述符/配置错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 167772161",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2717,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==16777220-固件到驱动的响应中断丢失",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 16777220",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2718,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==16777222-GPU 硬件故障,设备无法运行",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 16777222",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2719,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==16777223- Kernel 运行超时",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 16777223",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2720,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==16777224- GPU 固件挂起",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 16777224",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2721,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==33554439- AXI 总线硬件错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 33554439",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2722,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==83886081- 风扇转速异常或停转",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 83886081",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2723,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==83886082- GPU BIOS 致命错误",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 83886082",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2724,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==83886083- 核心温度超安全值,降温保护",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 83886083",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2725,
+  "name": "带内-exporter-摩尔线程-DCGM_FI_DEV_XID_ERRORS==83886084- 温度超门限,GPU 自动离线",
+  "level": "S3-中等",
+  "fault_type": "GPU故障",
+  "expr": "DCGM_FI_DEV_XID_ERRORS == 83886084",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1786,
+  "name": "带内-gpu-GPU-gpu_MaxTemp_error",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.gpu-temp-error[:].GPU Current Temp > $.gpu-temp-error[:].GPU Max Operating T.Limit Temp",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 1787,
+  "name": "带内-gpu-GPU-gpu_SlowDown_temp_error",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.gpu-temp-error[:].GPU Current Temp >= $.gpu-temp-error[:].GPU Slowdown T.Limit Temp",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 1788,
+  "name": "带内-gpu-GPU-gpu_power_error",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.gpu_power[:].Power Draw >= $.gpu_power[:].Current Power Limit",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 1775,
+  "name": "带内-gpu-GPU-gpu_ue",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.gpu_ue[:].Double Bit ECC > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1846,
+  "name": "带内-掉件-GPU故障",
+  "level": "S4-低",
+  "fault_type": "GPU故障",
+  "expr": "$.gpu_error == lost",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 1710,
+  "name": "带内-硬盘-写穿-NVMe-NO",
+  "level": "S4-低",
+  "fault_type": "SSD写穿故障",
+  "expr": "$.disk_smart.[:].percentage_used >= 97",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1943,
+  "name": "光模块故障-Finisar-规则1",
+  "level": "S3-中等",
+  "fault_type": "光模块故障",
+  "expr": "current_RX_power < -4.5",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1944,
+  "name": "光模块故障-Finisar-规则2",
+  "level": "S3-中等",
+  "fault_type": "光模块故障",
+  "expr": "current_RX_power == -40 AND remote_port_id !=  ",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1945,
+  "name": "光模块故障-Finisar-规则3",
+  "level": "S3-中等",
+  "fault_type": "光模块故障",
+  "expr": "current_RX_power != -36.96 AND remote_port_id !=  ",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1942,
+  "name": "光模块故障-WTD",
+  "level": "S3-中等",
+  "fault_type": "光模块故障",
+  "expr": "current_RX_power < -5",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2691,
+  "name": "ce_delta",
+  "level": "S4-低",
+  "fault_type": "内存故障",
+  "expr": "$mem_ce_counter.ce_delta >= 1",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 2690,
+  "name": "ce_delta_test",
+  "level": "S4-低",
+  "fault_type": "内存故障",
+  "expr": "$.mem_ce_counter[:].ce_delta >= 0",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 1766,
+  "name": "带内-MCE-内存CE故障",
+  "level": "S4-低",
+  "fault_type": "内存故障",
+  "expr": "$.mem_ce[:].ce_count >= 5000",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 2689,
+  "name": "带内-MCE-内存CE故障-delta>0",
+  "level": "S4-低",
+  "fault_type": "内存故障",
+  "expr": "$.mem_ce_counter[:].ce_delta >= 0",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 2688,
+  "name": "带内-MCE-内存CE故障-delta>1000",
+  "level": "S4-低",
+  "fault_type": "内存故障",
+  "expr": "$.mem_ce_counter[:].ce_delta >= 1000",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 2692,
+  "name": "带内-MCE-内存CE故障-delta>10000",
+  "level": "S4-低",
+  "fault_type": "内存故障",
+  "expr": "$.mem_ce_counter[:].ce_delta >= 10000",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 2687,
+  "name": "带内-MCE-内存CE故障-delta>2000",
+  "level": "S4-低",
+  "fault_type": "内存故障",
+  "expr": "$.mem_ce_counter[:].ce_delta >= 2000",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 2686,
+  "name": "带内-MCE-内存CE故障-delta>3000",
+  "level": "S4-低",
+  "fault_type": "内存故障",
+  "expr": "$.mem_ce_counter[:].ce_delta >= 3000",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 2685,
+  "name": "带内-MCE-内存CE故障-delta>4000",
+  "level": "S4-低",
+  "fault_type": "内存故障",
+  "expr": "$.mem_ce_counter[:].ce_delta >= 4000",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 2684,
+  "name": "带内-MCE-内存CE故障-delta>5000",
+  "level": "S4-低",
+  "fault_type": "内存故障",
+  "expr": "$.mem_ce_counter[:].ce_delta >= 5000",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 1841,
+  "name": "带内-MCE-内存UE故障",
+  "level": "S2-高",
+  "fault_type": "内存故障",
+  "expr": "$.mem_ue[:].ue_info != null",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 1845,
+  "name": "带内-掉件-内存故障",
+  "level": "S4-低",
+  "fault_type": "内存故障",
+  "expr": "$.memory_error == lost",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 1848,
+  "name": "带内-掉件-电源故障",
+  "level": "S4-低",
+  "fault_type": "电源故障",
+  "expr": "$.power_error == lost",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 2623,
+  "name": "debug-2",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_smart.[:].9.raw_value != 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2624,
+  "name": "debug-3",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_smart.[:].9.value != 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2625,
+  "name": "debug-4",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_smart.[:].9.raw_value != 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1844,
+  "name": "带内-掉件-硬盘故障",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_error == lost",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 2005,
+  "name": "带内-硬盘-SMART-End-to-End_Error-NO",
+  "level": "S3-中等",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_details[:].smart_info.184.VALUE >= 10",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2004,
+  "name": "带内-硬盘-SMART-Reallocated_Sector_Ct-NO",
+  "level": "S3-中等",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_details[:].smart_info.5.VALUE >  500",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2006,
+  "name": "带内-硬盘-SMART-Reported_Uncorrect-NO",
+  "level": "S3-中等",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_details[:].smart_info.187.VALUE >= 10",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2003,
+  "name": "带内-硬盘-SMART-自检异常-NO",
+  "level": "S3-中等",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_details[:].overall_health !=   AND $.disk_details[:].overall_health != PASSED",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2622,
+  "name": "带内-硬盘-debug",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_details[:].smart_info.9.raw_value != 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2618,
+  "name": "带内-硬盘-disk_power_on_hours-64479",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_smart.[:].power_on_hours > 64479",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2621,
+  "name": "带内-硬盘-disk_power_on_hours-64479-2",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_details[:].smart_info.9.raw_value > 64479",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2617,
+  "name": "带内-硬盘-disk_power_on_hours-65367",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_smart.[:].power_on_hours > 65367",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2620,
+  "name": "带内-硬盘-disk_power_on_hours-65367-2",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "  $.disk_details[:].smart_info.9.RAW_VALUE > 65367",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2616,
+  "name": "带内-硬盘-disk_power_on_hours-65535",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_smart.[:].power_on_hours > 65535",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2619,
+  "name": "带内-硬盘-disk_power_on_hours-65535-2",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "  $.disk_details[:].smart_info.9.RAW_VALUE > 65535",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2007,
+  "name": "带内-硬盘-严重告警数量超阈值-NVMe-NO",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_smart.[:].critical_warning > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2002,
+  "name": "带内-硬盘-可用空间不足-NVMe-NO",
+  "level": "S3-中等",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_smart.[:].available_spare < 10 AND $.disk_smart.[:].temperature > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1762,
+  "name": "带内-阵列卡-PD_error3-Media_Error",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_status.[:].media_error > 1000",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1763,
+  "name": "带内-阵列卡-PD_error3-Other_Error",
+  "level": "S4-低",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_status.[:].other_error >= 2048",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1804,
+  "name": "带内-阵列卡-PD_error3-Predictive_Failure",
+  "level": "S3-中等",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_status.[:].predictive_failure > 0",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1928,
+  "name": "带内-阵列卡-PD_state=CFShld",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == CFShld",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1922,
+  "name": "带内-阵列卡-PD_state=Cfgincompat",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == Cfgincompat",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1926,
+  "name": "带内-阵列卡-PD_state=Configured_shielded",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == Configured - shielded",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1932,
+  "name": "带内-阵列卡-PD_state=Failed",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == Failed",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1923,
+  "name": "带内-阵列卡-PD_state=Fault",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == Fault",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1927,
+  "name": "带内-阵列卡-PD_state=OffIn",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == OffIn",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1931,
+  "name": "带内-阵列卡-PD_state=Offline",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == Offline",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1919,
+  "name": "带内-阵列卡-PD_state=Predictive_Failure",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == Predictive   Failure",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1930,
+  "name": "带内-阵列卡-PD_state=UBUnsp",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == UBUnsp",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1929,
+  "name": "带内-阵列卡-PD_state=UBad",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == UBad",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1920,
+  "name": "带内-阵列卡-PD_state=Unconfigured (bad)",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == Unconfigured (bad)",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1924,
+  "name": "带内-阵列卡-PD_state=Unknown",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == Unknown",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1925,
+  "name": "带内-阵列卡-PD_state=Unsupport",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == Unsupport",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1921,
+  "name": "带内-阵列卡-PD_state=foreign",
+  "level": "S1-严重",
+  "fault_type": "硬盘故障",
+  "expr": "$.disk_state.[:].state == Foreign",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1967,
+  "name": "带内-阵列卡-VD_state-Arcconf",
+  "level": "S3-中等",
+  "fault_type": "硬盘故障",
+  "expr": "$.raid_tools == arcconf AND $.vd_state.[:].state != Optimal",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1966,
+  "name": "带内-阵列卡-VD_state-Ssacli=Failed",
+  "level": "S3-中等",
+  "fault_type": "硬盘故障",
+  "expr": "$.raid_tools == ssacli AND $.vd_state.[:].state == Failed",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1965,
+  "name": "带内-阵列卡-VD_state-Ssacli=Interim Recovery",
+  "level": "S3-中等",
+  "fault_type": "硬盘故障",
+  "expr": "$.raid_tools == ssacli AND $.vd_state.[:].state == Interim Recovery",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1964,
+  "name": "带内-阵列卡-VD_state-Storcli64",
+  "level": "S3-中等",
+  "fault_type": "硬盘故障",
+  "expr": "$.raid_tools == storcli64 AND $.vd_state.[:].state != Optimal AND $.vd_state.[:].state != Rebuild AND $.vd_state.[:].state != Optl AND $.vd_state.[:].state != Rbld AND $.vd_state.[:].state != Solid State Device",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1847,
+  "name": "带内-掉件-网卡故障",
+  "level": "S4-低",
+  "fault_type": "网卡故障",
+  "expr": "$.net_error == lost",
+  "alarm_period": 0,
+  "touch": 0
+ },
+ {
+  "id": 1946,
+  "name": "带内-网线-CRC故障",
+  "level": "S4-低",
+  "fault_type": "网线故障",
+  "expr": "$.increase_errors >= 300",
+  "alarm_period": 10,
+  "touch": 1
+ },
+ {
+  "id": 2468,
+  "name": "通道发送功率大于4dBm",
+  "level": "S4-低",
+  "fault_type": "网线故障",
+  "expr": "{__name__=~\"network_optical_channel[1-4]_t_x_power\"} != -... > 400",
+  "alarm_period": 300,
+  "touch": 1
+ },
+ {
+  "id": 2469,
+  "name": "通道发送功率小于4.6dBm",
+  "level": "S4-低",
+  "fault_type": "网线故障",
+  "expr": "{__name__=~\"network_optical_channel[1-4]_t_x_power\"} != -... < -460",
+  "alarm_period": 300,
+  "touch": 1
+ },
+ {
+  "id": 2465,
+  "name": "通道发送功率抖动大于3dBm",
+  "level": "S4-低",
+  "fault_type": "网线故障",
+  "expr": "max by (ip,if_name)({__name__=~\"network_optical_channel[1... > 300",
+  "alarm_period": 300,
+  "touch": 1
+ },
+ {
+  "id": 2466,
+  "name": "通道接收功率大于4dBm",
+  "level": "S4-低",
+  "fault_type": "网线故障",
+  "expr": "{__name__=~\"network_optical_channel[1-4]_r_x_power\"} != -... > 400",
+  "alarm_period": 300,
+  "touch": 1
+ },
+ {
+  "id": 2467,
+  "name": "通道接收功率小于6.3dBm",
+  "level": "S4-低",
+  "fault_type": "网线故障",
+  "expr": "{__name__=~\"network_optical_channel[1-4]_r_x_power\"} != -... < -630",
+  "alarm_period": 300,
+  "touch": 1
+ },
+ {
+  "id": 2464,
+  "name": "通道接收功率抖动大于3dBm",
+  "level": "S4-低",
+  "fault_type": "网线故障",
+  "expr": "max by (ip,if_name)({__name__=~\"network_optical_channel[1... > 300",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 1740,
+  "name": "带内-阵列卡-Battery-状态",
+  "level": "S4-低",
+  "fault_type": "阵列卡故障",
+  "expr": "$.raid_card. cache > 0 AND $.raid_card. battery != Success AND $.raid_card. battery != Absent AND $.raid_card. battery != OK AND $.raid_card. battery != Optimal AND $.raid_card. battery != Present",
+  "alarm_period": 1,
+  "touch": 1
+ },
+ {
+  "id": 2010,
+  "name": "带内-阵列卡-FW-状态",
+  "level": "S4-低",
+  "fault_type": "阵列卡故障",
+  "expr": "$.vd_fw !=   AND $.vd_fw != Need Attention AND $.vd_fw != OK AND $.vd_fw != Optimal",
+  "alarm_period": 1,
+  "touch": 1
+ }
+]
