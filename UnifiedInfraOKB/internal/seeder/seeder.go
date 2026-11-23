@@ -169,6 +169,9 @@ func inferFragments() []string {
 		`{"source": "gpu.xid.154", "target": "gpu.reset.fail", "conditions": [{"fact_key": "recovery_action", "op": "eq", "value": "0x1"}], "time_constraints": "{\"delay_tier\":\"minutes\"}"}`,
 		// 告警入口（infer 级）
 		`{"anomaly": "net.port.down", "alert": "ALERT-LINK-DOWN"}`,
+		`{"anomaly": "cooling.chilled_water.pump_fault", "alert": "ALERT-CHWP-FAULT"}`,
+		`{"anomaly": "server.optical.rx_power.abnormal", "alert": "ALERT-OPTICAL-RX-LOW"}`,
+		`{"anomaly": "net.protocol.bgp.peer_down", "alert": "ALERT-BGP-PEER-DOWN"}`,
 	}
 	return frags
 }
