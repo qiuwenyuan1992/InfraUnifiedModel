@@ -1,6 +1,7 @@
 // cmd/seed 种子灌库入口：把因果边清单（draft 种子数据）经摄取接口灌入 OKB 库。
 // 与 server 同一连接约定：OKB_DB_DRIVER=sqlite|mysql + OKB_MYSQL_DSN / OKB_SQLITE_PATH。
-// 幂等：摄取内容寻址去重，重复执行返回 duplicate 不虚增。
+// OKB_RESET=true：先清空全部知识表（含老 demo 数据）再灌——"全部数据按当前 OKB 走一遍"。
+// 默认模式幂等：摄取内容寻址去重，重复执行返回 duplicate 不虚增。
 package main
 
 import (
@@ -48,12 +49,23 @@ func run() error {
 		return fmt.Errorf("init store: %w", err)
 	}
 	svc := service.New(store, nil, service.DefaultConfig())
+	// OKB_RESET=true：清空老 demo 数据（v2 演示遗留，等级被污染不保留）后全量重灌
+	if envOr("OKB_RESET", "") == "true" {
+		if err := seeder.ResetAll(store); err != nil {
+			return fmt.Errorf("reset: %w", err)
+		}
+		fmt.Println("reset done: all knowledge tables cleared")
+	}
 	rep, err := seeder.Seed(svc)
 	if err != nil {
 		return fmt.Errorf("seed: %w", err)
 	}
-	fmt.Printf("seed done (driver=%s): sources=%d new_anomalies=%d new_rules=%d new_mappings=%d\n",
-		driver, rep.Sources, rep.Anomalies, rep.Rules, rep.Mappings)
+	srep, err := seeder.RebuildScenarios(svc)
+	if err != nil {
+		return fmt.Errorf("rebuild scenarios: %w", err)
+	}
+	fmt.Printf("seed done (driver=%s): sources=%d new_anomalies=%d new_rules=%d new_mappings=%d scenarios=%d assigned=%d\n",
+		driver, rep.Sources, rep.Anomalies, rep.Rules, rep.Mappings, srep.Scenarios, srep.Assigned)
 	return nil
 }
 
