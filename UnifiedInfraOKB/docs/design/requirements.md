@@ -1,6 +1,6 @@
 # OKB v2 需求基线：故障知识图谱与 Agent 诊断记忆底座
 
-日期：2026-11-16。版本：v2 基线（整体取代并删除 v1 全部设计文档）。目标参照：XiHe, *Networked Agent Memory and Causality Representation: Experiences towards Interpretable Cloud-Scale Root-Causing*, SIGCOMM 2026, DOI 10.1145/3789240.3829145。
+日期：2026-11-16。版本：**v2.1（2026-11-20 修订）**——继承 v2 全部基线，新增三域故障字典（262 码）挖掘工程得出的四项结构修订：多关系类型（edge_kind）、severity 等级体系、runtime_verified 证据与样本优先仲裁、结构化数据源。修订动机见《UnifiedInfrastructureModel/跨域关联全景.md》与本文 §3/§4/§11。目标参照：XiHe, *Networked Agent Memory and Causality Representation: Experiences towards Interpretable Cloud-Scale Root-Causing*, SIGCOMM 2026, DOI 10.1145/3789240.3829145。
 
 ## 1 系统定位
 
@@ -11,13 +11,20 @@
 ## 2 核心资产：故障知识图谱
 
 ```
-节点   anomaly_type      异常（GPU ECC 错误、HCA 链路降速等），stable_code 唯一
-边     causal_rule       源异常 → 目标异常，携带触发条件、时间约束、反证记录、证据等级
-入口   alert_mapping     告警 signature → 候选异常集合（含置信度）
+节点   anomaly_type      异常（GPU ECC 错误、HCA 链路降速等），stable_code 唯一；
+                       v2.1 增：severity（线上等级+字典等级）、node_kind（原子/汇总/预留/事件）
+边     causal_rule       源异常 → 目标异常，携带触发条件、时间约束、反证记录、证据等级；
+                       v2.1 增：edge_kind 三态（causal / same_event / same_family）
+入口   alert_mapping     告警 signature → 候选异常集合（含置信度）；
+                       v2.1 增：signature 结构化（域+采集通道+键值，见 storage-model）
 ```
 
 - 物理形态：第一期 MySQL 关系表存节点/边/入口，服务内 BFS 遍历；规模达到需要时再导出 NebulaGraph（独立图空间，不碰 UnifiedInfraTopology）。
 - 图语义：触发条件不满足的边不可走，防止"可能性"被遍历放大成"必然性"；多跳组合输出显式标注"逐跳已核/组合推导"。
+- **v2.1 边语义三分**（源自三域跨域对齐实践）：
+  - `causal`：因果传播（可遍历）；
+  - `same_event`：同一物理事件的两侧观测（交换机 Port Down ↔ 服务器 Link Down）——**不参与因果遍历**，以"同事件对端"关联返回，供证据聚合；
+  - `same_family`：机理同族（双侧 CRC、两域光模块）——**不参与因果遍历**，以"对比诊断候选"返回。
 
 ## 3 数据源
 
@@ -26,6 +33,10 @@
 | `internal_case` | **一等公民** | 已脱敏故障工单/复盘。**结构化程度低，须 LLM 二次结构化提取**（时间线、告警、根因、处置、验证结论），提取结果为候选，须校验后方可入库 |
 | `vendor_doc` | 补充源 | 厂商 PDF/HTML/runbook：异常定义、机制解释、可能性枚举 |
 | `expert_input` | 补充源 | 专家经验，无出处，最低可信 |
+| `alert_strategy` | **v2.1 增：结构化配置源** | 监控告警策略库（三域 926+312+74 条已挖掘）：fault_type/策略名/表达式/正则——异常定义与观测面的高结构化来源，可直接结构化入库，无需 LLM 提取 |
+| `alert_event` | **v2.1 增：运行实证源** | 真实告警事件（样本）：证明"此告警线上真实发生、实测等级为 X"——runtime_verified 证据的唯一来源；原件入对象存储不进 Git（脱敏合成版可进） |
+| `system_code` | **v2.1 增：既有系统源** | 既有系统代码中固化的映射/规则（如 ServerLevel/NetworkLevel/PowerLevel 等级映射表）——权威性强，变更走代码评审 |
+| `industry_report` | **v2.1 增：公开行业源** | 公开行业报告/案例（Uptime Institute、华为白皮书等）——跨域场景与行业基线数据的来源 |
 | 反馈数据 | 准确性飞轮输入 | 诊断确认/否决记录（见第 5 节） |
 
 ## 4 证据分级
@@ -33,11 +44,14 @@
 | 等级 | 来源 | Agent 使用规则 |
 | --- | --- | --- |
 | `case_verified` | 真实工单/复盘提取的已发生因果链 | 可直接入候选链 |
-| `doc_explicit` | 厂商文档明示的可能性 | 可入链，输出标注"文档推导" |
+| `runtime_verified` | **v2.1 增**：真实告警事件实证（线上实测） | 可入链；证明**单点事实**（告警真实发生、实测等级/值），不证明完整因果链——链级可信仍需 case_verified |
+| `doc_explicit` | 厂商文档或策略配置明示 | 可入链，输出标注"文档推导" |
 | `inferred` | AI 推导 | 仅入人工参考视图，不入 Agent 链 |
 | `expert_only` | 专家经验，无出处 | 同上，最低可信 |
 
 证据等级生来自源、不事后提升；用途升级只能通过新证据 + 新修订，禁止反向编造出处。
+
+**v2.1 仲裁规则（样本优先）**：同一事实在不同来源冲突时（典型：策略配置等级 vs 真实告警实测等级），**runtime_verified 优先于 doc_explicit**（运行是事实，配置是声明）；裁决结果通过新修订落档，原值保留在修订历史。实证案例：动环电池电压低（策略 L2 / 实测 L3，取 L3）、WDM 波分等级（配置 A9 / 厂商原始 CRITICAL，根因为映射缺失，见等级映射文档）。
 
 ## 5 准确性机制（三层）
 
@@ -88,4 +102,17 @@
 - A5 反馈：`report` 确认/否决后边的置信度变化，否决边降级入复核队列。
 - A6 证据回链：evidence 返回摘要与原文（权限分级本期不启用，后置 S3；启用后改为"未授权只拿摘要"）。
 - A7 对齐：两个厂商别名指向同一 stable_code 节点。
+- A8 跨域关联（v2.1 增）：`lookup`/`trace` 对 `same_event` 边返回"同事件对端"标注（不参与因果遍历）；三域掉电场景（动环 PDU → 服务器 input_lost）作为验收用例。
+- A9 等级与时钟（v2.1 增）：查询结果携带 severity（线上等级+字典等级）；time_constraints 区分传播延迟档（秒/分/时），液冷场景（分钟级）与风冷场景（小时级）作为验收用例。
 - 每个切片交付时补充真实运行证据；未验证不得宣称通过。
+
+## 11 v2.1 修订记录（2026-11-20）
+
+| 修订 | 内容 | 动机（来源） |
+| --- | --- | --- |
+| 边语义三分 | causal_rule 增 edge_kind：causal / same_event / same_family；后两者不参与因果遍历 | 跨域对齐 12 组实证：同一物理事件两面/同族对比**不是因果**，塞进因果边会污染 trace 语义 |
+| 等级体系 | anomaly_type 增 severity（线上 P0-P4 + 字典 P1-P3）与处置时钟属性 | 三域等级映射定论（S/A/L→P）；液冷分钟级 vs 风冷小时级的时间压力差异需要结构化表达 |
+| 节点类型 | anomaly_type 增 node_kind：atomic / aggregate（多因汇总态）/ placeholder（监控空白预留）/ event（事件类） | `npu.offline` 类多因汇总态需下游分解、预留位码无观测面——不同 node_kind 的消费语义不同 |
+| runtime_verified | 证据分级新增运行实证级 + 样本优先仲裁规则 | Xid 154 等真实告警实证既非工单也非文档；策略配置等级与实测等级冲突需裁决规则 |
+| 结构化数据源 | source 枚举扩：alert_strategy / alert_event / system_code / industry_report | 三域策略库/告警样本/既有代码/公开报告是实际存在的四类来源，v2 三分类装不下 |
+| 结构化 signature | alert_mapping 由单字符串改为结构化（域+通道+键值+升级链引用） | 四域四采集通道的映射键结构不同（正则/trap 名/指标阈值/监控点路径/GUID 对） |
