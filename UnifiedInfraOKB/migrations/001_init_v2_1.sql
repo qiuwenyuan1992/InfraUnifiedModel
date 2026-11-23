@@ -1,5 +1,6 @@
 -- OKB v2.1 初始化迁移（MySQL 8.0+）
 -- 依据 storage-model.md v2.1：不可变层 + 图谱层（edge_kind 三分/severity/node_kind/结构化 signature）+ 证据与修订层 + 场景层。
+-- 表名与 GORM 默认 NamingStrategy 一致（复数）；既有 v2 库请改用 002_alter_v2_1.sql 增量升级，勿重跑本文件。
 -- 执行方式：mysql -u <user> -p <db> < migrations/001_init_v2_1.sql
 -- 幂等性：CREATE TABLE IF NOT EXISTS；不覆盖既有数据。
 
@@ -7,7 +8,7 @@ SET NAMES utf8mb4;
 
 -- ---------- 不可变层 ----------
 
-CREATE TABLE IF NOT EXISTS `source` (
+CREATE TABLE IF NOT EXISTS `sources` (
   `id`                 VARCHAR(36)  NOT NULL PRIMARY KEY,
   `kind`              VARCHAR(20)  NOT NULL COMMENT 'internal_case/vendor_doc/expert_input/alert_strategy/alert_event/system_code/industry_report',
   `title`             VARCHAR(256) NOT NULL,
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS `source` (
   KEY `idx_source_kind` (`kind`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据源登记';
 
-CREATE TABLE IF NOT EXISTS `source_version` (
+CREATE TABLE IF NOT EXISTS `source_versions` (
   `id`           VARCHAR(36)  NOT NULL PRIMARY KEY,
   `source_id`    VARCHAR(36)  NOT NULL,
   `content_hash` VARCHAR(64)  NOT NULL COMMENT 'sha256 内容寻址',
@@ -28,7 +29,7 @@ CREATE TABLE IF NOT EXISTS `source_version` (
   KEY `idx_sv_source` (`source_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='原件版本（不可变）';
 
-CREATE TABLE IF NOT EXISTS `parsed_version` (
+CREATE TABLE IF NOT EXISTS `parsed_versions` (
   `id`               VARCHAR(36) NOT NULL PRIMARY KEY,
   `source_version_id` VARCHAR(36) NOT NULL,
   `parser_version`   VARCHAR(32) NOT NULL,
@@ -37,7 +38,7 @@ CREATE TABLE IF NOT EXISTS `parsed_version` (
   KEY `idx_pv_sv` (`source_version_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='解析版本（不可变）';
 
-CREATE TABLE IF NOT EXISTS `fragment` (
+CREATE TABLE IF NOT EXISTS `fragments` (
   `id`                VARCHAR(36)  NOT NULL PRIMARY KEY,
   `parsed_version_id` VARCHAR(36)  NOT NULL,
   `char_start`       INT          NOT NULL DEFAULT 0,
@@ -53,7 +54,7 @@ CREATE TABLE IF NOT EXISTS `fragment` (
 
 -- ---------- 图谱层 ----------
 
-CREATE TABLE IF NOT EXISTS `anomaly_type` (
+CREATE TABLE IF NOT EXISTS `anomaly_types` (
   `id`                 VARCHAR(36)  NOT NULL PRIMARY KEY,
   `stable_code`        VARCHAR(128) NOT NULL,
   `name`               VARCHAR(256) NOT NULL,
@@ -71,7 +72,7 @@ CREATE TABLE IF NOT EXISTS `anomaly_type` (
   KEY `idx_anomaly_domain` (`domain`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异常节点';
 
-CREATE TABLE IF NOT EXISTS `anomaly_alias` (
+CREATE TABLE IF NOT EXISTS `anomaly_aliases` (
   `id`         VARCHAR(36)  NOT NULL PRIMARY KEY,
   `anomaly_id` VARCHAR(36)  NOT NULL,
   `alias`      VARCHAR(256) NOT NULL,
@@ -82,7 +83,7 @@ CREATE TABLE IF NOT EXISTS `anomaly_alias` (
   KEY `idx_alias_text` (`alias`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='厂商别名对齐表';
 
-CREATE TABLE IF NOT EXISTS `causal_rule` (
+CREATE TABLE IF NOT EXISTS `causal_rules` (
   `id`                     VARCHAR(36)  NOT NULL PRIMARY KEY,
   `source_anomaly_id`      VARCHAR(36)  NOT NULL,
   `target_anomaly_id`      VARCHAR(36)  NOT NULL,
@@ -103,7 +104,7 @@ CREATE TABLE IF NOT EXISTS `causal_rule` (
   KEY `idx_edge_target` (`target_anomaly_id`, `edge_kind`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='因果边与非因果关联（v2.1 边语义三分）';
 
-CREATE TABLE IF NOT EXISTS `alert_mapping` (
+CREATE TABLE IF NOT EXISTS `alert_mappings` (
   `id`                 VARCHAR(36)  NOT NULL PRIMARY KEY,
   `alert_signature`    VARCHAR(256) NOT NULL COMMENT '拼接键 domain|channel|sig_key 或旧式单串',
   `domain`             VARCHAR(32)  DEFAULT NULL COMMENT 'v2.1 server/network/dci',
@@ -125,7 +126,7 @@ CREATE TABLE IF NOT EXISTS `alert_mapping` (
 
 -- ---------- 证据与修订层 ----------
 
-CREATE TABLE IF NOT EXISTS `evidence` (
+CREATE TABLE IF NOT EXISTS `evidences` (
   `id`           VARCHAR(36) NOT NULL PRIMARY KEY,
   `kind`         VARCHAR(20) NOT NULL COMMENT 'case/runtime/doc/inferred/expert',
   `entity_type`  VARCHAR(20) NOT NULL COMMENT 'anomaly_type/causal_rule/alert_mapping',
@@ -138,7 +139,7 @@ CREATE TABLE IF NOT EXISTS `evidence` (
   KEY `idx_ev_entity` (`entity_type`, `entity_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一证据记录';
 
-CREATE TABLE IF NOT EXISTS `revision` (
+CREATE TABLE IF NOT EXISTS `revisions` (
   `id`               VARCHAR(36) NOT NULL PRIMARY KEY,
   `entity_type`      VARCHAR(20) NOT NULL,
   `entity_id`        VARCHAR(36) NOT NULL,
@@ -150,7 +151,7 @@ CREATE TABLE IF NOT EXISTS `revision` (
   KEY `idx_rev_entity` (`entity_type`, `entity_id`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='追加式修订历史（不覆盖）';
 
-CREATE TABLE IF NOT EXISTS `feedback` (
+CREATE TABLE IF NOT EXISTS `feedbacks` (
   `id`            VARCHAR(36)  NOT NULL PRIMARY KEY,
   `diagnosis_ref` VARCHAR(128) NOT NULL,
   `edge_id`       VARCHAR(36)  NOT NULL,
@@ -163,7 +164,7 @@ CREATE TABLE IF NOT EXISTS `feedback` (
 
 -- ---------- 场景层 ----------
 
-CREATE TABLE IF NOT EXISTS `scenario` (
+CREATE TABLE IF NOT EXISTS `scenarios` (
   `id`          VARCHAR(36)  NOT NULL PRIMARY KEY,
   `code`        VARCHAR(128) NOT NULL,
   `name`        VARCHAR(128) NOT NULL,
@@ -174,7 +175,7 @@ CREATE TABLE IF NOT EXISTS `scenario` (
   UNIQUE KEY `uk_scenario_code` (`code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='场景（组织维度）';
 
-CREATE TABLE IF NOT EXISTS `scenario_node` (
+CREATE TABLE IF NOT EXISTS `scenario_nodes` (
   `id`         VARCHAR(36) NOT NULL PRIMARY KEY,
   `scenario_id` VARCHAR(36) NOT NULL,
   `anomaly_id` VARCHAR(36) NOT NULL,

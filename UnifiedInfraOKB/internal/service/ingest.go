@@ -208,7 +208,8 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 		rule := &model.CausalRule{
 			SourceAnomalyID: srcNode.ID, TargetAnomalyID: dstNode.ID,
 			EdgeKind: model.EdgeKind(c.EdgeKind), EdgeType: c.Rel,
-			Conditions: condJSON, EvidenceLevel: level, Confidence: 0.5,
+			Conditions: condJSON, TimeConstraints: c.TimeConstraints,
+			EvidenceLevel: level, Confidence: 0.5,
 		}
 		// mitigate 根因挂靠：via 节点必须存在；非 mitigate 边忽略 via（语义不混用）
 		if c.Rel == model.EdgeMitigate && c.Via != "" {

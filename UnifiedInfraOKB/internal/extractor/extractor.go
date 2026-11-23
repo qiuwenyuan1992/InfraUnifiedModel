@@ -51,7 +51,10 @@ type CausalChainCandidate struct {
 	Rel        model.EdgeType          `json:"rel,omitempty"`
 	Via        string                  `json:"via,omitempty"`
 	Conditions []model.ConditionClause `json:"conditions,omitempty"`
-	FragmentID string                  `json:"fragment_id"`
+	// TimeConstraints v2.1 时间约束 JSON 文本（如 {"delay_tier":"minutes"}）：
+	// 传播延迟档 seconds/minutes/hours，供 trace 同窗判定与紧迫性排序。
+	TimeConstraints string `json:"time_constraints,omitempty"`
+	FragmentID      string `json:"fragment_id"`
 }
 
 // AlertMappingCandidate 告警映射候选。v2.1 增结构化 signature 字段；
@@ -90,20 +93,22 @@ func (f *FakeExtract) Extract(_ context.Context, _ string, fragments []model.Fra
 			Aliases []string `json:"aliases"`
 			Alert   string   `json:"alert"`
 			// v2.1 结构化字段
-			SeverityOnline string `json:"severity_online"`
-			SeverityDict   string `json:"severity_dict"`
-			NodeKind       string `json:"node_kind"`
-			ClockHint      string `json:"clock_hint"`
-			Domain         string `json:"domain"`
-			EdgeKind       string `json:"edge_kind"`
-			AlertDomain    string `json:"alert_domain"`
-			AlertChannel   string `json:"alert_channel"`
-			SigKey         string `json:"sig_key"`
-			UpgradeRef     string `json:"upgrade_ref"`
-			Source         string `json:"source"`
-			Target         string `json:"target"`
-			Rel            string `json:"rel"`
-			Via            string `json:"via"`
+			SeverityOnline  string                  `json:"severity_online"`
+			SeverityDict    string                  `json:"severity_dict"`
+			NodeKind        string                  `json:"node_kind"`
+			ClockHint       string                  `json:"clock_hint"`
+			Domain          string                  `json:"domain"`
+			EdgeKind        string                  `json:"edge_kind"`
+			AlertDomain     string                  `json:"alert_domain"`
+			AlertChannel    string                  `json:"alert_channel"`
+			SigKey          string                  `json:"sig_key"`
+			UpgradeRef      string                  `json:"upgrade_ref"`
+			Conditions      []model.ConditionClause `json:"conditions"`
+			TimeConstraints string                  `json:"time_constraints"`
+			Source          string                  `json:"source"`
+			Target          string                  `json:"target"`
+			Rel             string                  `json:"rel"`
+			Via             string                  `json:"via"`
 		}
 		if err := json.Unmarshal([]byte(frag.Content), &payload); err != nil {
 			// 片段不是结构化标记，跳过，不生成候选
@@ -144,12 +149,14 @@ func (f *FakeExtract) Extract(_ context.Context, _ string, fragments []model.Fra
 				rel = "" // 非因果关联不带 EdgeType 语义
 			}
 			res.CausalChains = append(res.CausalChains, CausalChainCandidate{
-				SourceCode: payload.Source,
-				TargetCode: payload.Target,
-				EdgeKind:   string(ek),
-				Rel:        rel,
-				Via:        payload.Via, // mitigate 根因挂靠；非 mitigate 边由 service 忽略
-				FragmentID: fid,
+				SourceCode:      payload.Source,
+				TargetCode:      payload.Target,
+				EdgeKind:        string(ek),
+				Rel:             rel,
+				Via:             payload.Via, // mitigate 根因挂靠；非 mitigate 边由 service 忽略
+				Conditions:      payload.Conditions,
+				TimeConstraints: payload.TimeConstraints,
+				FragmentID:      fid,
 			})
 		}
 		if payload.Alert != "" && payload.Anomaly != "" {
