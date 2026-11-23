@@ -238,7 +238,7 @@
     <!-- 知识图谱 -->
     <section v-else-if="page === 'okb:graph'" class="panel">
       <div class="panel-title">
-        <div><h2>故障因果图</h2><span class="muted">节点色 = 领域 · 连线 = 因果边（实线因果传播 / 青虚线处置 / 灰点线症状，粗细按置信度）</span></div>
+        <div><h2>故障因果图</h2><span class="muted">节点色 = 领域 · 大小 = 线上等级 · 实线箭头 = 因果传播（按证据色）· 紫虚线双向 = 同事件 · 橙点线 = 同族 · 青虚线 = 处置 · 半透明 = 草稿</span></div>
         <div class="okb-toolbar">
           <el-select v-model="graphDomainFilter" placeholder="全部领域" clearable class="okb-select">
             <el-option v-for="d in graphDomainOptions" :key="d" :label="domainLabel(d)" :value="d" />
@@ -719,6 +719,7 @@ let chart: echarts.ECharts | null = null
 
 const LEVEL_COLORS: Record<string, string> = {
   case_verified: '#38a078',
+  runtime_verified: '#4f9ee8',
   doc_explicit: '#d79b35',
   inferred: '#8b98aa',
   expert_only: '#8e7cc3',
@@ -736,7 +737,22 @@ function edgeTypeLabel(t?: string): string {
   return ({ trigger: '因果传播', indicate: '症状表现', mitigate: '处置手段', prevent: '预防措施' } as Record<string, string>)[t ?? 'trigger'] ?? t ?? '因果传播'
 }
 
-function edgeLine(e: { edge_type?: string; status: string; evidence_level: string; confidence: number }) {
+// v2.1 非因果边视觉编码：same_event 紫虚线（两侧观测）· same_family 橙点线（同族对比）
+const RELATION_COLORS: Record<string, string> = {
+  same_event: '#8e7cc3',
+  same_family: '#d79b35',
+}
+
+function edgeLine(e: { edge_kind?: string; edge_type?: string; status: string; evidence_level: string; confidence: number }) {
+  // 非因果关联：固定关联样式，不按证据/置信度编码（语义是"关联"而非"传播"）
+  if (e.edge_kind && e.edge_kind !== 'causal') {
+    return {
+      color: RELATION_COLORS[e.edge_kind] ?? '#8b98aa',
+      width: 1.5,
+      type: e.edge_kind === 'same_event' ? ('dashed' as const) : ('dotted' as const),
+      curveness: 0.15,
+    }
+  }
   const base = EDGE_STYLES[e.edge_type ?? 'trigger'] ?? EDGE_STYLES.trigger
   const color = base.color || LEVEL_COLORS[e.evidence_level] || '#8b98aa'
   return {
@@ -747,13 +763,20 @@ function edgeLine(e: { edge_type?: string; status: string; evidence_level: strin
   }
 }
 
+// v2.1 边箭头：causal 单向传播；same_event 双向（互为对端）；same_family 无向对比
+function edgeSymbol(kind?: string): [string, string] {
+  if (kind === 'same_event') return ['arrow', 'arrow']
+  if (kind === 'same_family') return ['none', 'none']
+  return ['none', 'arrow']
+}
+
 const lastGraphView = ref<GraphView | null>(null) // 缓存图数据：领域过滤切换时无需重新请求
 
 // 图中出现的领域选项（动态）
 const graphDomainOptions = computed<string[]>(() => {
   const view = lastGraphView.value
   if (!view) return []
-  return Array.from(new Set(view.nodes.map(n => n.category || 'other')))
+  return Array.from(new Set(view.nodes.map(n => n.domain || n.category || 'other')))
 })
 
 async function doGraph() {
@@ -781,7 +804,7 @@ function renderGraph(view: GraphView) {
   // 领域过滤：选中领域时只保留该领域节点及其关联边
   const domain = graphDomainFilter.value
   const filteredNodes = domain
-    ? view.nodes.filter(n => (n.category || 'other') === domain)
+    ? view.nodes.filter(n => (n.domain || n.category || 'other') === domain)
     : view.nodes
   const nodeIds = new Set(filteredNodes.map(n => n.stable_code))
   const visibleEdges = view.edges
@@ -789,7 +812,7 @@ function renderGraph(view: GraphView) {
       && (!domain || (nodeIds.has(e.source) && nodeIds.has(e.target))))
   const presentLevels = new Set(visibleEdges.filter(e => e.edge_type === 'trigger').map(e => e.evidence_level))
   const presentTypes = new Set(visibleEdges.map(e => e.edge_type ?? 'trigger'))
-  const presentDomains = new Set(filteredNodes.map(n => n.category || 'other'))
+  const presentDomains = new Set(filteredNodes.map(n => n.domain || n.category || 'other'))
   graphLegend.value = Array.from(presentDomains).map(d => ({
     label: domainLabel(d), color: DOMAIN_COLORS[d] ?? DOMAIN_COLORS.other,
   }))
@@ -801,6 +824,10 @@ function renderGraph(view: GraphView) {
       const style = EDGE_STYLES[t]
       if (style?.color) graphLegend.value.push({ label: edgeTypeLabel(t), color: style.color })
     }
+  }
+  // v2.1 非因果关联图例（紫虚线同事件 / 橙点线同族）
+  for (const k of Array.from(new Set(visibleEdges.map(e => e.edge_kind ?? 'causal')))) {
+    if (k !== 'causal') graphLegend.value.push({ label: k === 'same_event' ? '同事件（两侧观测）' : '同族对比', color: RELATION_COLORS[k] ?? '#8b98aa' })
   }
   // 因草稿边被过滤而孤立的节点：提示而非隐藏（用户需要知道知识存在、只是未审核）
   const draftOnlyIds = new Set<string>()
@@ -818,10 +845,15 @@ function renderGraph(view: GraphView) {
       formatter: (params: { dataType: string; data: Record<string, unknown> }) => {
         const d = params.data
         if (params.dataType === 'edge') {
-          return `<b>${d.source} → ${d.target}</b><br/>类型：${edgeTypeLabel(d.edge_type as string)} · 证据：${d.evidence_level} · 置信度 ${Number(d.confidence).toFixed(2)}<br/>状态：${d.status} · 印证 ${d.case_support_count} 工单`
+          const kind = d.edge_kind === 'same_event' ? '同事件（两侧观测）'
+            : d.edge_kind === 'same_family' ? '同族对比' : edgeTypeLabel(d.edge_type as string)
+          const arrow = d.edge_kind === 'same_event' ? '↔' : '→'
+          return `<b>${d.source} ${arrow} ${d.target}</b><br/>关系：${kind} · 证据：${d.evidence_level} · 置信度 ${Number(d.confidence).toFixed(2)}<br/>状态：${d.status} · 印证 ${d.case_support_count} 工单`
         }
         const isolated = d.draft_only ? '<br/><span style="color:#b26205">存在未审核（草稿）关联边，勾选「显示草稿边」可见</span>' : ''
-        return `<b>${d.name}</b><br/>${d.stable_code}<br/>状态：${d.status}${isolated}`
+        const sev = d.severity_online ? `<br/>线上等级：${d.severity_online}` : ''
+        const nk = d.node_kind && d.node_kind !== 'atomic' ? `<br/>节点类型：${d.node_kind}` : ''
+        return `<b>${d.name}</b><br/>${d.stable_code}<br/>状态：${d.status}${sev}${nk}${isolated}`
       },
     },
     series: [{
@@ -830,12 +862,13 @@ function renderGraph(view: GraphView) {
       label: { show: true, position: 'right', fontSize: 11, formatter: (p: { data: { name: string } }) => p.data.name },
       data: filteredNodes.map(n => {
         const draftOnly = draftOnlyIds.has(n.stable_code)
-        const domainColor = DOMAIN_COLORS[n.category || 'other'] ?? DOMAIN_COLORS.other
+        const dom = n.domain || n.category || 'other'
+        const domainColor = DOMAIN_COLORS[dom] ?? DOMAIN_COLORS.other
         return {
           id: n.stable_code, name: n.name, stable_code: n.stable_code, status: n.status, draft_only: draftOnly,
-          category: n.category || 'other',
-          symbolSize: 34,
-          // 领域色板着色；draft 半透明区分；仅草稿边关联节点保持虚线空圈提示
+          category: dom, severity_online: n.severity_online, node_kind: n.node_kind,
+          // v2.1 节点大小按线上等级（P0 最大）；领域色板着色；draft 半透明；仅草稿边关联节点虚线空圈
+          symbolSize: n.severity_online ? severitySize(n.severity_online) : 30,
           itemStyle: draftOnly
             ? { color: '#f5f7fa', borderColor: '#d79b35', borderWidth: 2, borderType: 'dashed' }
             : { color: domainColor, opacity: n.status === 'curated' ? 1 : 0.45 },
@@ -843,10 +876,12 @@ function renderGraph(view: GraphView) {
         }
       }),
       edges: visibleEdges.map(e => ({
-        source: e.source, target: e.target, edge_type: e.edge_type ?? 'trigger',
+        source: e.source, target: e.target, edge_kind: e.edge_kind ?? 'causal',
+        edge_type: e.edge_type ?? 'trigger',
         evidence_level: e.evidence_level,
         confidence: e.confidence, status: e.status, case_support_count: e.case_support_count,
         lineStyle: edgeLine(e),
+        symbol: edgeSymbol(e.edge_kind),
       })),
       emphasis: { focus: 'adjacency' },
     }],

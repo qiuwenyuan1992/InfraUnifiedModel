@@ -125,6 +125,10 @@ export interface GraphNode {
   stable_code: string
   name: string
   category: string
+  // v2.1 字段（着色/等级编码用）
+  domain?: string
+  severity_online?: string
+  node_kind?: 'atomic' | 'aggregate' | 'placeholder' | 'event'
   status: KnowledgeStatus
   revision_id: string
 }
@@ -133,6 +137,7 @@ export interface GraphEdge {
   id: string
   source: string
   target: string
+  edge_kind?: EdgeKind // v2.1 三态：causal / same_event / same_family
   edge_type: EdgeType
   evidence_level: EvidenceLevel
   confidence: number
