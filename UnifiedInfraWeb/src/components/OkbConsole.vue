@@ -230,10 +230,9 @@
             <el-table-column label="状态" width="90">
               <template #default="{ row }"><el-tag :type="row.status === 'curated' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag></template>
             </el-table-column>
-            <el-table-column label="操作" width="200" fixed="right">
+            <el-table-column label="操作" width="170" fixed="right">
               <template #default="{ row }">
                 <el-button link size="small" @click="doEvidence(row.id)">证据</el-button>
-                <el-button v-if="!row.edge_kind || row.edge_kind === 'causal'" link type="primary" size="small" @click="goto('okb:query', row.source_code, true)">trace</el-button>
                 <el-button link type="success" size="small" @click="doConfirmEdge(row.id)">确认</el-button>
                 <el-button link type="danger" size="small" @click="doRejectEdge(row.id)">否决</el-button>
                 <el-button link size="small" @click="report.edgeId = row.id; goto('okb:report')">反馈</el-button>
