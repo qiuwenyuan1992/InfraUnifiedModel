@@ -8,6 +8,7 @@ package seeder
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"UnifiedInfraOKB/internal/model"
@@ -28,16 +29,17 @@ func Seed(svc *service.Service) (*Report, error) {
 	groups := []struct {
 		kind  model.SourceKind
 		title string
+		uri   string
 		frags []string
 	}{
 		{kind: "", title: "种子-结构推断草稿（因果边清单：节点定义+电力/制冷/液冷/网络/服务器 infer 边）", frags: inferFragments()},
 		{kind: model.SourceAlertEvent, title: "种子-真实告警实证（因果边清单 runtime 行+实测等级仲裁）", frags: runtimeFragments()},
 		{kind: model.SourceIndustryReport, title: "种子-行业案例推导（蓄冷缓冲与温升次生火灾）", frags: industryFragments()},
-		{kind: model.SourceVendorDoc, title: "种子-厂商文档明示（光模块收光功率异常→CRC，华为 CloudEngine 维护宝典）", frags: vendorDocFragments()},
+		{kind: model.SourceVendorDoc, title: "种子-厂商文档明示（光模块收光功率异常→CRC，华为 CloudEngine 维护宝典）", uri: "https://support.huawei.com/enterprise/mind-database/", frags: vendorDocFragments()},
 	}
 	for _, g := range groups {
 		out, err := svc.Ingest(context.Background(), service.IngestInput{
-			Kind: g.kind, Title: g.title,
+			Kind: g.kind, Title: g.title, StorageURI: g.uri,
 			Content:    strings.Join(g.frags, "\n\n"),
 			OperatorID: "seeder",
 		})
@@ -51,6 +53,10 @@ func Seed(svc *service.Service) (*Report, error) {
 		rep.Anomalies += out.NewAnomalies
 		rep.Rules += out.NewRules
 		rep.Mappings += out.NewMappings
+	}
+	// 查证边的真实文档证据链（vendor_doc source 带标题/URL + 原文摘录 fragment）
+	if err := SeedVendorDocEvidence(svc); err != nil {
+		return nil, fmt.Errorf("vendor doc evidence: %w", err)
 	}
 	return rep, nil
 }

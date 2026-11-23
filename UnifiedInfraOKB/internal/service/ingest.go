@@ -15,11 +15,12 @@ import (
 	"UnifiedInfraOKB/internal/repository"
 )
 
-// IngestInput 摄取一份资料（internal_case/vendor_doc/expert_input）。
+// IngestInput 摄取一份资料（internal_case/vendor_doc/expert_input 等）。
 type IngestInput struct {
 	Kind       model.SourceKind
 	Title      string
 	Content    string // 脱敏后正文
+	StorageURI string // 原件出处（对象存储/文档 URL；真实厂商文档必填，合成样例可空）
 	OperatorID string // 服务端识别的操作主体
 }
 
@@ -97,6 +98,7 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 	src := &model.Source{
 		Kind:               in.Kind,
 		Title:              in.Title,
+		StorageURI:         in.StorageURI,
 		SensitivityCleared: true,
 		PermissionLevel:    1,
 	}
