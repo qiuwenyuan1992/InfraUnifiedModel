@@ -12,6 +12,49 @@ import (
 	"UnifiedInfraOKB/internal/seeder"
 )
 
+// TestOpticalDegradationChain 光模块劣化后果链（2026-11-21 查证补充，用户确认）：
+// 华为 CloudEngine 维护宝典：接口发光正常但存在 CRC 丢包——可能原因"光模块收光功率异常"；
+// 中兴真实案例：100G 光模块 CRC 误码超限致 2G 业务闪断。
+// 交换机侧为文档直接结论（doc_explicit），服务器侧为同机理对称推断。
+func TestOpticalDegradationChain(t *testing.T) {
+	svc := newTestService(t)
+	if _, err := seeder.Seed(svc); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// 交换机侧：端口光功率异常 → 端口 CRC（维护宝典直接结论）
+	tr, err := svc.Trace("net.port.optical_power.abnormal", 3, 5, nil, true)
+	if err != nil {
+		t.Fatalf("trace switch side: %v", err)
+	}
+	found := false
+	for _, c := range tr.Chains {
+		for _, h := range c.Hops {
+			if h.TargetCode == "net.port.crc_error" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("switch optical power degradation must cause port CRC errors (vendor-documented)")
+	}
+	// 服务器侧对称：光衰 → 网卡 CRC
+	tr2, err := svc.Trace("server.optical.rx_power.abnormal", 3, 5, nil, true)
+	if err != nil {
+		t.Fatalf("trace server side: %v", err)
+	}
+	found = false
+	for _, c := range tr2.Chains {
+		for _, h := range c.Hops {
+			if h.TargetCode == "server.nic.crc_error" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("server optical rx degradation must cause NIC CRC errors (symmetric mechanism)")
+	}
+}
+
 // TestSeedAcceptance 灌种子后跑四原语验收用例。
 func TestSeedAcceptance(t *testing.T) {
 	svc := newTestService(t)

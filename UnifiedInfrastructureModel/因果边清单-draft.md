@@ -90,3 +90,12 @@
 2. **证据分级映射**：runtime → `runtime_verified`（挂 alert_event 源）；infer → `inferred`；ind → `doc_explicit`（挂 industry_report 源，标注"行业案例推导"）。
 3. **人定稿清单**（优先评审）：①场景 I 恢复涌流边（触发语义特殊）；②冗余态放大器边（组合升级规则是否符合预期诊断行为）；③same_event 组的"同机柜/同链路"匹配条件精度。
 4. **不建边的**（遵守 OKB 边界）：判定序（三查筛查/空间聚类）、根因聚合元规则、影响清单（拓扑库职责）——留在全景文档供编排层消费。
+
+## 九、查证补充（2026-11-21，网络检索核验）
+
+| 边 | 依据 | 判定 |
+| --- | --- | --- |
+| `net.port.optical_power.abnormal → net.port.crc_error` | 华为 CloudEngine 维护宝典："光模块发光功率正常，但接口统计存在 CRC 等丢包——可能原因：光模块收光功率异常"（交换机侧直接结论）；中兴真实案例：100G 光模块 CRC 误码超限致业务闪断 | 成立，doc_explicit |
+| `server.optical.rx_power.abnormal → server.nic.crc_error` | 同机理对称（光接收机 BER 物理特性），服务器侧为最小推断步 | 成立，draft 待定稿 |
+| `server.optical.rx_power.abnormal → server.nic.link_down`（曾拟） | 未获文档支持：严重劣化走 LOS 告警，文档结论止于 CRC/丢包 | **不建**（防止编造） |
+| `power.rack.cabinet.over_tech → power.psu.fault`（曾拟） | 涌流损伤对象是 IT 设备开关电源（SMPS 劣化），非动环 PSU 告警码 | **不建**，power.psu.fault 移出上电风暴场景 |

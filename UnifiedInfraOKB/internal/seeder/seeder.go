@@ -33,6 +33,7 @@ func Seed(svc *service.Service) (*Report, error) {
 		{kind: "", title: "种子-结构推断草稿（因果边清单：节点定义+电力/制冷/液冷/网络/服务器 infer 边）", frags: inferFragments()},
 		{kind: model.SourceAlertEvent, title: "种子-真实告警实证（因果边清单 runtime 行+实测等级仲裁）", frags: runtimeFragments()},
 		{kind: model.SourceIndustryReport, title: "种子-行业案例推导（蓄冷缓冲与温升次生火灾）", frags: industryFragments()},
+		{kind: model.SourceVendorDoc, title: "种子-厂商文档明示（光模块收光功率异常→CRC，华为 CloudEngine 维护宝典）", frags: vendorDocFragments()},
 	}
 	for _, g := range groups {
 		out, err := svc.Ingest(context.Background(), service.IngestInput{
@@ -192,6 +193,20 @@ func runtimeFragments() []string {
 }
 
 // ---------- ind 组：公开行业案例推导（doc_explicit） ----------
+
+// ---------- vendor_doc 组：厂商维护文档明示（doc_explicit，2026-11-21 查证补充） ----------
+// 华为 CloudEngine 系列交换机维护宝典：接口发光功率正常但存在 CRC 等丢包——
+// 可能原因"光模块收光功率异常"；中兴真实案例：100G 光模块 CRC 误码超限致业务闪断。
+// 光衰→link_down 未获文档支持（严重劣化走 LOS 告警），不补该边。
+
+func vendorDocFragments() []string {
+	return []string{
+		// 交换机侧（文档直接结论）：端口收光功率异常 → 端口 CRC 误码
+		`{"source": "net.port.optical_power.abnormal", "target": "net.port.crc_error", "time_constraints": "{\"delay_tier\":\"seconds\"}"}`,
+		// 服务器侧对称（同机理推断）：网卡接收光功率劣化 → 该侧 CRC
+		`{"source": "server.optical.rx_power.abnormal", "target": "server.nic.crc_error", "time_constraints": "{\"delay_tier\":\"seconds\"}"}`,
+	}
+}
 
 func industryFragments() []string {
 	return []string{
