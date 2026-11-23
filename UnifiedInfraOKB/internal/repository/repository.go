@@ -133,6 +133,7 @@ func (s *Store) GetFragment(id string) (*model.Fragment, error) {
 // ---------- 图谱层 ----------
 
 // GetOrCreateAnomaly 按 stable_code 幂等建节点，返回节点与是否新建。
+// v2.1 字段（domain/severity/node_kind/clock_hint）由调用方在接纳时仲裁落档（service 层）。
 func (s *Store) GetOrCreateAnomaly(a *model.AnomalyType) (bool, error) {
 	var exist model.AnomalyType
 	err := s.DB.Where("stable_code = ?", a.StableCode).First(&exist).Error
@@ -149,10 +150,19 @@ func (s *Store) GetOrCreateAnomaly(a *model.AnomalyType) (bool, error) {
 	if a.Status == "" {
 		a.Status = model.StatusDraft
 	}
+	if a.NodeKind == "" {
+		a.NodeKind = model.NodeKindAtomic
+	}
 	if err := s.DB.Create(a).Error; err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// UpdateAnomaly 更新节点（v2.1 仲裁回写等级/类型/时钟用）；修订由 service 层追加。
+func (s *Store) UpdateAnomaly(a *model.AnomalyType) error {
+	a.UpdatedAt = now()
+	return s.DB.Save(a).Error
 }
 
 // GetAnomalyByCode / GetAnomalyByID 节点读取。
@@ -278,11 +288,16 @@ func (s *Store) ConfirmAlias(id string) error {
 	return nil
 }
 
-// GetOrCreateCausalRule 按（源,目标,边类型,根因挂靠）幂等建边，返回边与是否新建。
+// GetOrCreateCausalRule 幂等建边，返回边与是否新建。
+// 幂等键：causal 边 =（源,目标,边类型,根因挂靠）；非因果边（same_event/same_family）= 无向节点对
+// ——同一物理事件两侧观测与同族对比没有方向语义，反向断言命中同一条边。
 // 同一对节点可并存多条不同语义的边（如 trigger + mitigate）；
 // 同语义同对节点也可并存不同根因挂靠的 mitigate 边（"换模块·根因=老化" 与 "换模块·无条件"）。
 func (s *Store) GetOrCreateCausalRule(r *model.CausalRule) (bool, error) {
-	if r.EdgeType == "" {
+	if r.EdgeKind == "" {
+		r.EdgeKind = model.EdgeKindCausal
+	}
+	if r.EdgeType == "" && r.EdgeKind == model.EdgeKindCausal {
 		r.EdgeType = model.EdgeTrigger
 	}
 	via := ""
@@ -290,8 +305,16 @@ func (s *Store) GetOrCreateCausalRule(r *model.CausalRule) (bool, error) {
 		via = *r.MitigatedViaRootCause
 	}
 	var exist model.CausalRule
-	err := s.DB.Where("source_anomaly_id = ? AND target_anomaly_id = ? AND edge_type = ? AND COALESCE(mitigated_via_root_cause, '') = ?",
-		r.SourceAnomalyID, r.TargetAnomalyID, r.EdgeType, via).First(&exist).Error
+	var err error
+	if r.EdgeKind == model.EdgeKindCausal {
+		// 因果边有向：方向即语义（A→B ≠ B→A）
+		err = s.DB.Where("source_anomaly_id = ? AND target_anomaly_id = ? AND edge_kind = 'causal' AND edge_type = ? AND COALESCE(mitigated_via_root_cause, '') = ?",
+			r.SourceAnomalyID, r.TargetAnomalyID, r.EdgeType, via).First(&exist).Error
+	} else {
+		// 非因果关联无向：正反向命中同一条边，避免同一事件两侧重复建边
+		err = s.DB.Where("edge_kind = ? AND ((source_anomaly_id = ? AND target_anomaly_id = ?) OR (source_anomaly_id = ? AND target_anomaly_id = ?))",
+			r.EdgeKind, r.SourceAnomalyID, r.TargetAnomalyID, r.TargetAnomalyID, r.SourceAnomalyID).First(&exist).Error
+	}
 	if err == nil {
 		*r = exist
 		return false, nil
@@ -330,9 +353,10 @@ func (s *Store) UpdateCausalRule(r *model.CausalRule) error {
 }
 
 // ListEdgesFrom 遍历：取某节点的出边（trace BFS / 处置查询用）。
+// v2.1：只返回 causal 边——same_event/same_family 不参与因果遍历（语义见 api-boundaries）。
 // status/edgeType 为空串时不过滤；draft 是否入结果由 service 决定。
 func (s *Store) ListEdgesFrom(anomalyID string, status model.KnowledgeStatus, edgeType model.EdgeType) ([]model.CausalRule, error) {
-	q := s.DB.Where("source_anomaly_id = ?", anomalyID)
+	q := s.DB.Where("source_anomaly_id = ? AND edge_kind = ?", anomalyID, model.EdgeKindCausal)
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}
@@ -344,10 +368,23 @@ func (s *Store) ListEdgesFrom(anomalyID string, status model.KnowledgeStatus, ed
 	return list, err
 }
 
+// ListRelations v2.1 非因果关联边：按 edge_kind（same_event/same_family）取节点任一端的关联边。
+// status 为空串时不过滤；供 lookup 的 peers 标注与 trace 的 relations 区使用。
+func (s *Store) ListRelations(anomalyID string, kind model.EdgeKind, status model.KnowledgeStatus) ([]model.CausalRule, error) {
+	q := s.DB.Where("edge_kind = ? AND (source_anomaly_id = ? OR target_anomaly_id = ?)", kind, anomalyID, anomalyID)
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	var list []model.CausalRule
+	err := q.Find(&list).Error
+	return list, err
+}
+
 // MitigationsFor 处置查询：指向某异常的全部 mitigate 入边（手段 → 被缓解异常）。
+// v2.1：只查 causal 边（mitigate 语义仅对因果边有意义）。
 // rootCauseID 非空时只返回"无条件适用"或"挂靠该根因"的边（根因挂靠过滤）。
 func (s *Store) MitigationsFor(anomalyID, rootCauseID string, status model.KnowledgeStatus) ([]model.CausalRule, error) {
-	q := s.DB.Where("target_anomaly_id = ? AND edge_type = ?", anomalyID, model.EdgeMitigate)
+	q := s.DB.Where("target_anomaly_id = ? AND edge_kind = ? AND edge_type = ?", anomalyID, model.EdgeKindCausal, model.EdgeMitigate)
 	if rootCauseID != "" {
 		q = q.Where("mitigated_via_root_cause IS NULL OR mitigated_via_root_cause = ?", rootCauseID)
 	}
@@ -360,8 +397,9 @@ func (s *Store) MitigationsFor(anomalyID, rootCauseID string, status model.Knowl
 }
 
 // IndicationsFrom indicate 正查：根因异常 → 全部症状边（"A 发生时会看到什么"）。
+// v2.1：只查 causal 边。
 func (s *Store) IndicationsFrom(anomalyID string, status model.KnowledgeStatus) ([]model.CausalRule, error) {
-	q := s.DB.Where("source_anomaly_id = ? AND edge_type = ?", anomalyID, model.EdgeIndicate)
+	q := s.DB.Where("source_anomaly_id = ? AND edge_kind = ? AND edge_type = ?", anomalyID, model.EdgeKindCausal, model.EdgeIndicate)
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}
@@ -371,9 +409,9 @@ func (s *Store) IndicationsFrom(anomalyID string, status model.KnowledgeStatus) 
 }
 
 // IndicationsFor indicate 反查：症状异常 ← 全部指示边（"看到 B 说明可能是什么"）。
-// 诊断核心：由观测症状反推候选根因集合。
+// 诊断核心：由观测症状反推候选根因集合。v2.1：只查 causal 边。
 func (s *Store) IndicationsFor(symptomAnomalyID string, status model.KnowledgeStatus) ([]model.CausalRule, error) {
-	q := s.DB.Where("target_anomaly_id = ? AND edge_type = ?", symptomAnomalyID, model.EdgeIndicate)
+	q := s.DB.Where("target_anomaly_id = ? AND edge_kind = ? AND edge_type = ?", symptomAnomalyID, model.EdgeKindCausal, model.EdgeIndicate)
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}
@@ -411,9 +449,20 @@ func (s *Store) UpdateAlertMapping(m *model.AlertMapping) error {
 	return s.DB.Save(m).Error
 }
 
-// ListMappingsByAlert lookup 入口：signature → 候选异常映射。
+// ListMappingsByAlert lookup 入口（旧式单串/拼接键）：signature → 候选异常映射。
 func (s *Store) ListMappingsByAlert(signature string, status model.KnowledgeStatus) ([]model.AlertMapping, error) {
 	q := s.DB.Where("alert_signature = ?", signature)
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	var list []model.AlertMapping
+	err := q.Find(&list).Error
+	return list, err
+}
+
+// ListMappingsByStructured v2.1 结构化 signature 查询：domain + channel + sig_key → 候选映射。
+func (s *Store) ListMappingsByStructured(domain, channel, sigKey string, status model.KnowledgeStatus) ([]model.AlertMapping, error) {
+	q := s.DB.Where("domain = ? AND channel = ? AND sig_key = ?", domain, channel, sigKey)
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}

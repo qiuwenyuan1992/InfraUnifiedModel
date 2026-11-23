@@ -25,30 +25,43 @@ type ExtractionResult struct {
 	ModelVersion string `json:"model_version"`
 }
 
-// AnomalyCandidate 异常候选。
+// AnomalyCandidate 异常候选。v2.1 增等级/类型/时钟/域字段，来自结构化源或提取结果。
 type AnomalyCandidate struct {
-	StableCode string   `json:"stable_code"`
-	Name       string   `json:"name"`
-	Category   string   `json:"category"`
-	Aliases    []string `json:"aliases,omitempty"`
-	FragmentID string   `json:"fragment_id"` // 出处回链
+	StableCode    string   `json:"stable_code"`
+	Name          string   `json:"name"`
+	Category      string   `json:"category"`
+	Aliases       []string `json:"aliases,omitempty"`
+	// v2.1 字段（可空：留空由 service 层推导或缺省）
+	SeverityOnline string `json:"severity_online,omitempty"` // P0-P4
+	SeverityDict   string `json:"severity_dict,omitempty"`   // P1-P3
+	NodeKind       string `json:"node_kind,omitempty"`       // atomic/aggregate/placeholder/event
+	ClockHint      string `json:"clock_hint,omitempty"`       // seconds/minutes/hours
+	Domain         string `json:"domain,omitempty"`          // server/network/dci
+	FragmentID     string `json:"fragment_id"`               // 出处回链
 }
 
 // CausalChainCandidate 因果边候选。Rel 为边语义类型（trigger/mitigate/indicate/prevent），
 // 缺省 trigger；Via 为 mitigate 边的根因挂靠（"当根因是 X 时"），仅 rel=mitigate 时有意义。
+// v2.1 增 EdgeKind：causal（缺省）/ same_event / same_family——非 causal 边的 Rel 语义被忽略。
 // 由数据源语义决定，不由提取器臆造。
 type CausalChainCandidate struct {
 	SourceCode string              `json:"source_code"`
 	TargetCode string              `json:"target_code"`
+	EdgeKind   string              `json:"edge_kind,omitempty"` // v2.1
 	Rel        model.EdgeType      `json:"rel,omitempty"`
 	Via        string              `json:"via,omitempty"`
 	Conditions []model.ConditionClause `json:"conditions,omitempty"`
 	FragmentID string              `json:"fragment_id"`
 }
 
-// AlertMappingCandidate 告警映射候选。
+// AlertMappingCandidate 告警映射候选。v2.1 增结构化 signature 字段；
+// AlertSignature 为旧式单串或拼接键（domain|channel|sig_key）。
 type AlertMappingCandidate struct {
 	AlertSignature string  `json:"alert_signature"`
+	Domain         string  `json:"domain,omitempty"`   // v2.1
+	Channel        string  `json:"channel,omitempty"`  // v2.1
+	SigKey         string  `json:"sig_key,omitempty"`  // v2.1
+	UpgradeRef     string  `json:"upgrade_ref,omitempty"` // v2.1
 	AnomalyCode    string  `json:"anomaly_code"`
 	Confidence     float64 `json:"confidence"`
 	FragmentID     string  `json:"fragment_id"`
@@ -76,6 +89,17 @@ func (f *FakeExtract) Extract(_ context.Context, _ string, fragments []model.Fra
 			Code    string   `json:"code"`
 			Aliases []string `json:"aliases"`
 			Alert   string   `json:"alert"`
+			// v2.1 结构化字段
+			SeverityOnline string `json:"severity_online"`
+			SeverityDict   string `json:"severity_dict"`
+			NodeKind       string `json:"node_kind"`
+			ClockHint      string `json:"clock_hint"`
+			Domain         string `json:"domain"`
+			EdgeKind       string `json:"edge_kind"`
+			AlertDomain    string `json:"alert_domain"`
+			AlertChannel   string `json:"alert_channel"`
+			SigKey         string `json:"sig_key"`
+			UpgradeRef     string `json:"upgrade_ref"`
 			Source  string   `json:"source"`
 			Target  string   `json:"target"`
 			Rel     string   `json:"rel"`
@@ -91,29 +115,55 @@ func (f *FakeExtract) Extract(_ context.Context, _ string, fragments []model.Fra
 				StableCode: payload.Code,
 				Name:       payload.Name,
 				// Category 留空：由 service 按编码前缀推导领域，不在提取器臆造
-				Aliases:    payload.Aliases,
-				FragmentID: fid,
+				Aliases:        payload.Aliases,
+				SeverityOnline: payload.SeverityOnline,
+				SeverityDict:   payload.SeverityDict,
+				NodeKind:       payload.NodeKind,
+				ClockHint:      payload.ClockHint,
+				Domain:         payload.Domain,
+				FragmentID:     fid,
 			})
 		}
 		if payload.Source != "" && payload.Target != "" {
-			// rel 仅接受受控枚举，非法值回退 trigger（不臆造语义）
-			rel := model.EdgeType(payload.Rel)
-			switch rel {
-			case model.EdgeTrigger, model.EdgeMitigate, model.EdgeIndicate, model.EdgePrevent:
+			// edge_kind 仅接受受控枚举，非法值回退 causal（不臆造语义）
+			ek := model.EdgeKind(payload.EdgeKind)
+			switch ek {
+			case model.EdgeKindCausal, model.EdgeKindSameEvent, model.EdgeKindSameFamily:
 			default:
-				rel = model.EdgeTrigger
+				ek = model.EdgeKindCausal
+			}
+			// rel 仅接受受控枚举，非法值回退 trigger；非 causal 边忽略 rel
+			rel := model.EdgeType(payload.Rel)
+			if ek == model.EdgeKindCausal {
+				switch rel {
+				case model.EdgeTrigger, model.EdgeMitigate, model.EdgeIndicate, model.EdgePrevent:
+				default:
+					rel = model.EdgeTrigger
+				}
+			} else {
+				rel = "" // 非因果关联不带 EdgeType 语义
 			}
 			res.CausalChains = append(res.CausalChains, CausalChainCandidate{
 				SourceCode: payload.Source,
 				TargetCode: payload.Target,
+				EdgeKind:   string(ek),
 				Rel:        rel,
 				Via:        payload.Via, // mitigate 根因挂靠；非 mitigate 边由 service 忽略
 				FragmentID: fid,
 			})
 		}
 		if payload.Alert != "" && payload.Anomaly != "" {
+			sig := payload.Alert
+			// v2.1 结构化 signature：拼接键 domain|channel|sig_key（缺 sig_key 用 alert 原串）
+			if payload.SigKey != "" {
+				sig = payload.AlertDomain + "|" + payload.AlertChannel + "|" + payload.SigKey
+			}
 			res.AlertMappings = append(res.AlertMappings, AlertMappingCandidate{
-				AlertSignature: payload.Alert,
+				AlertSignature: sig,
+				Domain:         payload.AlertDomain,
+				Channel:        payload.AlertChannel,
+				SigKey:         payload.SigKey,
+				UpgradeRef:     payload.UpgradeRef,
 				AnomalyCode:    payload.Anomaly,
 				Confidence:     0.8,
 				FragmentID:     fid,

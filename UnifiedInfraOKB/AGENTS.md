@@ -1,31 +1,32 @@
-# UnifiedInfraOKB 协作与实施约束（v2）
+# UnifiedInfraOKB 协作与实施约束（v2.1）
 
 本文件适用于 UnifiedInfraOKB 及其子目录。用户当前明确指令优先；根目录 Agents.md 的中文要求继续适用。
 
 v2 基线（2026-11-16）取代 v1 全部设计；v1 旧文档已整体删除，如遇残留旧设计描述一律以 v2 基线为准。
+**v2.1 修订（2026-11-20，用户批准）**：边语义三分（causal/same_event/same_family）、severity 等级体系、runtime_verified 证据级与样本优先仲裁、数据源扩四类（alert_strategy/alert_event/system_code/industry_report）、结构化 signature。修订动机与对照见 requirements.md §11；契约变更见 api-boundaries.md 头部修订记录。
 
 ## 接手顺序
 
 1. README.md（模块定位）
-2. docs/design/requirements.md（v2 需求基线：定位、证据分级、准确性机制、切片 S0—S3、验收 A1—A7）
-3. docs/design/storage-model.md（数据模型）
-4. docs/design/api-boundaries.md（REST 四原语契约）
+2. docs/design/requirements.md（v2.1 需求基线：定位、证据分级、准确性机制、切片 S0—S3、验收 A1—A9）
+3. docs/design/storage-model.md（数据模型，含 v2.1 字段）
+4. docs/design/api-boundaries.md（REST 四原语契约，含非因果边语义）
 5. docs/development/README.md（切片派发与验证）
 
-当前状态：S0 建馆 + S1 查询切片已实现（go.mod、模型、仓储、摄取、提取、四原语、测试见 docs/development/handoffs/2026-11-16-s0-s1-vertical-slice.md）；真实 LLM 提取器、S2 界面、迁移 DDL 尚未实现，不得宣称已验证真实模型或生产部署。
+当前状态：S0 建馆 + S1 查询切片已实现（go.mod、模型、仓储、摄取、提取、四原语、测试见 docs/development/handoffs/2026-11-16-s0-s1-vertical-slice.md）；**v2.1 schema 已落码**（edge_kind/severity/node_kind/结构化 signature/样本优先仲裁，含 migrations/001_init_v2_1.sql 与 A8/A9 测试，见 docs/development/handoffs/2026-11-20-v2.1-schema-and-arbitration.md）。真实 LLM 提取器、S2 界面、真实 MySQL 建库仍未实现；种子边清单（UnifiedInfrastructureModel/因果边清单-draft.md）尚未灌库。不得宣称已验证真实模型或生产部署。
 
 ## 产品边界
 
 - OKB 是**故障知识图谱图书馆**：结构化保存带证据出处的因果知识，供诊断 Agent（REST）与专家（极简界面）消费。复现目标：XiHe（SIGCOMM 2026，DOI 10.1145/3789240.3829145）的因果图与共享记忆资产。
 - **OKB 不做诊断编排**：会话级工作记忆（事故状态、假设、已取证）归未来编排层；OKB 只被动应答 lookup / trace / evidence / report 四原语，不保存会话状态。
-- 核心资产是图：anomaly_type（节点）、causal_rule（带条件/时间约束/证据等级的边）、alert_mapping（告警入口）。
-- 数据源以脱敏工单/复盘（internal_case）为一等公民；厂商文档与专家经验为补充源。
+- 核心资产是图：anomaly_type（节点，v2.1 含 domain/severity/node_kind/clock_hint）、causal_rule（带条件/时间约束/证据等级/edge_kind 的边——same_event/same_family 不参与因果遍历）、alert_mapping（告警入口，v2.1 结构化 signature）。
+- 数据源以脱敏工单/复盘（internal_case）为一等公民；厂商文档与专家经验为补充源；v2.1 增结构化配置源（alert_strategy 策略库）、运行实证源（alert_event 真实告警样本）、既有系统源（system_code）、公开行业源（industry_report）。
 - 不使用或修改 TopologyDetails.vue；不访问 CMDB/拓扑接口，不修改 UnifiedInfraTopology 的数据库、迁移、NebulaGraph Schema 及现有模型。
 - 知识概念（异常类型）不是具体资产；不增加租户、多拓扑、作用域兼容层。
 
 ## 证据与准确性纪律
 
-- 证据分级生来自源：case_verified / doc_explicit / inferred / expert_only；等级不事后提升，升级只能通过新证据 + 新修订。
+- 证据分级生来自源：case_verified / runtime_verified / doc_explicit / inferred / expert_only；等级不事后提升，升级只能通过新证据 + 新修订。冲突仲裁样本优先（runtime_verified > doc_explicit）：运行是事实，配置是声明；裁决走新修订，原值留修订历史。
 - AI 输出永远是 draft 候选；升 curated 依赖：案例边抽样审核（默认 10%）+ ≥2 独立工单印证，非案例边须专家确认。
 - 印证的"独立"以内容寻址去重：同内容（同哈希）重复提交不登记来源、不新增证据；重复提交返回 duplicate_content。
 - 被反馈否决（ReviewFlagged）的边/映射不可被摄取自动恢复 curated——复核队列只有专家确认可出队。

@@ -168,16 +168,25 @@ func (h *Handler) handleGraph(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleLookup GET /api/v1/lookup?alert_signature=<sig>
+// v2.1 结构化形态：GET /api/v1/lookup?domain=<d>&channel=<ch>&sig_key=<k>
+// 结构化三参齐备走结构化查询；否则回退旧式单串（含拼接键 domain|channel|sig_key）。
 func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request) {
-	sig := r.URL.Query().Get("alert_signature")
-	if sig == "" {
-		writeErr(w, http.StatusBadRequest, "alert_signature is required")
-		return
+	query := r.URL.Query()
+	includeDraft := query.Get("include_draft") == "true"
+	var res *service.LookupResult
+	var err error
+	if domain, channel, sigKey := query.Get("domain"), query.Get("channel"), query.Get("sig_key"); domain != "" && channel != "" && sigKey != "" {
+		res, err = h.svc.LookupStructured(domain, channel, sigKey, includeDraft)
+	} else {
+		sig := query.Get("alert_signature")
+		if sig == "" {
+			writeErr(w, http.StatusBadRequest, "alert_signature or domain+channel+sig_key is required")
+			return
+		}
+		res, err = h.svc.Lookup(sig, includeDraft)
 	}
-	includeDraft := r.URL.Query().Get("include_draft") == "true"
-	res, err := h.svc.Lookup(sig, includeDraft)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, res)

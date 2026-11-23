@@ -9,23 +9,30 @@ import "time"
 
 // ---------- 枚举 ----------
 
-// SourceKind 数据源种类：脱敏工单为一等公民，厂商文档与专家经验为补充源。
+// SourceKind 数据源种类：脱敏工单为一等公民，厂商文档与专家经验为补充源；
+// v2.1 增结构化配置源（策略库）、运行实证源（真实告警样本）、既有系统源、公开行业源。
 type SourceKind string
 
 const (
-	SourceInternalCase SourceKind = "internal_case"
-	SourceVendorDoc    SourceKind = "vendor_doc"
-	SourceExpertInput  SourceKind = "expert_input"
+	SourceInternalCase   SourceKind = "internal_case"
+	SourceVendorDoc      SourceKind = "vendor_doc"
+	SourceExpertInput    SourceKind = "expert_input"
+	SourceAlertStrategy  SourceKind = "alert_strategy"  // v2.1 监控告警策略库（高结构化配置声明）
+	SourceAlertEvent     SourceKind = "alert_event"     // v2.1 真实告警事件（运行实证）
+	SourceSystemCode     SourceKind = "system_code"     // v2.1 既有系统固化规则（映射表等）
+	SourceIndustryReport SourceKind = "industry_report" // v2.1 公开行业报告/案例
 )
 
 // EvidenceLevel 证据等级：生来自源、不事后提升。
+// v2.1 仲裁规则：同一事实多来源冲突时 runtime_verified > doc_explicit（运行是事实，配置是声明）。
 type EvidenceLevel string
 
 const (
-	EvidenceCaseVerified EvidenceLevel = "case_verified"
-	EvidenceDocExplicit  EvidenceLevel = "doc_explicit"
-	EvidenceInferred     EvidenceLevel = "inferred"
-	EvidenceExpertOnly   EvidenceLevel = "expert_only"
+	EvidenceCaseVerified    EvidenceLevel = "case_verified"
+	EvidenceRuntimeVerified EvidenceLevel = "runtime_verified" // v2.1 真实告警实证：证明单点事实（发生/实测值），不证明完整因果链
+	EvidenceDocExplicit     EvidenceLevel = "doc_explicit"
+	EvidenceInferred        EvidenceLevel = "inferred"
+	EvidenceExpertOnly      EvidenceLevel = "expert_only"
 )
 
 // EvidenceKind 证据种类（证据记录指向的来源类型）。
@@ -34,6 +41,7 @@ type EvidenceKind string
 const (
 	EvidenceKindCase   EvidenceKind = "case"
 	EvidenceKindDoc    EvidenceKind = "doc"
+	EvidenceKindRuntime EvidenceKind = "runtime" // v2.1 运行实证（alert_event 源）
 	EvidenceKindInfer  EvidenceKind = "inferred"
 	EvidenceKindExpert EvidenceKind = "expert"
 )
@@ -66,8 +74,29 @@ const (
 type CreatorKind string
 
 const (
-	CreatorModel CreatorKind = "model"
+	CreatorModel  CreatorKind = "model"
 	CreatorExpert CreatorKind = "expert"
+)
+
+// NodeKind 节点类型（v2.1）：不同类型的消费语义不同。
+type NodeKind string
+
+const (
+	NodeKindAtomic      NodeKind = "atomic"      // 原子故障：可直接定位处置
+	NodeKindAggregate   NodeKind = "aggregate"   // 多因汇总态：诊断需沿出边下游分解
+	NodeKindPlaceholder NodeKind = "placeholder" // 监控空白预留位：无观测面，待监控建设
+	NodeKindEvent       NodeKind = "event"       // 事件类：动作/状态迁移（启停、切换、放电）
+)
+
+// EdgeKind 边的语义大类（v2.1 边语义三分）：
+// causal 参与因果遍历（细分见 EdgeType）；same_event/same_family 不参与遍历，
+// 以关联标注返回（lookup 的 peers / trace 的 relations），供证据聚合与对比诊断。
+type EdgeKind string
+
+const (
+	EdgeKindCausal     EdgeKind = "causal"      // 因果传播：trace 可遍历
+	EdgeKindSameEvent  EdgeKind = "same_event"  // 同一物理事件两侧观测（交换机 Port Down ↔ 服务器 Link Down）
+	EdgeKindSameFamily EdgeKind = "same_family" // 机理同族对比（双侧 CRC、两域光模块）
 )
 
 // EntityType 修订历史覆盖的实体类型。
@@ -135,11 +164,17 @@ type Fragment struct {
 // ---------- 图谱层 ----------
 
 // AnomalyType 图节点：stable_code 唯一键。
+// v2.1 增 severity 体系（线上 P0-P4 / 字典 P1-P3）、node_kind、clock_hint（处置时钟档）。
 type AnomalyType struct {
 	ID                 string    `gorm:"primaryKey;size:36"`
 	StableCode         string    `gorm:"size:128;uniqueIndex"`
 	Name               string    `gorm:"size:256"`
 	Category           string    `gorm:"size:64"`
+	Domain             string    `gorm:"size:32;index"`             // v2.1 三域：server / network / dci
+	SeverityOnline     string    `gorm:"size:8"`                    // v2.1 线上等级 P0-P4（S/A/L 经等级映射归一）
+	SeverityDict       string    `gorm:"size:8"`                    // v2.1 字典等级 P1-P3（P1 最高）
+	NodeKind           NodeKind  `gorm:"size:16;default:atomic"`    // v2.1 节点类型
+	ClockHint          string    `gorm:"size:16"`                   // v2.1 处置时钟：seconds / minutes / hours
 	CurrentRevisionID  string    `gorm:"size:36"`
 	Status             KnowledgeStatus `gorm:"size:16;default:draft"`
 	CreatedAt          time.Time
@@ -164,19 +199,22 @@ type ConditionClause struct {
 	Value   interface{} `json:"value"`
 }
 
-// CausalRule 图边：源异常 → 目标异常，语义由 EdgeType 决定。
+// CausalRule 图边：源异常 → 目标异常，语义由 EdgeKind（大类）+ EdgeType（因果细分）决定。
+// v2.1：EdgeKind=causal 的边才携带 EdgeType 语义并参与遍历；
+// same_event/same_family 为非因果关联（EdgeType 留空），不参与遍历、以标注返回。
 // Conditions / TimeConstraints 为受 Schema 约束的 JSON 数组文本（[]ConditionClause）。
 // 印证计数：>=2 个独立工单证据支持才可升 curated。
 type CausalRule struct {
 	ID                string    `gorm:"primaryKey;size:36"`
 	SourceAnomalyID   string    `gorm:"size:36;index"`
 	TargetAnomalyID   string    `gorm:"size:36;index"`
-	EdgeType          EdgeType  `gorm:"size:16;default:trigger;index"` // trigger / indicate / mitigate / prevent
+	EdgeKind          EdgeKind  `gorm:"size:16;default:causal;index"` // v2.1 边语义三分
+	EdgeType          EdgeType  `gorm:"size:16;default:trigger;index"` // 仅 causal 边有意义：trigger / indicate / mitigate / prevent
 	// MitigatedViaRootCause：mitigate 边的根因挂靠——"处置手段 A 缓解异常 B（当根因是 C 时）"。
 	// 空 = 无条件适用；非空 = 仅当诊断结论的根因路径包含 C 时该处置建议生效（防张冠李戴）。
 	MitigatedViaRootCause *string   `gorm:"size:36"`
 	Conditions        string    // JSON []ConditionClause，可为空（无条件边）
-	TimeConstraints   string    `gorm:"type:text"` // JSON，时间约束
+	TimeConstraints   string    `gorm:"type:text"` // JSON，时间约束（v2.1 含传播延迟档 seconds/minutes/hours）
 	EvidenceLevel     EvidenceLevel `gorm:"size:20"`
 	Confidence        float64   // 反馈飞轮回写
 	CaseSupportCount  int       // 独立工单印证计数
@@ -207,10 +245,17 @@ type ScenarioNode struct {
 	CreatedAt  time.Time
 }
 
-// AlertMapping 入口：告警 signature → 候选异常。
+// AlertMapping 入口：告警 → 候选异常。
+// v2.1 signature 结构化：四域四采集通道键形不同，单字符串装不下——
+// Domain+Channel+SigKey 为结构化键；AlertSignature 为拼接键（domain|channel|sig_key）或旧式单串，
+// 两种查询形态并存（api-boundaries v2.1）。
 type AlertMapping struct {
 	ID                string    `gorm:"primaryKey;size:36"`
-	AlertSignature    string    `gorm:"size:256;index"`
+	AlertSignature    string    `gorm:"size:256;index"` // 拼接键（兼容旧单串查询）
+	Domain            string    `gorm:"size:32;index"`  // v2.1 server / network / dci
+	Channel           string    `gorm:"size:32"`        // v2.1 agent_syslog / bmc_syslog / snmptrap / metric / dci_point / ufm / enms
+	SigKey            string    `gorm:"size:512;index"` // v2.1 通道定形键值（正则/策略名/trap 名/指标+阈值/监控点路径/GUID 对/告警名+位置）
+	UpgradeRef        string    `gorm:"size:64"`        // v2.1 升级链关联策略 id（同码归并）
 	AnomalyID         string    `gorm:"size:36;index"`
 	Confidence        float64
 	EvidenceLevel     EvidenceLevel `gorm:"size:20"`

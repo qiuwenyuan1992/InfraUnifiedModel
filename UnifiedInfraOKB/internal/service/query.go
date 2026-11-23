@@ -21,6 +21,8 @@ type LookupResult struct {
 }
 
 // LookupCandidate 单个候选异常。
+// v2.1 增 severity/node_kind/clock_hint 与非因果关联标注（same_event_peers/family_peers，
+// 不进入候选因果链，供消费方证据聚合与对比诊断）。
 type LookupCandidate struct {
 	AnomalyID      string              `json:"anomaly_id"`
 	StableCode     string              `json:"stable_code"`
@@ -29,13 +31,35 @@ type LookupCandidate struct {
 	EvidenceLevel  model.EvidenceLevel `json:"evidence_level"`
 	RevisionID     string              `json:"revision_id"`
 	Status         model.KnowledgeStatus `json:"status"`
+	// v2.1 字段
+	Domain          string   `json:"domain,omitempty"`
+	SeverityOnline  string   `json:"severity_online,omitempty"`
+	SeverityDict    string   `json:"severity_dict,omitempty"`
+	NodeKind        model.NodeKind `json:"node_kind,omitempty"`
+	ClockHint       string   `json:"clock_hint,omitempty"`
+	SameEventPeers  []string `json:"same_event_peers,omitempty"` // 同一物理事件对端 stable_code
+	FamilyPeers     []string `json:"family_peers,omitempty"`     // 同族对比候选 stable_code
 }
 
 // TraceResult trace 原语输出：候选因果链集合。
+// v2.1 增 Relations：非因果关联（same_event/same_family）不参与遍历，以关联标注返回。
 type TraceResult struct {
 	StartAnomalyID string        `json:"start_anomaly_id"`
 	MaxHops        int           `json:"max_hops"`
 	Chains         []TraceChain  `json:"chains"`
+	Relations      []RelationRow `json:"relations,omitempty"` // v2.1 非因果关联标注
+}
+
+// RelationRow trace 的非因果关联行：同事件对端 / 同族对端（带对方等级）。
+type RelationRow struct {
+	EdgeID         string              `json:"edge_id"`
+	EdgeKind       model.EdgeKind      `json:"edge_kind"` // same_event / same_family
+	OtherCode      string              `json:"other_stable_code"`
+	OtherName      string              `json:"other_name"`
+	OtherSeverity  string              `json:"other_severity_online,omitempty"`
+	EvidenceLevel  model.EvidenceLevel `json:"evidence_level"`
+	Confidence     float64             `json:"confidence"`
+	Status         model.KnowledgeStatus `json:"status"`
 }
 
 // TraceChain 一条候选根因链（多跳）。
@@ -47,17 +71,21 @@ type TraceChain struct {
 }
 
 // TraceHop 一跳：边 + 条件求值结果。
+// v2.1 增 PropagationHint：目标节点的处置时钟档（seconds/minutes/hours），
+// 供诊断紧迫性排序；告警到达顺序≠传播顺序，窗口判定只依赖 time_constraints。
 type TraceHop struct {
 	EdgeID        string                 `json:"edge_id"`
+	EdgeKind      model.EdgeKind         `json:"edge_kind"` // 链内恒为 causal；显式携带便于消费方区分 relations
 	TargetID      string                 `json:"target_anomaly_id"`
 	TargetCode    string                 `json:"target_stable_code"`
 	TargetName    string                 `json:"target_name"`
 	Conditions    []model.ConditionClause `json:"conditions,omitempty"`
 	Evaluations   []ConditionEval         `json:"evaluations,omitempty"`
 	TimeConstraints string                `json:"time_constraints,omitempty"`
+	PropagationHint string                `json:"propagation_hint,omitempty"` // v2.1 目标节点 clock_hint
 	EvidenceLevel model.EvidenceLevel     `json:"evidence_level"`
 	Confidence    float64                 `json:"confidence"`
-	Status        model.KnowledgeStatus  `json:"status"`
+	Status        model.KnowledgeStatus   `json:"status"`
 	RevisionID    string                  `json:"revision_id"`
 }
 
@@ -95,12 +123,15 @@ type GraphView struct {
 	Edges []GraphEdge `json:"edges"`
 }
 
-// GraphNode 可视化节点。
+// GraphNode 可视化节点。v2.1 增 severity/node_kind（前端区分节点形态用）。
 type GraphNode struct {
 	ID           string             `json:"id"`
 	StableCode   string             `json:"stable_code"`
 	Name         string             `json:"name"`
 	Category     string             `json:"category"`
+	Domain       string             `json:"domain,omitempty"`        // v2.1
+	SeverityOnline string           `json:"severity_online,omitempty"` // v2.1
+	NodeKind     model.NodeKind     `json:"node_kind,omitempty"`     // v2.1
 	Status       model.KnowledgeStatus `json:"status"`
 	RevisionID   string             `json:"revision_id"`
 }
@@ -225,10 +256,12 @@ func (s *Service) Indications(anomalyCode, direction string, includeDraft bool) 
 }
 
 // GraphEdge 可视化边（源/目标用 stable_code，便于前端直连）。
+// v2.1 增 EdgeKind：same_event/same_family 需要不同的渲染（虚线关联，非因果箭头）。
 type GraphEdge struct {
 	ID            string               `json:"id"`
 	Source        string               `json:"source"`
 	Target        string               `json:"target"`
+	EdgeKind      model.EdgeKind       `json:"edge_kind"`
 	EdgeType      model.EdgeType       `json:"edge_type"`
 	EvidenceLevel model.EvidenceLevel  `json:"evidence_level"`
 	Confidence    float64              `json:"confidence"`
@@ -251,7 +284,8 @@ func (s *Service) Graph() (*GraphView, error) {
 	view := &GraphView{Nodes: []GraphNode{}, Edges: []GraphEdge{}}
 	for _, n := range nodes {
 		codeByID[n.ID] = n.StableCode
-		gn := GraphNode{ID: n.ID, StableCode: n.StableCode, Name: n.Name, Category: n.Category, Status: n.Status}
+		gn := GraphNode{ID: n.ID, StableCode: n.StableCode, Name: n.Name, Category: n.Category,
+			Domain: n.Domain, SeverityOnline: n.SeverityOnline, NodeKind: n.NodeKind, Status: n.Status}
 		if rev, err := s.store.LatestRevision(model.EntityAnomalyType, n.ID); err == nil {
 			gn.RevisionID = rev.ID
 		}
@@ -264,7 +298,7 @@ func (s *Service) Graph() (*GraphView, error) {
 			continue // 孤儿边跳过
 		}
 		view.Edges = append(view.Edges, GraphEdge{
-			ID: r.ID, Source: src, Target: dst, EdgeType: r.EdgeType,
+			ID: r.ID, Source: src, Target: dst, EdgeKind: r.EdgeKind, EdgeType: r.EdgeType,
 			EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence,
 			Status: r.Status, ReviewFlagged: r.ReviewFlagged, CaseSupport: r.CaseSupportCount,
 		})
@@ -286,6 +320,7 @@ type KnowledgeRow struct {
 	// mapping
 	AlertSignature string              `json:"alert_signature,omitempty"`
 	// 通用
+	EdgeKind      model.EdgeKind       `json:"edge_kind,omitempty"` // v2.1：rule 行携带（anomaly/mapping 行缺省）
 	EdgeType      model.EdgeType       `json:"edge_type,omitempty"`
 	EvidenceLevel model.EvidenceLevel  `json:"evidence_level,omitempty"`
 	Confidence    float64              `json:"confidence,omitempty"`
@@ -388,7 +423,7 @@ func (s *Service) ruleRows(rules []model.CausalRule) ([]KnowledgeRow, error) {
 	for _, r := range rules {
 		row := KnowledgeRow{ID: r.ID, Kind: "rule",
 			SourceCode: codeByID[r.SourceAnomalyID], TargetCode: codeByID[r.TargetAnomalyID],
-			EdgeType: r.EdgeType, EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence, CaseSupport: r.CaseSupportCount,
+			EdgeKind: r.EdgeKind, EdgeType: r.EdgeType, EvidenceLevel: r.EvidenceLevel, Confidence: r.Confidence, CaseSupport: r.CaseSupportCount,
 			Status: r.Status, ReviewFlagged: r.ReviewFlagged,
 			UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339)}
 		if rev, err := s.store.LatestRevision(model.EntityCausalRule, r.ID); err == nil {
@@ -563,7 +598,7 @@ func (s *Service) AssignScenarioNodes(scenarioCode string, stableCodes []string,
 	return assigned, nil
 }
 
-// Lookup 告警入口：signature → 候选异常。draft 默认排除，includeDraft 须审核权限（由 handler 校验）。
+// Lookup 告警入口（旧式单串/拼接键）：signature → 候选异常。draft 默认排除，includeDraft 须审核权限（由 handler 校验）。
 func (s *Service) Lookup(alertSignature string, includeDraft bool) (*LookupResult, error) {
 	status := model.StatusCurated
 	if includeDraft {
@@ -573,7 +608,33 @@ func (s *Service) Lookup(alertSignature string, includeDraft bool) (*LookupResul
 	if err != nil {
 		return nil, fmt.Errorf("list mappings: %w", err)
 	}
-	res := &LookupResult{AlertSignature: alertSignature, Candidates: []LookupCandidate{}}
+	return s.assembleLookup(alertSignature, mappings, includeDraft)
+}
+
+// LookupStructured v2.1 结构化 signature 查询：域 + 采集通道 + 键值 → 候选异常。
+// 四域四通道键形不同（正则/trap 名/指标阈值/监控点路径等），sig_key 按通道定形。
+func (s *Service) LookupStructured(domain, channel, sigKey string, includeDraft bool) (*LookupResult, error) {
+	if domain == "" || channel == "" || sigKey == "" {
+		return nil, fmt.Errorf("domain, channel and sig_key are required")
+	}
+	mappings, err := s.store.ListMappingsByStructured(domain, channel, sigKey, statusFilter(includeDraft))
+	if err != nil {
+		return nil, fmt.Errorf("list mappings: %w", err)
+	}
+	return s.assembleLookup(domain+"|"+channel+"|"+sigKey, mappings, includeDraft)
+}
+
+// statusFilter 统一 draft 过滤策略。
+func statusFilter(includeDraft bool) model.KnowledgeStatus {
+	if includeDraft {
+		return ""
+	}
+	return model.StatusCurated
+}
+
+// assembleLookup 映射行 → 候选列表（含 v2.1 severity/peers 标注）。
+func (s *Service) assembleLookup(sig string, mappings []model.AlertMapping, includeDraft bool) (*LookupResult, error) {
+	res := &LookupResult{AlertSignature: sig, Candidates: []LookupCandidate{}}
 	for _, m := range mappings {
 		node, err := s.store.GetAnomalyByID(m.AnomalyID)
 		if err != nil {
@@ -583,17 +644,47 @@ func (s *Service) Lookup(alertSignature string, includeDraft bool) (*LookupResul
 		if rev, err := s.store.LatestRevision(model.EntityAlertMapping, m.ID); err == nil {
 			revID = rev.ID
 		}
-		res.Candidates = append(res.Candidates, LookupCandidate{
+		cand := LookupCandidate{
 			AnomalyID: node.ID, StableCode: node.StableCode, Name: node.Name,
 			Confidence: m.Confidence, EvidenceLevel: m.EvidenceLevel,
 			RevisionID: revID, Status: m.Status,
-		})
+			Domain: node.Domain, SeverityOnline: node.SeverityOnline, SeverityDict: node.SeverityDict,
+			NodeKind: node.NodeKind, ClockHint: node.ClockHint,
+		}
+		// v2.1 非因果关联标注：同事件对端 / 同族对比（不进入候选因果链）
+		cand.SameEventPeers = s.peerCodes(node.ID, model.EdgeKindSameEvent, includeDraft)
+		cand.FamilyPeers = s.peerCodes(node.ID, model.EdgeKindSameFamily, includeDraft)
+		res.Candidates = append(res.Candidates, cand)
 	}
 	// 置信度降序，输出有界
 	sort.Slice(res.Candidates, func(i, j int) bool {
 		return res.Candidates[i].Confidence > res.Candidates[j].Confidence
 	})
 	return res, nil
+}
+
+// peerCodes 节点的非因果关联对端 stable_code 列表（去重）。
+func (s *Service) peerCodes(anomalyID string, kind model.EdgeKind, includeDraft bool) []string {
+	edges, err := s.store.ListRelations(anomalyID, kind, statusFilter(includeDraft))
+	if err != nil || len(edges) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range edges {
+		other := e.TargetAnomalyID
+		if other == anomalyID {
+			other = e.SourceAnomalyID
+		}
+		if seen[other] {
+			continue
+		}
+		seen[other] = true
+		if n, err := s.store.GetAnomalyByID(other); err == nil {
+			out = append(out, n.StableCode)
+		}
+	}
+	return out
 }
 
 // Trace 候选根因链遍历：从起始异常沿出边 BFS，条件求值，输出 top-k 链。
@@ -663,6 +754,41 @@ func (s *Service) Trace(startCode string, maxHops, topK int, facts map[string]in
 	seed := map[string]bool{start.ID: true}
 	walk(start.ID, []TraceHop{}, seed)
 
+	// v2.1：非因果关联（same_event/same_family）不参与遍历，在 relations 区返回。
+	// 覆盖起点与链上节点（同事件对端常是跨域取证入口），按边去重。
+	relNodes := map[string]bool{start.ID: true}
+	for _, c := range res.Chains {
+		for _, h := range c.Hops {
+			relNodes[h.TargetID] = true
+		}
+	}
+	seenEdge := map[string]bool{}
+	res.Relations = []RelationRow{}
+	for nodeID := range relNodes {
+		for _, kind := range []model.EdgeKind{model.EdgeKindSameEvent, model.EdgeKindSameFamily} {
+			edges, err := s.store.ListRelations(nodeID, kind, status)
+			if err != nil {
+				continue
+			}
+			for _, e := range edges {
+				if seenEdge[e.ID] {
+					continue
+				}
+				seenEdge[e.ID] = true
+				otherID := e.TargetAnomalyID
+				if otherID == nodeID {
+					otherID = e.SourceAnomalyID
+				}
+				row := RelationRow{EdgeID: e.ID, EdgeKind: e.EdgeKind, EvidenceLevel: e.EvidenceLevel,
+					Confidence: e.Confidence, Status: e.Status}
+				if other, err := s.store.GetAnomalyByID(otherID); err == nil {
+					row.OtherCode, row.OtherName, row.OtherSeverity = other.StableCode, other.Name, other.SeverityOnline
+				}
+				res.Relations = append(res.Relations, row)
+			}
+		}
+	}
+
 	// 排序：全 curated 优先，再按最小置信度降序；截断 top-k
 	sort.SliceStable(res.Chains, func(i, j int) bool {
 		if res.Chains[i].FullyCurated != res.Chains[j].FullyCurated {
@@ -683,12 +809,14 @@ func (s *Service) Trace(startCode string, maxHops, topK int, facts map[string]in
 func (s *Service) buildHop(e model.CausalRule, facts map[string]interface{}) (TraceHop, bool) {
 	hop := TraceHop{
 		EdgeID: e.ID, TargetID: e.TargetAnomalyID,
+		EdgeKind: e.EdgeKind,
 		TimeConstraints: e.TimeConstraints,
 		EvidenceLevel: e.EvidenceLevel, Confidence: e.Confidence,
 		Status: e.Status,
 	}
 	if node, err := s.store.GetAnomalyByID(e.TargetAnomalyID); err == nil {
 		hop.TargetCode, hop.TargetName = node.StableCode, node.Name
+		hop.PropagationHint = node.ClockHint // v2.1 处置时钟档：诊断紧迫性排序
 	}
 	if rev, err := s.store.LatestRevision(model.EntityCausalRule, e.ID); err == nil {
 		hop.RevisionID = rev.ID
@@ -820,6 +948,8 @@ func (s *Service) Evidence(entityRef string) (*EvidenceView, error) {
 		switch ev.Kind {
 		case model.EvidenceKindCase:
 			item.Level = model.EvidenceCaseVerified
+		case model.EvidenceKindRuntime:
+			item.Level = model.EvidenceRuntimeVerified // v2.1 运行实证：真实告警样本
 		case model.EvidenceKindDoc:
 			item.Level = model.EvidenceDocExplicit
 		case model.EvidenceKindExpert:

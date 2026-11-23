@@ -87,11 +87,14 @@ func SanitizeCheck(text string) (bool, string) {
 }
 
 // 证据等级映射：来源种类 → 默认证据等级（生来自源，不事后提升）。
+// v2.1：alert_event → runtime_verified（运行实证）；alert_strategy/system_code/industry_report → doc_explicit（声明类）。
 func levelFromKind(kind model.SourceKind) model.EvidenceLevel {
 	switch kind {
 	case model.SourceInternalCase:
 		return model.EvidenceCaseVerified
-	case model.SourceVendorDoc:
+	case model.SourceAlertEvent:
+		return model.EvidenceRuntimeVerified
+	case model.SourceVendorDoc, model.SourceAlertStrategy, model.SourceSystemCode, model.SourceIndustryReport:
 		return model.EvidenceDocExplicit
 	case model.SourceExpertInput:
 		return model.EvidenceExpertOnly
@@ -104,6 +107,8 @@ func evidenceKindFromLevel(l model.EvidenceLevel) model.EvidenceKind {
 	switch l {
 	case model.EvidenceCaseVerified:
 		return model.EvidenceKindCase
+	case model.EvidenceRuntimeVerified:
+		return model.EvidenceKindRuntime
 	case model.EvidenceDocExplicit:
 		return model.EvidenceKindDoc
 	case model.EvidenceExpertOnly:

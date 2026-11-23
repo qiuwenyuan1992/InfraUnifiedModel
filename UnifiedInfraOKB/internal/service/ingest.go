@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"UnifiedInfraOKB/internal/extractor"
 	"UnifiedInfraOKB/internal/model"
 	"UnifiedInfraOKB/internal/repository"
 )
@@ -23,22 +24,29 @@ type IngestInput struct {
 }
 
 // domainFromCode 从 stable_code 前缀推导领域分类（场景组织维度）。
-// 约定编码带领域前缀（如 net.port.* / rack.power.* / gpu.*）；未识别前缀归 other。
-// 显式 Category 优先，此推导只是缺省值——不臆造精细分类。
+// 约定编码带领域前缀（如 net.port.* / power.rack.* / gpu.*）；未识别前缀归 other。
+// v2.1：三域字典码形纳入（power./cooling./env. → dci 动环域）。
+// 显式 Domain 优先，此推导只是缺省值——不臆造精细分类。
 var domainPrefixes = []struct {
 	prefix  string
 	domains string
 }{
 	{"net.", "network"},
+	{"power.", "dci"},
+	{"cooling.", "dci"},
+	{"env.", "dci"},
 	{"rack.power.", "power"},
 	{"rack.", "rack"},
 	{"ups.", "power"},
 	{"psu.", "power"},
 	{"gpu.", "gpu"},
+	{"npu.", "gpu"},
+	{"mlu.", "gpu"},
+	{"mtgpu.", "gpu"},
 	{"hca.", "hca"},
 	{"pcie.", "pcie"},
 	{"server.", "server"},
-	{"storage.", "storage"},
+	{"storage.", "server"},
 	{"action.", "action"},
 }
 
@@ -139,7 +147,15 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 		if category == "" {
 			category = domainFromCode(a.StableCode)
 		}
-		node := &model.AnomalyType{StableCode: a.StableCode, Name: a.Name, Category: category}
+		domain := a.Domain
+		if domain == "" {
+			domain = domainFromCode(a.StableCode)
+		}
+		node := &model.AnomalyType{
+			StableCode: a.StableCode, Name: a.Name, Category: category, Domain: domain,
+			SeverityOnline: a.SeverityOnline, SeverityDict: a.SeverityDict,
+			NodeKind: model.NodeKind(a.NodeKind), ClockHint: a.ClockHint,
+		}
 		created, err := s.store.GetOrCreateAnomaly(node)
 		if err != nil {
 			return nil, fmt.Errorf("accept anomaly %s: %w", a.StableCode, err)
@@ -147,6 +163,14 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 		if created {
 			out.NewAnomalies++
 			if err := s.appendRevision(model.EntityAnomalyType, node.ID, node, in.OperatorID, "ingest accept"); err != nil {
+				return nil, err
+			}
+		} else if changed, reason := s.arbitrateAnomaly(node, a, level); changed {
+			// v2.1 样本优先仲裁：等级/类型/时钟冲突按证据级裁决，原值留修订历史
+			if err := s.store.UpdateAnomaly(node); err != nil {
+				return nil, fmt.Errorf("arbitrate anomaly %s: %w", a.StableCode, err)
+			}
+			if err := s.appendRevision(model.EntityAnomalyType, node.ID, node, in.OperatorID, reason); err != nil {
 				return nil, err
 			}
 		}
@@ -183,7 +207,8 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 		}
 		rule := &model.CausalRule{
 			SourceAnomalyID: srcNode.ID, TargetAnomalyID: dstNode.ID,
-			EdgeType: c.Rel, Conditions: condJSON, EvidenceLevel: level, Confidence: 0.5,
+			EdgeKind: model.EdgeKind(c.EdgeKind), EdgeType: c.Rel,
+			Conditions: condJSON, EvidenceLevel: level, Confidence: 0.5,
 		}
 		// mitigate 根因挂靠：via 节点必须存在；非 mitigate 边忽略 via（语义不混用）
 		if c.Rel == model.EdgeMitigate && c.Via != "" {
@@ -236,6 +261,7 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 		}
 		mapping := &model.AlertMapping{
 			AlertSignature: m.AlertSignature, AnomalyID: node.ID,
+			Domain: m.Domain, Channel: m.Channel, SigKey: m.SigKey, UpgradeRef: m.UpgradeRef,
 			Confidence: m.Confidence, EvidenceLevel: level,
 		}
 		created, err := s.store.GetOrCreateAlertMapping(mapping)
@@ -272,6 +298,46 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 	}
 
 	return out, nil
+}
+
+// arbitrateAnomaly v2.1 样本优先仲裁（requirements §4）：既有节点与新候选的字段冲突按证据级裁决。
+// 规则：runtime_verified（运行是事实）可覆盖任何已落值；其余来源只在字段为空时补位（配置是声明，不得覆盖运行）。
+// node 为库中既有节点（就地修改）；返回是否发生变更与修订理由。
+func (s *Service) arbitrateAnomaly(node *model.AnomalyType, cand extractor.AnomalyCandidate, level model.EvidenceLevel) (bool, string) {
+	runtime := level == model.EvidenceRuntimeVerified
+	changed := false
+	// 补位类字段：空才填
+	if node.Domain == "" && cand.Domain != "" {
+		node.Domain = cand.Domain
+		changed = true
+	}
+	if node.SeverityDict == "" && cand.SeverityDict != "" {
+		node.SeverityDict = cand.SeverityDict
+		changed = true
+	}
+	if node.NodeKind == "" && cand.NodeKind != "" {
+		node.NodeKind = model.NodeKind(cand.NodeKind)
+		changed = true
+	}
+	if node.ClockHint == "" && cand.ClockHint != "" {
+		node.ClockHint = cand.ClockHint
+		changed = true
+	}
+	// 线上等级：运行实测覆盖配置声明；配置不得覆盖已落值
+	if cand.SeverityOnline != "" && node.SeverityOnline != cand.SeverityOnline {
+		if node.SeverityOnline == "" || runtime {
+			if node.SeverityOnline != "" {
+				// 覆盖留痕：原值在修订历史快照中可回查（仲裁规则：原值保留于修订历史）
+				_ = changed
+			}
+			node.SeverityOnline = cand.SeverityOnline
+			changed = true
+		}
+	}
+	if !changed {
+		return false, ""
+	}
+	return true, "v2.1 arbitration: runtime_verified overrides declarations; empty fields filled"
 }
 
 // textBlock 文本块及其在原文中的起始偏移（出处回链定位用）。
