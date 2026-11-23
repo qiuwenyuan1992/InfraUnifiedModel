@@ -89,7 +89,9 @@ var scenarioDefs = []scenarioDef{
 	},
 	{
 		Code: "scenario.recovery.storm", Name: "上电风暴（恢复期）", Domain: "power",
-		Members: []string{"power.rack.pdu.output_lost_dual", "power.rack.cabinet.over_tech", "power.psu.fault"},
+		// 涌流损伤对象是 IT 设备电源而非动环 PSU 告警（行业资料查证 2026-11-21），
+		// power.psu.fault 不属于该链，移出；原始链为 pdu_dual↔over_tech 恢复涌流循环。
+		Members: []string{"power.rack.pdu.output_lost_dual", "power.rack.cabinet.over_tech"},
 	},
 }
 
