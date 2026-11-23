@@ -90,7 +90,7 @@ func TestV21SeverityArbitration(t *testing.T) {
 	// 1) 策略库源（doc 级）：P3
 	if _, err := svc.Ingest(context.Background(), service.IngestInput{
 		Kind: model.SourceAlertStrategy, Title: "策略库-双路掉电",
-		Content: v21Case(`{"anomaly": "power.rack.pdu.output_lost_dual", "code": "power.rack.pdu.output_lost_dual", "name": "PDU双路掉电", "severity_online": "P3", "node_kind": "aggregate", "alert": "T30_PDU_DUAL"}`),
+		Content:    v21Case(`{"anomaly": "power.rack.pdu.output_lost_dual", "code": "power.rack.pdu.output_lost_dual", "name": "PDU双路掉电", "severity_online": "P3", "node_kind": "aggregate", "alert": "T30_PDU_DUAL"}`),
 		OperatorID: "tester",
 	}); err != nil {
 		t.Fatalf("ingest strategy: %v", err)
@@ -111,7 +111,7 @@ func TestV21SeverityArbitration(t *testing.T) {
 	// 2) 真实告警源（runtime 级）：实测 P2 → 覆盖 P3，走新修订
 	if _, err := svc.Ingest(context.Background(), service.IngestInput{
 		Kind: model.SourceAlertEvent, Title: "真实告警样本-双路掉电实测",
-		Content: v21Case(`{"anomaly": "power.rack.pdu.output_lost_dual", "code": "power.rack.pdu.output_lost_dual", "name": "PDU双路掉电", "severity_online": "P2"}`),
+		Content:    v21Case(`{"anomaly": "power.rack.pdu.output_lost_dual", "code": "power.rack.pdu.output_lost_dual", "name": "PDU双路掉电", "severity_online": "P2"}`),
 		OperatorID: "tester",
 	}); err != nil {
 		t.Fatalf("ingest event: %v", err)
@@ -139,7 +139,7 @@ func TestV21SeverityArbitration(t *testing.T) {
 	// 3) 再来一份策略源声称 P4：配置不得覆盖运行实测
 	if _, err := svc.Ingest(context.Background(), service.IngestInput{
 		Kind: model.SourceAlertStrategy, Title: "策略库修订-双路掉电复查",
-		Content: v21Case(`{"anomaly": "power.rack.pdu.output_lost_dual", "code": "power.rack.pdu.output_lost_dual", "name": "PDU双路掉电", "severity_online": "P4"}`),
+		Content:    v21Case(`{"anomaly": "power.rack.pdu.output_lost_dual", "code": "power.rack.pdu.output_lost_dual", "name": "PDU双路掉电", "severity_online": "P4"}`),
 		OperatorID: "tester",
 	}); err != nil {
 		t.Fatalf("ingest strategy 2: %v", err)
@@ -166,7 +166,7 @@ func TestV21StructuredSignature(t *testing.T) {
 	if _, err := svc.Ingest(context.Background(), service.IngestInput{
 		Kind: model.SourceAlertStrategy, Title: "GPU XID 154 策略",
 		Content: v21Case(
-			`{"anomaly": "gpu.xid.154", "code": "gpu.xid.154", "name": "GPU 需恢复动作", "alert": "GPU_XID_154", "alert_domain": "server", "alert_channel": "agent_syslog", "sig_key": "`+sigKey+`"}`,
+			`{"anomaly": "gpu.xid.154", "code": "gpu.xid.154", "name": "GPU 需恢复动作", "alert": "GPU_XID_154", "alert_domain": "server", "alert_channel": "agent_syslog", "sig_key": "` + sigKey + `"}`,
 		),
 		OperatorID: "tester",
 	}); err != nil {

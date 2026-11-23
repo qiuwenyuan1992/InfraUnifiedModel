@@ -24,21 +24,21 @@ type LookupResult struct {
 // v2.1 增 severity/node_kind/clock_hint 与非因果关联标注（same_event_peers/family_peers，
 // 不进入候选因果链，供消费方证据聚合与对比诊断）。
 type LookupCandidate struct {
-	AnomalyID      string              `json:"anomaly_id"`
-	StableCode     string              `json:"stable_code"`
-	Name           string              `json:"name"`
-	Confidence     float64             `json:"confidence"`
-	EvidenceLevel  model.EvidenceLevel `json:"evidence_level"`
-	RevisionID     string              `json:"revision_id"`
-	Status         model.KnowledgeStatus `json:"status"`
+	AnomalyID     string                `json:"anomaly_id"`
+	StableCode    string                `json:"stable_code"`
+	Name          string                `json:"name"`
+	Confidence    float64               `json:"confidence"`
+	EvidenceLevel model.EvidenceLevel   `json:"evidence_level"`
+	RevisionID    string                `json:"revision_id"`
+	Status        model.KnowledgeStatus `json:"status"`
 	// v2.1 字段
-	Domain          string   `json:"domain,omitempty"`
-	SeverityOnline  string   `json:"severity_online,omitempty"`
-	SeverityDict    string   `json:"severity_dict,omitempty"`
-	NodeKind        model.NodeKind `json:"node_kind,omitempty"`
-	ClockHint       string   `json:"clock_hint,omitempty"`
-	SameEventPeers  []string `json:"same_event_peers,omitempty"` // 同一物理事件对端 stable_code
-	FamilyPeers     []string `json:"family_peers,omitempty"`     // 同族对比候选 stable_code
+	Domain         string         `json:"domain,omitempty"`
+	SeverityOnline string         `json:"severity_online,omitempty"`
+	SeverityDict   string         `json:"severity_dict,omitempty"`
+	NodeKind       model.NodeKind `json:"node_kind,omitempty"`
+	ClockHint      string         `json:"clock_hint,omitempty"`
+	SameEventPeers []string       `json:"same_event_peers,omitempty"` // 同一物理事件对端 stable_code
+	FamilyPeers    []string       `json:"family_peers,omitempty"`     // 同族对比候选 stable_code
 }
 
 // TraceResult trace 原语输出：候选因果链集合。
@@ -52,41 +52,41 @@ type TraceResult struct {
 
 // RelationRow trace 的非因果关联行：同事件对端 / 同族对端（带对方等级）。
 type RelationRow struct {
-	EdgeID         string              `json:"edge_id"`
-	EdgeKind       model.EdgeKind      `json:"edge_kind"` // same_event / same_family
-	OtherCode      string              `json:"other_stable_code"`
-	OtherName      string              `json:"other_name"`
-	OtherSeverity  string              `json:"other_severity_online,omitempty"`
-	EvidenceLevel  model.EvidenceLevel `json:"evidence_level"`
-	Confidence     float64             `json:"confidence"`
-	Status         model.KnowledgeStatus `json:"status"`
+	EdgeID        string                `json:"edge_id"`
+	EdgeKind      model.EdgeKind        `json:"edge_kind"` // same_event / same_family
+	OtherCode     string                `json:"other_stable_code"`
+	OtherName     string                `json:"other_name"`
+	OtherSeverity string                `json:"other_severity_online,omitempty"`
+	EvidenceLevel model.EvidenceLevel   `json:"evidence_level"`
+	Confidence    float64               `json:"confidence"`
+	Status        model.KnowledgeStatus `json:"status"`
 }
 
 // TraceChain 一条候选根因链（多跳）。
 type TraceChain struct {
-	Hops                   []TraceHop `json:"hops"`
-	FullyCurated           bool        `json:"fully_curated"` // 逐跳全部 curated
-	MinConfidence          float64     `json:"min_confidence"`
-	CombinedNote           string      `json:"combined_note,omitempty"` // 组合推导标注
+	Hops          []TraceHop `json:"hops"`
+	FullyCurated  bool       `json:"fully_curated"` // 逐跳全部 curated
+	MinConfidence float64    `json:"min_confidence"`
+	CombinedNote  string     `json:"combined_note,omitempty"` // 组合推导标注
 }
 
 // TraceHop 一跳：边 + 条件求值结果。
 // v2.1 增 PropagationHint：目标节点的处置时钟档（seconds/minutes/hours），
 // 供诊断紧迫性排序；告警到达顺序≠传播顺序，窗口判定只依赖 time_constraints。
 type TraceHop struct {
-	EdgeID        string                 `json:"edge_id"`
-	EdgeKind      model.EdgeKind         `json:"edge_kind"` // 链内恒为 causal；显式携带便于消费方区分 relations
-	TargetID      string                 `json:"target_anomaly_id"`
-	TargetCode    string                 `json:"target_stable_code"`
-	TargetName    string                 `json:"target_name"`
-	Conditions    []model.ConditionClause `json:"conditions,omitempty"`
-	Evaluations   []ConditionEval         `json:"evaluations,omitempty"`
-	TimeConstraints string                `json:"time_constraints,omitempty"`
-	PropagationHint string                `json:"propagation_hint,omitempty"` // v2.1 目标节点 clock_hint
-	EvidenceLevel model.EvidenceLevel     `json:"evidence_level"`
-	Confidence    float64                 `json:"confidence"`
-	Status        model.KnowledgeStatus   `json:"status"`
-	RevisionID    string                  `json:"revision_id"`
+	EdgeID          string                  `json:"edge_id"`
+	EdgeKind        model.EdgeKind          `json:"edge_kind"` // 链内恒为 causal；显式携带便于消费方区分 relations
+	TargetID        string                  `json:"target_anomaly_id"`
+	TargetCode      string                  `json:"target_stable_code"`
+	TargetName      string                  `json:"target_name"`
+	Conditions      []model.ConditionClause `json:"conditions,omitempty"`
+	Evaluations     []ConditionEval         `json:"evaluations,omitempty"`
+	TimeConstraints string                  `json:"time_constraints,omitempty"`
+	PropagationHint string                  `json:"propagation_hint,omitempty"` // v2.1 目标节点 clock_hint
+	EvidenceLevel   model.EvidenceLevel     `json:"evidence_level"`
+	Confidence      float64                 `json:"confidence"`
+	Status          model.KnowledgeStatus   `json:"status"`
+	RevisionID      string                  `json:"revision_id"`
 }
 
 // ConditionEval 单条条件求值：passed/failed/unknown。
@@ -99,22 +99,22 @@ type ConditionEval struct {
 
 // EvidenceView evidence 原语输出：单条知识的证据回链。
 type EvidenceView struct {
-	EntityType  model.EntityType `json:"entity_type"`
-	EntityID    string           `json:"entity_id"`
-	RevisionID  string           `json:"revision_id"`
-	Items        []EvidenceItem  `json:"items"`
+	EntityType model.EntityType `json:"entity_type"`
+	EntityID   string           `json:"entity_id"`
+	RevisionID string           `json:"revision_id"`
+	Items      []EvidenceItem   `json:"items"`
 }
 
 // EvidenceItem 单条证据。
 type EvidenceItem struct {
-	EvidenceID   string              `json:"evidence_id"`
-	Kind         model.EvidenceKind `json:"kind"`
-	Level        model.EvidenceLevel `json:"level"`
-	FragmentID   string              `json:"fragment_id"`
-	Summary      string              `json:"summary"` // 摘要：始终返回
-	Content      string              `json:"content"` // 原文：权限分级后置 S3，本期直返
-	SourceKind   model.SourceKind    `json:"source_kind"`
-	CreatedBy    model.CreatorKind   `json:"created_by"`
+	EvidenceID string              `json:"evidence_id"`
+	Kind       model.EvidenceKind  `json:"kind"`
+	Level      model.EvidenceLevel `json:"level"`
+	FragmentID string              `json:"fragment_id"`
+	Summary    string              `json:"summary"` // 摘要：始终返回
+	Content    string              `json:"content"` // 原文：权限分级后置 S3，本期直返
+	SourceKind model.SourceKind    `json:"source_kind"`
+	CreatedBy  model.CreatorKind   `json:"created_by"`
 }
 
 // GraphView 整图视图：全部节点与边（图谱可视化消费）。
@@ -125,28 +125,28 @@ type GraphView struct {
 
 // GraphNode 可视化节点。v2.1 增 severity/node_kind（前端区分节点形态用）。
 type GraphNode struct {
-	ID           string             `json:"id"`
-	StableCode   string             `json:"stable_code"`
-	Name         string             `json:"name"`
-	Category     string             `json:"category"`
-	Domain       string             `json:"domain,omitempty"`        // v2.1
-	SeverityOnline string           `json:"severity_online,omitempty"` // v2.1
-	NodeKind     model.NodeKind     `json:"node_kind,omitempty"`     // v2.1
-	Status       model.KnowledgeStatus `json:"status"`
-	RevisionID   string             `json:"revision_id"`
+	ID             string                `json:"id"`
+	StableCode     string                `json:"stable_code"`
+	Name           string                `json:"name"`
+	Category       string                `json:"category"`
+	Domain         string                `json:"domain,omitempty"`          // v2.1
+	SeverityOnline string                `json:"severity_online,omitempty"` // v2.1
+	NodeKind       model.NodeKind        `json:"node_kind,omitempty"`       // v2.1
+	Status         model.KnowledgeStatus `json:"status"`
+	RevisionID     string                `json:"revision_id"`
 }
 
 // MitigationRow 处置建议行。
 type MitigationRow struct {
-	MitigationCode string              `json:"mitigation_code"` // 处置手段（边源，如"更换光模块"）
-	MitigationName string              `json:"mitigation_name"`
-	EdgeID         string              `json:"edge_id"`
-	ViaRootCause   string              `json:"via_root_cause,omitempty"` // 根因挂靠（stable_code）：非空时仅当诊断根因路径含此节点才建议
-	EvidenceLevel  model.EvidenceLevel `json:"evidence_level"`
-	Confidence     float64             `json:"confidence"`
+	MitigationCode string                `json:"mitigation_code"` // 处置手段（边源，如"更换光模块"）
+	MitigationName string                `json:"mitigation_name"`
+	EdgeID         string                `json:"edge_id"`
+	ViaRootCause   string                `json:"via_root_cause,omitempty"` // 根因挂靠（stable_code）：非空时仅当诊断根因路径含此节点才建议
+	EvidenceLevel  model.EvidenceLevel   `json:"evidence_level"`
+	Confidence     float64               `json:"confidence"`
 	Status         model.KnowledgeStatus `json:"status"`
-	CaseSupport    int                 `json:"case_support_count"`
-	FragmentRef    string              `json:"fragment_ref"` // 证据回链 ref
+	CaseSupport    int                   `json:"case_support_count"`
+	FragmentRef    string                `json:"fragment_ref"` // 证据回链 ref
 }
 
 // Mitigations 处置查询：对某异常返回缓解手段（沿 mitigate 边入边）。
@@ -202,12 +202,12 @@ func (s *Service) Mitigations(anomalyCode, rootCauseCode string, includeDraft bo
 
 // IndicationRow 症状指示行（indicate 边双向查询的行）。
 type IndicationRow struct {
-	EdgeID        string              `json:"edge_id"`
-	OtherCode     string              `json:"other_code"` // 对端节点 stable_code
-	OtherName     string              `json:"other_name"`
-	Direction     string              `json:"direction"` // outgoing：我会表现为此症状 / incoming：此症状指示我
-	EvidenceLevel model.EvidenceLevel `json:"evidence_level"`
-	Confidence    float64             `json:"confidence"`
+	EdgeID        string                `json:"edge_id"`
+	OtherCode     string                `json:"other_code"` // 对端节点 stable_code
+	OtherName     string                `json:"other_name"`
+	Direction     string                `json:"direction"` // outgoing：我会表现为此症状 / incoming：此症状指示我
+	EvidenceLevel model.EvidenceLevel   `json:"evidence_level"`
+	Confidence    float64               `json:"confidence"`
 	Status        model.KnowledgeStatus `json:"status"`
 }
 
@@ -258,16 +258,16 @@ func (s *Service) Indications(anomalyCode, direction string, includeDraft bool) 
 // GraphEdge 可视化边（源/目标用 stable_code，便于前端直连）。
 // v2.1 增 EdgeKind：same_event/same_family 需要不同的渲染（虚线关联，非因果箭头）。
 type GraphEdge struct {
-	ID            string               `json:"id"`
-	Source        string               `json:"source"`
-	Target        string               `json:"target"`
-	EdgeKind      model.EdgeKind       `json:"edge_kind"`
-	EdgeType      model.EdgeType       `json:"edge_type"`
-	EvidenceLevel model.EvidenceLevel  `json:"evidence_level"`
-	Confidence    float64              `json:"confidence"`
+	ID            string                `json:"id"`
+	Source        string                `json:"source"`
+	Target        string                `json:"target"`
+	EdgeKind      model.EdgeKind        `json:"edge_kind"`
+	EdgeType      model.EdgeType        `json:"edge_type"`
+	EvidenceLevel model.EvidenceLevel   `json:"evidence_level"`
+	Confidence    float64               `json:"confidence"`
 	Status        model.KnowledgeStatus `json:"status"`
-	ReviewFlagged bool                 `json:"review_flagged"`
-	CaseSupport   int                  `json:"case_support_count"`
+	ReviewFlagged bool                  `json:"review_flagged"`
+	CaseSupport   int                   `json:"case_support_count"`
 }
 
 // Graph 返回整图（节点 + 边），供前端力导向可视化。
@@ -308,27 +308,27 @@ func (s *Service) Graph() (*GraphView, error) {
 
 // KnowledgeRow 知识清单行（三类统一视图，字段对齐展示需要）。
 type KnowledgeRow struct {
-	ID            string               `json:"id"`
-	Kind          string               `json:"kind"` // anomaly / rule / mapping
+	ID   string `json:"id"`
+	Kind string `json:"kind"` // anomaly / rule / mapping
 	// anomaly
-	StableCode    string               `json:"stable_code,omitempty"`
-	Name          string               `json:"name,omitempty"`
-	Category      string               `json:"category,omitempty"`
+	StableCode string `json:"stable_code,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Category   string `json:"category,omitempty"`
 	// rule
-	SourceCode    string               `json:"source_code,omitempty"`
-	TargetCode    string               `json:"target_code,omitempty"`
+	SourceCode string `json:"source_code,omitempty"`
+	TargetCode string `json:"target_code,omitempty"`
 	// mapping
-	AlertSignature string              `json:"alert_signature,omitempty"`
+	AlertSignature string `json:"alert_signature,omitempty"`
 	// 通用
-	EdgeKind      model.EdgeKind       `json:"edge_kind,omitempty"` // v2.1：rule 行携带（anomaly/mapping 行缺省）
-	EdgeType      model.EdgeType       `json:"edge_type,omitempty"`
-	EvidenceLevel model.EvidenceLevel  `json:"evidence_level,omitempty"`
-	Confidence    float64              `json:"confidence,omitempty"`
-	CaseSupport   int                  `json:"case_support_count,omitempty"`
+	EdgeKind      model.EdgeKind        `json:"edge_kind,omitempty"` // v2.1：rule 行携带（anomaly/mapping 行缺省）
+	EdgeType      model.EdgeType        `json:"edge_type,omitempty"`
+	EvidenceLevel model.EvidenceLevel   `json:"evidence_level,omitempty"`
+	Confidence    float64               `json:"confidence,omitempty"`
+	CaseSupport   int                   `json:"case_support_count,omitempty"`
 	Status        model.KnowledgeStatus `json:"status"`
-	ReviewFlagged bool                 `json:"review_flagged,omitempty"`
-	RevisionID    string               `json:"revision_id"`
-	UpdatedAt     string               `json:"updated_at"`
+	ReviewFlagged bool                  `json:"review_flagged,omitempty"`
+	RevisionID    string                `json:"revision_id"`
+	UpdatedAt     string                `json:"updated_at"`
 }
 
 // KnowledgeList 知识清单查询结果。
@@ -438,21 +438,21 @@ func (s *Service) ruleRows(rules []model.CausalRule) ([]KnowledgeRow, error) {
 
 // ScenarioCard 场景卡片：按场景聚合的统计视图（前端卡片墙用）。
 type ScenarioCard struct {
-	Code          string `json:"code"`
-	Name          string `json:"name"`
-	Domain        string `json:"domain"`
-	Description   string `json:"description"`
-	NodeCount     int    `json:"node_count"`
-	EdgeCount     int    `json:"edge_count"`       // 两端均在场景内的边
-	CuratedEdges  int    `json:"curated_edges"`
-	DraftEdges    int    `json:"draft_edges"`
-	AlertCount    int    `json:"alert_count"`       // 场景内节点关联的 distinct 告警入口
-	MitigationCount int  `json:"mitigation_count"` // 场景内 mitigate 边数
+	Code            string `json:"code"`
+	Name            string `json:"name"`
+	Domain          string `json:"domain"`
+	Description     string `json:"description"`
+	NodeCount       int    `json:"node_count"`
+	EdgeCount       int    `json:"edge_count"` // 两端均在场景内的边
+	CuratedEdges    int    `json:"curated_edges"`
+	DraftEdges      int    `json:"draft_edges"`
+	AlertCount      int    `json:"alert_count"`      // 场景内节点关联的 distinct 告警入口
+	MitigationCount int    `json:"mitigation_count"` // 场景内 mitigate 边数
 }
 
 // ScenarioDetail 场景详情：成员节点与场景内边（行结构与知识清单同构）。
 type ScenarioDetail struct {
-	Scenario ScenarioCard  `json:"scenario"`
+	Scenario ScenarioCard   `json:"scenario"`
 	Nodes    []KnowledgeRow `json:"nodes"`
 	Edges    []KnowledgeRow `json:"edges"`
 }
@@ -809,9 +809,9 @@ func (s *Service) Trace(startCode string, maxHops, topK int, facts map[string]in
 func (s *Service) buildHop(e model.CausalRule, facts map[string]interface{}) (TraceHop, bool) {
 	hop := TraceHop{
 		EdgeID: e.ID, TargetID: e.TargetAnomalyID,
-		EdgeKind: e.EdgeKind,
+		EdgeKind:        e.EdgeKind,
 		TimeConstraints: e.TimeConstraints,
-		EvidenceLevel: e.EvidenceLevel, Confidence: e.Confidence,
+		EvidenceLevel:   e.EvidenceLevel, Confidence: e.Confidence,
 		Status: e.Status,
 	}
 	if node, err := s.store.GetAnomalyByID(e.TargetAnomalyID); err == nil {

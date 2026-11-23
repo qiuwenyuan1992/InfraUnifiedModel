@@ -27,15 +27,15 @@ type ExtractionResult struct {
 
 // AnomalyCandidate 异常候选。v2.1 增等级/类型/时钟/域字段，来自结构化源或提取结果。
 type AnomalyCandidate struct {
-	StableCode    string   `json:"stable_code"`
-	Name          string   `json:"name"`
-	Category      string   `json:"category"`
-	Aliases       []string `json:"aliases,omitempty"`
+	StableCode string   `json:"stable_code"`
+	Name       string   `json:"name"`
+	Category   string   `json:"category"`
+	Aliases    []string `json:"aliases,omitempty"`
 	// v2.1 字段（可空：留空由 service 层推导或缺省）
 	SeverityOnline string `json:"severity_online,omitempty"` // P0-P4
 	SeverityDict   string `json:"severity_dict,omitempty"`   // P1-P3
 	NodeKind       string `json:"node_kind,omitempty"`       // atomic/aggregate/placeholder/event
-	ClockHint      string `json:"clock_hint,omitempty"`       // seconds/minutes/hours
+	ClockHint      string `json:"clock_hint,omitempty"`      // seconds/minutes/hours
 	Domain         string `json:"domain,omitempty"`          // server/network/dci
 	FragmentID     string `json:"fragment_id"`               // 出处回链
 }
@@ -45,22 +45,22 @@ type AnomalyCandidate struct {
 // v2.1 增 EdgeKind：causal（缺省）/ same_event / same_family——非 causal 边的 Rel 语义被忽略。
 // 由数据源语义决定，不由提取器臆造。
 type CausalChainCandidate struct {
-	SourceCode string              `json:"source_code"`
-	TargetCode string              `json:"target_code"`
-	EdgeKind   string              `json:"edge_kind,omitempty"` // v2.1
-	Rel        model.EdgeType      `json:"rel,omitempty"`
-	Via        string              `json:"via,omitempty"`
+	SourceCode string                  `json:"source_code"`
+	TargetCode string                  `json:"target_code"`
+	EdgeKind   string                  `json:"edge_kind,omitempty"` // v2.1
+	Rel        model.EdgeType          `json:"rel,omitempty"`
+	Via        string                  `json:"via,omitempty"`
 	Conditions []model.ConditionClause `json:"conditions,omitempty"`
-	FragmentID string              `json:"fragment_id"`
+	FragmentID string                  `json:"fragment_id"`
 }
 
 // AlertMappingCandidate 告警映射候选。v2.1 增结构化 signature 字段；
 // AlertSignature 为旧式单串或拼接键（domain|channel|sig_key）。
 type AlertMappingCandidate struct {
 	AlertSignature string  `json:"alert_signature"`
-	Domain         string  `json:"domain,omitempty"`   // v2.1
-	Channel        string  `json:"channel,omitempty"`  // v2.1
-	SigKey         string  `json:"sig_key,omitempty"`  // v2.1
+	Domain         string  `json:"domain,omitempty"`      // v2.1
+	Channel        string  `json:"channel,omitempty"`     // v2.1
+	SigKey         string  `json:"sig_key,omitempty"`     // v2.1
 	UpgradeRef     string  `json:"upgrade_ref,omitempty"` // v2.1
 	AnomalyCode    string  `json:"anomaly_code"`
 	Confidence     float64 `json:"confidence"`
@@ -100,10 +100,10 @@ func (f *FakeExtract) Extract(_ context.Context, _ string, fragments []model.Fra
 			AlertChannel   string `json:"alert_channel"`
 			SigKey         string `json:"sig_key"`
 			UpgradeRef     string `json:"upgrade_ref"`
-			Source  string   `json:"source"`
-			Target  string   `json:"target"`
-			Rel     string   `json:"rel"`
-			Via     string   `json:"via"`
+			Source         string `json:"source"`
+			Target         string `json:"target"`
+			Rel            string `json:"rel"`
+			Via            string `json:"via"`
 		}
 		if err := json.Unmarshal([]byte(frag.Content), &payload); err != nil {
 			// 片段不是结构化标记，跳过，不生成候选

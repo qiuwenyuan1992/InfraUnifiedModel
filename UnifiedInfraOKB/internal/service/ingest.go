@@ -61,15 +61,15 @@ func domainFromCode(code string) string {
 
 // IngestOutput 摄取结果：登记与接纳统计。
 type IngestOutput struct {
-	SourceID        string `json:"source_id"`
-	SourceVersionID string `json:"source_version_id"`
-	ParsedVersionID string `json:"parsed_version_id"`
-	ExtractedModel  string `json:"extracted_model"`
-	NewAnomalies    int    `json:"new_anomalies"`
-	NewRules        int    `json:"new_rules"`
-	NewMappings     int    `json:"new_mappings"`
-	CuratedRules    int    `json:"curated_rules"` // 本次自动升 curated 的边数
-	DuplicateContent bool  `json:"duplicate_content"` // 同内容已入库：本次不新增证据（防重复提交虚增印证）
+	SourceID         string `json:"source_id"`
+	SourceVersionID  string `json:"source_version_id"`
+	ParsedVersionID  string `json:"parsed_version_id"`
+	ExtractedModel   string `json:"extracted_model"`
+	NewAnomalies     int    `json:"new_anomalies"`
+	NewRules         int    `json:"new_rules"`
+	NewMappings      int    `json:"new_mappings"`
+	CuratedRules     int    `json:"curated_rules"`     // 本次自动升 curated 的边数
+	DuplicateContent bool   `json:"duplicate_content"` // 同内容已入库：本次不新增证据（防重复提交虚增印证）
 }
 
 // Ingest 一条龙摄取：脱敏校验门禁 → 登记来源 → 固定版本 → 提取 → 接纳候选。
@@ -95,8 +95,8 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (*IngestOutput, er
 
 	// 1. 登记来源（过门禁后 sensitivity_cleared=true）
 	src := &model.Source{
-		Kind:              in.Kind,
-		Title:             in.Title,
+		Kind:               in.Kind,
+		Title:              in.Title,
 		SensitivityCleared: true,
 		PermissionLevel:    1,
 	}

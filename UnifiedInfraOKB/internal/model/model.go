@@ -39,11 +39,11 @@ const (
 type EvidenceKind string
 
 const (
-	EvidenceKindCase   EvidenceKind = "case"
-	EvidenceKindDoc    EvidenceKind = "doc"
+	EvidenceKindCase    EvidenceKind = "case"
+	EvidenceKindDoc     EvidenceKind = "doc"
 	EvidenceKindRuntime EvidenceKind = "runtime" // v2.1 运行实证（alert_event 源）
-	EvidenceKindInfer  EvidenceKind = "inferred"
-	EvidenceKindExpert EvidenceKind = "expert"
+	EvidenceKindInfer   EvidenceKind = "inferred"
+	EvidenceKindExpert  EvidenceKind = "expert"
 )
 
 // KnowledgeStatus 知识状态仅两态。
@@ -103,8 +103,8 @@ const (
 type EntityType string
 
 const (
-	EntityAnomalyType EntityType = "anomaly_type"
-	EntityCausalRule  EntityType = "causal_rule"
+	EntityAnomalyType  EntityType = "anomaly_type"
+	EntityCausalRule   EntityType = "causal_rule"
 	EntityAlertMapping EntityType = "alert_mapping"
 )
 
@@ -120,44 +120,44 @@ const (
 
 // Source 数据源登记。工单入库前须过脱敏校验，通过后打 sensitivity_cleared。
 type Source struct {
-	ID               string       `gorm:"primaryKey;size:36"`
-	Kind             SourceKind   `gorm:"size:20;index"`
-	Title            string       `gorm:"size:256"`
+	ID                 string     `gorm:"primaryKey;size:36"`
+	Kind               SourceKind `gorm:"size:20;index"`
+	Title              string     `gorm:"size:256"`
 	SensitivityCleared bool       `gorm:"default:false"` // 脱敏校验通过标记；未通过不得入图
-	PermissionLevel  int          `gorm:"default:0"`    // 读取权限分级
-	StorageURI       string       `gorm:"size:512"`     // 原件在对象存储中的位置
-	CreatedAt        time.Time
+	PermissionLevel    int        `gorm:"default:0"`     // 读取权限分级
+	StorageURI         string     `gorm:"size:512"`      // 原件在对象存储中的位置
+	CreatedAt          time.Time
 }
 
 // SourceVersion 原件版本：内容寻址，不可变。
 type SourceVersion struct {
-	ID            string    `gorm:"primaryKey;size:36"`
-	SourceID      string    `gorm:"size:36;index"`
-	ContentHash   string    `gorm:"size:64;uniqueIndex"` // sha256，内容寻址
-	StorageURI    string    `gorm:"size:512"`
-	CreatedAt     time.Time
+	ID          string `gorm:"primaryKey;size:36"`
+	SourceID    string `gorm:"size:36;index"`
+	ContentHash string `gorm:"size:64;uniqueIndex"` // sha256，内容寻址
+	StorageURI  string `gorm:"size:512"`
+	CreatedAt   time.Time
 }
 
 // ParsedVersion 解析版本：绑定固定原件版本，不可变。
 type ParsedVersion struct {
-	ID             string    `gorm:"primaryKey;size:36"`
-	SourceVersionID string   `gorm:"size:36;index"`
-	ParserVersion  string    `gorm:"size:32"`
-	ContentHash    string    `gorm:"size:64"`
-	CreatedAt      time.Time
+	ID              string `gorm:"primaryKey;size:36"`
+	SourceVersionID string `gorm:"size:36;index"`
+	ParserVersion   string `gorm:"size:32"`
+	ContentHash     string `gorm:"size:64"`
+	CreatedAt       time.Time
 }
 
 // Fragment 文本片段：绑定固定解析版本；权限校验到 fragment 级，未授权只返回摘要。
 type Fragment struct {
-	ID              string    `gorm:"primaryKey;size:36"`
-	ParsedVersionID string    `gorm:"size:36;index"`
+	ID              string `gorm:"primaryKey;size:36"`
+	ParsedVersionID string `gorm:"size:36;index"`
 	CharStart       int
 	CharEnd         int
-	Page            int       // 页码（PDF 等），无页概念时为 0
-	ParagraphPath   string    `gorm:"size:256"`
-	Summary         string    `gorm:"size:512"` // 摘要：未授权调用方唯一可见内容
-	Content         string    // 原文内容（中文字段注释：脱敏后）
-	PermissionLevel int       `gorm:"default:0"`
+	Page            int    // 页码（PDF 等），无页概念时为 0
+	ParagraphPath   string `gorm:"size:256"`
+	Summary         string `gorm:"size:512"` // 摘要：未授权调用方唯一可见内容
+	Content         string // 原文内容（中文字段注释：脱敏后）
+	PermissionLevel int    `gorm:"default:0"`
 	CreatedAt       time.Time
 }
 
@@ -166,36 +166,36 @@ type Fragment struct {
 // AnomalyType 图节点：stable_code 唯一键。
 // v2.1 增 severity 体系（线上 P0-P4 / 字典 P1-P3）、node_kind、clock_hint（处置时钟档）。
 type AnomalyType struct {
-	ID                 string    `gorm:"primaryKey;size:36"`
-	StableCode         string    `gorm:"size:128;uniqueIndex"`
-	Name               string    `gorm:"size:256"`
-	Category           string    `gorm:"size:64"`
-	Domain             string    `gorm:"size:32;index"`             // v2.1 三域：server / network / dci
-	SeverityOnline     string    `gorm:"size:8"`                    // v2.1 线上等级 P0-P4（S/A/L 经等级映射归一）
-	SeverityDict       string    `gorm:"size:8"`                    // v2.1 字典等级 P1-P3（P1 最高）
-	NodeKind           NodeKind  `gorm:"size:16;default:atomic"`    // v2.1 节点类型
-	ClockHint          string    `gorm:"size:16"`                   // v2.1 处置时钟：seconds / minutes / hours
-	CurrentRevisionID  string    `gorm:"size:36"`
-	Status             KnowledgeStatus `gorm:"size:16;default:draft"`
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	ID                string          `gorm:"primaryKey;size:36"`
+	StableCode        string          `gorm:"size:128;uniqueIndex"`
+	Name              string          `gorm:"size:256"`
+	Category          string          `gorm:"size:64"`
+	Domain            string          `gorm:"size:32;index"`          // v2.1 三域：server / network / dci
+	SeverityOnline    string          `gorm:"size:8"`                 // v2.1 线上等级 P0-P4（S/A/L 经等级映射归一）
+	SeverityDict      string          `gorm:"size:8"`                 // v2.1 字典等级 P1-P3（P1 最高）
+	NodeKind          NodeKind        `gorm:"size:16;default:atomic"` // v2.1 节点类型
+	ClockHint         string          `gorm:"size:16"`                // v2.1 处置时钟：seconds / minutes / hours
+	CurrentRevisionID string          `gorm:"size:36"`
+	Status            KnowledgeStatus `gorm:"size:16;default:draft"`
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // AnomalyAlias 厂商别名 → stable_code 的节点对齐表：AI 出建议、人确认。
 type AnomalyAlias struct {
-	ID         string    `gorm:"primaryKey;size:36"`
-	AnomalyID  string    `gorm:"size:36;index"`
-	Alias      string    `gorm:"size:256;index"`
-	Vendor     string    `gorm:"size:64"`
-	Confirmed  bool      `gorm:"default:false"` // 人工确认后才参与对齐
-	CreatedAt  time.Time
+	ID        string `gorm:"primaryKey;size:36"`
+	AnomalyID string `gorm:"size:36;index"`
+	Alias     string `gorm:"size:256;index"`
+	Vendor    string `gorm:"size:64"`
+	Confirmed bool   `gorm:"default:false"` // 人工确认后才参与对齐
+	CreatedAt time.Time
 }
 
 // ConditionClause 受 Schema 约束的条件子句（JSON 反序列化用）。
 // FactKey 为观测事实键；Op 仅支持受控枚举，不执行任意脚本。
 type ConditionClause struct {
-	FactKey string `json:"fact_key"`
-	Op      string `json:"op"` // eq/ne/gt/lt/gte/lte/exists
+	FactKey string      `json:"fact_key"`
+	Op      string      `json:"op"` // eq/ne/gt/lt/gte/lte/exists
 	Value   interface{} `json:"value"`
 }
 
@@ -205,43 +205,43 @@ type ConditionClause struct {
 // Conditions / TimeConstraints 为受 Schema 约束的 JSON 数组文本（[]ConditionClause）。
 // 印证计数：>=2 个独立工单证据支持才可升 curated。
 type CausalRule struct {
-	ID                string    `gorm:"primaryKey;size:36"`
-	SourceAnomalyID   string    `gorm:"size:36;index"`
-	TargetAnomalyID   string    `gorm:"size:36;index"`
-	EdgeKind          EdgeKind  `gorm:"size:16;default:causal;index"` // v2.1 边语义三分
-	EdgeType          EdgeType  `gorm:"size:16;default:trigger;index"` // 仅 causal 边有意义：trigger / indicate / mitigate / prevent
+	ID              string   `gorm:"primaryKey;size:36"`
+	SourceAnomalyID string   `gorm:"size:36;index"`
+	TargetAnomalyID string   `gorm:"size:36;index"`
+	EdgeKind        EdgeKind `gorm:"size:16;default:causal;index"`  // v2.1 边语义三分
+	EdgeType        EdgeType `gorm:"size:16;default:trigger;index"` // 仅 causal 边有意义：trigger / indicate / mitigate / prevent
 	// MitigatedViaRootCause：mitigate 边的根因挂靠——"处置手段 A 缓解异常 B（当根因是 C 时）"。
 	// 空 = 无条件适用；非空 = 仅当诊断结论的根因路径包含 C 时该处置建议生效（防张冠李戴）。
-	MitigatedViaRootCause *string   `gorm:"size:36"`
-	Conditions        string    // JSON []ConditionClause，可为空（无条件边）
-	TimeConstraints   string    `gorm:"type:text"` // JSON，时间约束（v2.1 含传播延迟档 seconds/minutes/hours）
-	EvidenceLevel     EvidenceLevel `gorm:"size:20"`
-	Confidence        float64   // 反馈飞轮回写
-	CaseSupportCount  int       // 独立工单印证计数
-	CurrentRevisionID string    `gorm:"size:36"`
-	Status            KnowledgeStatus `gorm:"size:16;default:draft"`
-	ReviewFlagged     bool      `gorm:"default:false"` // 否决降级后的复核标记
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	MitigatedViaRootCause *string         `gorm:"size:36"`
+	Conditions            string          // JSON []ConditionClause，可为空（无条件边）
+	TimeConstraints       string          `gorm:"type:text"` // JSON，时间约束（v2.1 含传播延迟档 seconds/minutes/hours）
+	EvidenceLevel         EvidenceLevel   `gorm:"size:20"`
+	Confidence            float64         // 反馈飞轮回写
+	CaseSupportCount      int             // 独立工单印证计数
+	CurrentRevisionID     string          `gorm:"size:36"`
+	Status                KnowledgeStatus `gorm:"size:16;default:draft"`
+	ReviewFlagged         bool            `gorm:"default:false"` // 否决降级后的复核标记
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 // Scenario 场景：领域内有主题的知识分组（组织维度：领域 → 场景 → 知识）。
 // 场景由专家或提取管线显式定义与指派，不做自动聚类臆造。
 type Scenario struct {
-	ID          string    `gorm:"primaryKey;size:36"`
-	Code        string    `gorm:"size:128;uniqueIndex"` // scenario.net.link.port 等
-	Name        string    `gorm:"size:128"`
-	Domain      string    `gorm:"size:32;index"`      // 归属领域（network/gpu/power...）
-	Description string    `gorm:"size:512"`
+	ID          string `gorm:"primaryKey;size:36"`
+	Code        string `gorm:"size:128;uniqueIndex"` // scenario.net.link.port 等
+	Name        string `gorm:"size:128"`
+	Domain      string `gorm:"size:32;index"` // 归属领域（network/gpu/power...）
+	Description string `gorm:"size:512"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
 // ScenarioNode 场景成员：节点可属多个场景；跨场景边自然存在于图上。
 type ScenarioNode struct {
-	ID         string    `gorm:"primaryKey;size:36"`
-	ScenarioID string    `gorm:"size:36;uniqueIndex:idx_scenario_node"`
-	AnomalyID  string    `gorm:"size:36;uniqueIndex:idx_scenario_node"`
+	ID         string `gorm:"primaryKey;size:36"`
+	ScenarioID string `gorm:"size:36;uniqueIndex:idx_scenario_node"`
+	AnomalyID  string `gorm:"size:36;uniqueIndex:idx_scenario_node"`
 	CreatedAt  time.Time
 }
 
@@ -250,18 +250,18 @@ type ScenarioNode struct {
 // Domain+Channel+SigKey 为结构化键；AlertSignature 为拼接键（domain|channel|sig_key）或旧式单串，
 // 两种查询形态并存（api-boundaries v2.1）。
 type AlertMapping struct {
-	ID                string    `gorm:"primaryKey;size:36"`
-	AlertSignature    string    `gorm:"size:256;index"` // 拼接键（兼容旧单串查询）
-	Domain            string    `gorm:"size:32;index"`  // v2.1 server / network / dci
-	Channel           string    `gorm:"size:32"`        // v2.1 agent_syslog / bmc_syslog / snmptrap / metric / dci_point / ufm / enms
-	SigKey            string    `gorm:"size:512;index"` // v2.1 通道定形键值（正则/策略名/trap 名/指标+阈值/监控点路径/GUID 对/告警名+位置）
-	UpgradeRef        string    `gorm:"size:64"`        // v2.1 升级链关联策略 id（同码归并）
-	AnomalyID         string    `gorm:"size:36;index"`
+	ID                string `gorm:"primaryKey;size:36"`
+	AlertSignature    string `gorm:"size:256;index"` // 拼接键（兼容旧单串查询）
+	Domain            string `gorm:"size:32;index"`  // v2.1 server / network / dci
+	Channel           string `gorm:"size:32"`        // v2.1 agent_syslog / bmc_syslog / snmptrap / metric / dci_point / ufm / enms
+	SigKey            string `gorm:"size:512;index"` // v2.1 通道定形键值（正则/策略名/trap 名/指标+阈值/监控点路径/GUID 对/告警名+位置）
+	UpgradeRef        string `gorm:"size:64"`        // v2.1 升级链关联策略 id（同码归并）
+	AnomalyID         string `gorm:"size:36;index"`
 	Confidence        float64
-	EvidenceLevel     EvidenceLevel `gorm:"size:20"`
-	CurrentRevisionID string    `gorm:"size:36"`
+	EvidenceLevel     EvidenceLevel   `gorm:"size:20"`
+	CurrentRevisionID string          `gorm:"size:36"`
 	Status            KnowledgeStatus `gorm:"size:16;default:draft"`
-	ReviewFlagged     bool      `gorm:"default:false"` // 否决降级后的复核标记（与边同规则）
+	ReviewFlagged     bool            `gorm:"default:false"` // 否决降级后的复核标记（与边同规则）
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
@@ -270,36 +270,36 @@ type AlertMapping struct {
 
 // Evidence 统一证据记录：种类 → fragment 回链 → 核验状态。
 type Evidence struct {
-	ID          string       `gorm:"primaryKey;size:36"`
-	Kind        EvidenceKind `gorm:"size:20"`
-	EntityType  EntityType   `gorm:"size:20"`
-	EntityID    string       `gorm:"size:36;index"` // 指向 AnomalyType/CausalRule/AlertMapping
-	FragmentID  string       `gorm:"size:36;index"` // 出处回链
-	SourceID    string       `gorm:"size:36"`      // 独立工单印证计数按此去重
-	CreatedBy   CreatorKind  `gorm:"size:10"`
-	Note        string       `gorm:"size:512"`
-	CreatedAt   time.Time
+	ID         string       `gorm:"primaryKey;size:36"`
+	Kind       EvidenceKind `gorm:"size:20"`
+	EntityType EntityType   `gorm:"size:20"`
+	EntityID   string       `gorm:"size:36;index"` // 指向 AnomalyType/CausalRule/AlertMapping
+	FragmentID string       `gorm:"size:36;index"` // 出处回链
+	SourceID   string       `gorm:"size:36"`       // 独立工单印证计数按此去重
+	CreatedBy  CreatorKind  `gorm:"size:10"`
+	Note       string       `gorm:"size:512"`
+	CreatedAt  time.Time
 }
 
 // Revision 追加式修订历史：每次变更插入新行，不覆盖旧行。
 type Revision struct {
-	ID              string      `gorm:"primaryKey;size:36"`
-	EntityType      EntityType   `gorm:"size:20;index"`
-	EntityID        string      `gorm:"size:36;index"`
-	ContentSnapshot string      `gorm:"type:text"` // 变更时点内容 JSON 快照
-	PrevRevisionID  *string     `gorm:"size:36"`   // 前驱修订，首版为 NULL
-	ChangedBy       string      `gorm:"size:128"`  // 服务端识别的操作主体
-	Reason          string      `gorm:"size:512"`
+	ID              string     `gorm:"primaryKey;size:36"`
+	EntityType      EntityType `gorm:"size:20;index"`
+	EntityID        string     `gorm:"size:36;index"`
+	ContentSnapshot string     `gorm:"type:text"` // 变更时点内容 JSON 快照
+	PrevRevisionID  *string    `gorm:"size:36"`   // 前驱修订，首版为 NULL
+	ChangedBy       string     `gorm:"size:128"`  // 服务端识别的操作主体
+	Reason          string     `gorm:"size:512"`
 	CreatedAt       time.Time
 }
 
 // Feedback 运行时反馈：report 上报的诊断使用边与判定；同一 diagnosis_ref+edge 幂等。
 type Feedback struct {
-	ID            string    `gorm:"primaryKey;size:36"`
-	DiagnosisRef  string    `gorm:"size:128;uniqueIndex:idx_feedback_unique"`
-	EdgeID        string    `gorm:"size:36;uniqueIndex:idx_feedback_unique"`
-	Verdict       Verdict   `gorm:"size:12"`
-	OperatorID    string    `gorm:"size:128"` // 服务端识别
-	Notes         string    `gorm:"size:512"`
-	CreatedAt     time.Time
+	ID           string  `gorm:"primaryKey;size:36"`
+	DiagnosisRef string  `gorm:"size:128;uniqueIndex:idx_feedback_unique"`
+	EdgeID       string  `gorm:"size:36;uniqueIndex:idx_feedback_unique"`
+	Verdict      Verdict `gorm:"size:12"`
+	OperatorID   string  `gorm:"size:128"` // 服务端识别
+	Notes        string  `gorm:"size:512"`
+	CreatedAt    time.Time
 }
