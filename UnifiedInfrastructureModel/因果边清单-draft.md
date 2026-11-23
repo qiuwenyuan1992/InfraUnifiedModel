@@ -95,6 +95,7 @@
 
 | 边 | 依据 | 判定 |
 | --- | --- | --- |
+| `net.port.crc_error → net.port.down`（条件边） | 华为 CloudEngine 配置指南：CRC 错包超阈值（`trap-threshold crc-statistics` 缺省 3 个/10 秒）触发接口 Error-Down；`port crc-statistics trigger error-down` **缺省未使能**——保护性关闭，非无条件物理必然 | 成立（条件：crc_error_down_protection=enabled），doc_explicit |
 | `net.port.optical_power.abnormal → net.port.crc_error` | 华为 CloudEngine 维护宝典："光模块发光功率正常，但接口统计存在 CRC 等丢包——可能原因：光模块收光功率异常"（交换机侧直接结论）；中兴真实案例：100G 光模块 CRC 误码超限致业务闪断 | 成立，doc_explicit |
 | `server.optical.rx_power.abnormal → server.nic.crc_error` | 同机理对称（光接收机 BER 物理特性），服务器侧为最小推断步 | 成立，draft 待定稿 |
 | `server.optical.rx_power.abnormal → server.nic.link_down`（曾拟） | 未获文档支持：严重劣化走 LOS 告警，文档结论止于 CRC/丢包 | **不建**（防止编造） |

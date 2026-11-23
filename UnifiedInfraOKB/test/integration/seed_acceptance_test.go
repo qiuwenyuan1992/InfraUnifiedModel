@@ -55,6 +55,72 @@ func TestOpticalDegradationChain(t *testing.T) {
 	}
 }
 
+// TestCRCToPortDownConditional CRC 错包→端口 Down（2026-11-21 查证补充）：
+// 华为 CloudEngine 配置指南"配置接收的CRC错误报文超过阈值触发接口Error-Down"
+// （trap-threshold crc-statistics 缺省 3 个/10 秒 + port crc-statistics trigger error-down）。
+// 该保护机制缺省未使能——Down 是配置了阈值保护时的保护性关闭，非无条件物理必然，
+// 故为条件边：conditions crc_error_down_protection=enabled。
+// 验证条件边三态语义：unknown 可走（待验证检查项）/ passed 可走 / failed 不可走。
+func TestCRCToPortDownConditional(t *testing.T) {
+	svc := newTestService(t)
+	if _, err := seeder.Seed(svc); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// 1. facts 未知：边可走，条件标注 unknown（待验证检查项，evidence-driven 输入）
+	tr, err := svc.Trace("net.port.crc_error", 3, 5, nil, true)
+	if err != nil {
+		t.Fatalf("trace: %v", err)
+	}
+	reachedDown := false
+	hasUnknownCheck := false
+	for _, c := range tr.Chains {
+		for _, h := range c.Hops {
+			if h.TargetCode == "net.port.down" {
+				reachedDown = true
+				for _, ev := range h.Evaluations {
+					if ev.Result == "unknown" && ev.FactKey == "crc_error_down_protection" {
+						hasUnknownCheck = true
+					}
+				}
+			}
+		}
+	}
+	if !reachedDown {
+		t.Fatal("crc_error -> port.down must be walkable when condition unknown (pending verification)")
+	}
+	if !hasUnknownCheck {
+		t.Fatal("condition must be returned as unknown check item (evidence-driven)")
+	}
+	// 2. facts 已配置保护：passed，可走
+	tr2, err := svc.Trace("net.port.crc_error", 3, 5, map[string]interface{}{"crc_error_down_protection": "enabled"}, true)
+	if err != nil {
+		t.Fatalf("trace passed: %v", err)
+	}
+	reachedDown2 := false
+	for _, c := range tr2.Chains {
+		for _, h := range c.Hops {
+			if h.TargetCode == "net.port.down" {
+				reachedDown2 = true
+			}
+		}
+	}
+	if !reachedDown2 {
+		t.Fatal("crc_error -> port.down must be walkable when protection enabled")
+	}
+	// 3. facts 明确未配置保护：failed，边不可走（防可能性放大成必然性）
+	tr3, err := svc.Trace("net.port.crc_error", 3, 5, map[string]interface{}{"crc_error_down_protection": "disabled"}, true)
+	if err != nil {
+		t.Fatalf("trace failed: %v", err)
+	}
+	for _, c := range tr3.Chains {
+		for _, h := range c.Hops {
+			if h.TargetCode == "net.port.down" {
+				t.Fatal("crc_error -> port.down must NOT be walkable when protection disabled")
+			}
+		}
+	}
+}
+
 // TestSeedAcceptance 灌种子后跑四原语验收用例。
 func TestSeedAcceptance(t *testing.T) {
 	svc := newTestService(t)

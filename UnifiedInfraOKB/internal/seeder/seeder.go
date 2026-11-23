@@ -205,6 +205,10 @@ func vendorDocFragments() []string {
 		`{"source": "net.port.optical_power.abnormal", "target": "net.port.crc_error", "time_constraints": "{\"delay_tier\":\"seconds\"}"}`,
 		// 服务器侧对称（同机理推断）：网卡接收光功率劣化 → 该侧 CRC
 		`{"source": "server.optical.rx_power.abnormal", "target": "server.nic.crc_error", "time_constraints": "{\"delay_tier\":\"seconds\"}"}`,
+		// CRC 错包超阈值触发 Error-Down（华为 CloudEngine 配置指南：
+		// trap-threshold crc-statistics 缺省 3 个/10 秒 + port crc-statistics trigger error-down，
+		// 该保护缺省未使能——条件边：配置了保护时才成立，防止可能性被放大成必然性）
+		`{"source": "net.port.crc_error", "target": "net.port.down", "conditions": [{"fact_key": "crc_error_down_protection", "op": "eq", "value": "enabled"}], "time_constraints": "{\"delay_tier\":\"minutes\"}"}`,
 	}
 }
 
