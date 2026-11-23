@@ -188,6 +188,8 @@ func runtimeFragments() []string {
 		`{"source": "power.cdu.leak", "target": "server.liquid.leakage", "edge_kind": "same_family"}`,
 		// 掉电聚合实证：双路失 → 宕机（秒级）
 		`{"source": "server.psu.input_lost", "target": "server.sys.crash.unexpected", "conditions": [{"fact_key": "psu_redundancy", "op": "eq", "value": "lost"}], "time_constraints": "{\"delay_tier\":\"seconds\"}"}`,
+		// 服务器掉电告警入口（金路径起点：诊断编排消费）
+		`{"anomaly": "server.psu.input_lost", "alert": "SERVER-PSU-INPUT-LOST"}`,
 		// GPU Xid 154 样本实证：恢复动作 0x2 → 节点重启（分钟级）
 		`{"anomaly": "gpu.xid.154", "code": "gpu.xid.154", "name": "GPU Xid 154（需恢复动作）", "alert": "GPU_XID_154"}`,
 		`{"source": "gpu.xid.154", "target": "server.sys.reboot.unexpected", "conditions": [{"fact_key": "recovery_action", "op": "eq", "value": "0x2"}], "time_constraints": "{\"delay_tier\":\"minutes\"}"}`,
