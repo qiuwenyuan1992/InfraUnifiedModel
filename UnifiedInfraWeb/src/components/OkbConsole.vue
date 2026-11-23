@@ -230,6 +230,15 @@
             <el-table-column label="状态" width="90">
               <template #default="{ row }"><el-tag :type="row.status === 'curated' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag></template>
             </el-table-column>
+            <el-table-column label="操作" width="200" fixed="right">
+              <template #default="{ row }">
+                <el-button link size="small" @click="doEvidence(row.id)">证据</el-button>
+                <el-button v-if="!row.edge_kind || row.edge_kind === 'causal'" link type="primary" size="small" @click="goto('okb:query', row.source_code, true)">trace</el-button>
+                <el-button link type="success" size="small" @click="doConfirmEdge(row.id)">确认</el-button>
+                <el-button link type="danger" size="small" @click="doRejectEdge(row.id)">否决</el-button>
+                <el-button link size="small" @click="report.edgeId = row.id; goto('okb:report')">反馈</el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </div>
       </el-dialog>
@@ -967,9 +976,12 @@ async function doReviewQueue() {
   if (res) reviewEdges.value = res.edges
 }
 
-// 治理操作后同时刷新复核队列与已加载的清单，避免页面间数据滞留
+// 治理操作后同时刷新复核队列、已加载的清单与打开中的场景详情，避免页面间数据滞留
 async function refreshAfterGovernance() {
-  await Promise.all([doReviewQueue(), listRule.value ? loadAllLists() : Promise.resolve()])
+  const refreshScenario = scenarioVisible.value && scenarioDetail.value
+    ? doScenarioDetail(scenarioDetail.value.scenario.code).then(() => { scenarioVisible.value = true })
+    : Promise.resolve()
+  await Promise.all([doReviewQueue(), listRule.value ? loadAllLists() : Promise.resolve(), refreshScenario, loadScenarioCards()])
 }
 
 async function doConfirmEdge(id: string) {
