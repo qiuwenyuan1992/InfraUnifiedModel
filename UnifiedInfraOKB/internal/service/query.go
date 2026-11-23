@@ -314,6 +314,11 @@ type KnowledgeRow struct {
 	StableCode string `json:"stable_code,omitempty"`
 	Name       string `json:"name,omitempty"`
 	Category   string `json:"category,omitempty"`
+	// v2.1 anomaly 字段（场景关系图着色与 tooltip 用）
+	Domain         string         `json:"domain,omitempty"`
+	SeverityOnline string         `json:"severity_online,omitempty"`
+	NodeKind       model.NodeKind `json:"node_kind,omitempty"`
+	ClockHint      string         `json:"clock_hint,omitempty"`
 	// rule
 	SourceCode string `json:"source_code,omitempty"`
 	TargetCode string `json:"target_code,omitempty"`
@@ -528,7 +533,9 @@ func (s *Service) ScenarioDetailByCode(code string) (*ScenarioDetail, error) {
 	// 节点行
 	for _, n := range nodeRows {
 		row := KnowledgeRow{ID: n.ID, Kind: "anomaly", StableCode: n.StableCode, Name: n.Name,
-			Category: n.Category, Status: n.Status, UpdatedAt: n.UpdatedAt.UTC().Format(time.RFC3339)}
+			Category: n.Category, Domain: n.Domain, SeverityOnline: n.SeverityOnline,
+			NodeKind: n.NodeKind, ClockHint: n.ClockHint,
+			Status: n.Status, UpdatedAt: n.UpdatedAt.UTC().Format(time.RFC3339)}
 		if rev, err := s.store.LatestRevision(model.EntityAnomalyType, n.ID); err == nil {
 			row.RevisionID = rev.ID
 		}

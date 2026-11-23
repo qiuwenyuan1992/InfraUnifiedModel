@@ -26,11 +26,13 @@ async function okbRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 // ---------- 类型（与 UnifiedInfraOKB docs/design/api-boundaries.md 对齐） ----------
 
-export type EvidenceLevel = 'case_verified' | 'doc_explicit' | 'inferred' | 'expert_only'
+export type EvidenceLevel = 'case_verified' | 'runtime_verified' | 'doc_explicit' | 'inferred' | 'expert_only'
 export type KnowledgeStatus = 'draft' | 'curated'
 export type Verdict = 'confirmed' | 'rejected'
-export type SourceKind = 'internal_case' | 'vendor_doc' | 'expert_input'
+export type SourceKind = 'internal_case' | 'vendor_doc' | 'expert_input' | 'alert_strategy' | 'alert_event' | 'system_code' | 'industry_report'
 export type EdgeType = 'trigger' | 'indicate' | 'mitigate' | 'prevent'
+// v2.1 边语义三分：causal 参与因果遍历；same_event/same_family 不参与遍历、以关联标注返回
+export type EdgeKind = 'causal' | 'same_event' | 'same_family'
 
 export interface LookupCandidate {
   anomaly_id: string
@@ -151,9 +153,15 @@ export interface KnowledgeRow {
   stable_code?: string
   name?: string
   category?: string
+  // v2.1 anomaly 字段（场景关系图着色与 tooltip 用）
+  domain?: string
+  severity_online?: string
+  node_kind?: 'atomic' | 'aggregate' | 'placeholder' | 'event'
+  clock_hint?: string
   source_code?: string
   target_code?: string
   alert_signature?: string
+  edge_kind?: EdgeKind
   edge_type?: EdgeType
   evidence_level?: EvidenceLevel
   confidence?: number

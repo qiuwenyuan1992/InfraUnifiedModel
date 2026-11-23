@@ -191,6 +191,14 @@
             <el-tag size="small">{{ domainLabel(scenarioDetail.scenario.domain) }}</el-tag>
             <span class="muted">{{ scenarioDetail.scenario.description || scenarioDetail.scenario.code }}</span>
           </div>
+          <!-- v2.1 场景关系图：场景内全部断言按"条件全通过"绘制的完整传播图（draft+curated 全收） -->
+          <div class="okb-section-name" style="margin:12px 0 6px">
+            节点关系图（{{ scenarioDetail.edges.length }} 条边 · 条件视为全通过的完整传播图）
+          </div>
+          <div ref="scenarioGraphEl" class="okb-scenario-graph" />
+          <div class="muted okb-scenario-graph-legend">
+            实线箭头 = 因果传播 · 紫虚线双向 = 同事件（两侧观测）· 橙点线 = 同族对比 · 节点大小 = 线上等级 · 半透明 = 草稿
+          </div>
           <div class="okb-section-name" style="margin:12px 0 6px">异常节点（{{ scenarioDetail.nodes.length }}）</div>
           <el-table :data="scenarioDetail.nodes" size="small" class="task-table" row-key="id">
             <el-table-column prop="stable_code" label="异常编码" min-width="220" show-overflow-tooltip />
@@ -211,7 +219,10 @@
               <template #default="{ row }"><span class="mono">{{ row.source_code }}</span><el-icon class="okb-arrow"><ArrowRight /></el-icon><span class="mono">{{ row.target_code }}</span></template>
             </el-table-column>
             <el-table-column label="类型" width="95">
-              <template #default="{ row }"><el-tag :type="row.edge_type === 'mitigate' ? '' : row.edge_type === 'indicate' ? 'info' : 'primary'" size="small">{{ edgeTypeLabel(row.edge_type) }}</el-tag></template>
+              <template #default="{ row }">
+                <el-tag v-if="row.edge_kind && row.edge_kind !== 'causal'" :type="row.edge_kind === 'same_event' ? 'warning' : 'danger'" size="small">{{ edgeKindLabel(row.edge_kind) }}</el-tag>
+                <el-tag v-else :type="row.edge_type === 'mitigate' ? '' : row.edge_type === 'indicate' ? 'info' : 'primary'" size="small">{{ edgeTypeLabel(row.edge_type) }}</el-tag>
+              </template>
             </el-table-column>
             <el-table-column label="证据等级" width="110">
               <template #default="{ row }"><el-tag :type="levelTag(row.evidence_level)" size="small">{{ levelLabel(row.evidence_level) }}</el-tag></template>
@@ -582,6 +593,92 @@ async function doScenarioDetail(code: string) {
   if (detail) { scenarioDetail.value = detail; scenarioVisible.value = true }
 }
 
+// v2.1 场景关系图：场景内全部断言按"条件全通过"绘制（draft+curated 全收），
+// 非因果边（same_event/same_family）以关联样式画出不入传播方向。
+const scenarioGraphEl = ref<HTMLDivElement | null>(null)
+let scenarioChart: echarts.ECharts | null = null
+
+function edgeKindLabel(kind?: string): string {
+  return ({ same_event: '同事件', same_family: '同族' } as Record<string, string>)[kind ?? ''] ?? kind ?? ''
+}
+
+// 节点大小按线上等级编码（P0/P1 最大，未分级用默认）
+function severitySize(sev?: string): number {
+  return ({ P0: 42, P1: 38, P2: 34, P3: 30, P4: 26 } as Record<string, number>)[sev ?? ''] ?? 32
+}
+
+watch(scenarioVisible, async visible => {
+  if (!visible) {
+    scenarioChart?.dispose()
+    scenarioChart = null
+    return
+  }
+  if (!scenarioDetail.value) return
+  await nextTick()
+  renderScenarioGraph()
+})
+
+function renderScenarioGraph() {
+  const detail = scenarioDetail.value
+  if (!detail || !scenarioGraphEl.value) return
+  if (scenarioChart && scenarioChart.isDisposed()) scenarioChart = null
+  if (!scenarioChart) scenarioChart = echarts.init(scenarioGraphEl.value)
+  const nodes = detail.nodes.map(n => {
+    const domain = n.domain || n.category || 'other'
+    return {
+      id: n.stable_code, name: n.name ?? n.stable_code, stable_code: n.stable_code,
+      domain, severity_online: n.severity_online, node_kind: n.node_kind,
+      clock_hint: n.clock_hint, status: n.status,
+      symbolSize: severitySize(n.severity_online),
+      itemStyle: {
+        color: DOMAIN_COLORS[domain] ?? DOMAIN_COLORS.other,
+        opacity: n.status === 'curated' ? 1 : 0.45,
+      },
+    }
+  })
+  const edges = detail.edges.map(e => {
+    const kind = e.edge_kind ?? 'causal'
+    // causal 沿用证据色实线箭头；same_event 紫虚线双向；same_family 橙点线无向
+    const lineStyle = kind === 'same_event'
+      ? { color: '#8e7cc3', width: 1.5, type: 'dashed' as const, curveness: 0.15 }
+      : kind === 'same_family'
+        ? { color: '#d79b35', width: 1.5, type: 'dotted' as const, curveness: 0.15 }
+        : edgeLine({ edge_type: e.edge_type, status: e.status, evidence_level: e.evidence_level ?? 'inferred', confidence: e.confidence ?? 0.5 })
+    const symbol = kind === 'same_event'
+      ? ['arrow', 'arrow']
+      : kind === 'same_family' ? ['none', 'none'] : ['none', 'arrow']
+    return {
+      source: e.source_code, target: e.target_code, edge_kind: kind, edge_type: e.edge_type,
+      evidence_level: e.evidence_level, confidence: e.confidence, status: e.status,
+      lineStyle, symbol,
+    }
+  })
+  scenarioChart.setOption({
+    tooltip: {
+      formatter: (params: { dataType: string; data: Record<string, unknown> }) => {
+        const d = params.data
+        if (params.dataType === 'edge') {
+          const kind = d.edge_kind === 'same_event' ? '同事件（两侧观测）'
+            : d.edge_kind === 'same_family' ? '同族对比' : edgeTypeLabel(d.edge_type as string)
+          return `<b>${d.source} ↔ ${d.target}</b><br/>关系：${kind} · 证据：${d.evidence_level} · 置信度 ${Number(d.confidence).toFixed(2)}<br/>状态：${d.status}`
+        }
+        const sev = d.severity_online ? ` · 线上等级 ${d.severity_online}` : ''
+        const clock = d.clock_hint ? ` · 处置时钟 ${d.clock_hint}` : ''
+        const nk = d.node_kind && d.node_kind !== 'atomic' ? ` · 类型 ${d.node_kind}` : ''
+        return `<b>${d.name}</b><br/>${d.stable_code}<br/>状态：${d.status}${sev}${nk}${clock}`
+      },
+    },
+    series: [{
+      type: 'graph', layout: 'force', roam: true, draggable: true,
+      force: { repulsion: 300, edgeLength: [80, 160], gravity: 0.1 },
+      label: { show: true, position: 'right', fontSize: 11, formatter: (p: { data: { name: string } }) => p.data.name },
+      data: nodes,
+      edges,
+      emphasis: { focus: 'adjacency' },
+    }],
+  })
+}
+
 // ---------- 查询 ----------
 const alertSignature = ref('')
 const traceCode = ref('')
@@ -862,13 +959,14 @@ function formatTime(iso: string): string {
 
 function levelTag(level?: string): 'success' | 'warning' | 'info' | 'danger' {
   if (level === 'case_verified') return 'success'
+  if (level === 'runtime_verified') return 'success'
   if (level === 'doc_explicit') return 'warning'
   if (level === 'expert_only') return 'danger'
   return 'info'
 }
 
 function levelLabel(level?: string): string {
-  return ({ case_verified: '案例实证', doc_explicit: '文档明示', inferred: '模型推导', expert_only: '专家经验' } as Record<string, string>)[level ?? ''] ?? level ?? '—'
+  return ({ case_verified: '案例实证', runtime_verified: '运行实证', doc_explicit: '文档明示', inferred: '模型推导', expert_only: '专家经验' } as Record<string, string>)[level ?? ''] ?? level ?? '—'
 }
 
 function sourceLabel(kind: SourceKind): string {
@@ -941,6 +1039,8 @@ onBeforeUnmount(() => { chart?.dispose(); chart = null })
 .okb-mitigations-title { margin-bottom: 8px; }
 .okb-mitigation-row { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 12px; }
 .okb-scenario-head { display: flex; gap: 10px; align-items: center; }
+.okb-scenario-graph { height: 400px; width: 100%; border: 1px solid #e4e9f0; border-radius: 8px; background: #fafbfd; }
+.okb-scenario-graph-legend { font-size: 12px; margin: 6px 0 2px; }
 .okb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-top: 18px; }
 .okb-card { --domain-color: #a0aec0; border: 1px solid #e5ebf2; border-top: 3px solid var(--domain-color); border-radius: 10px; padding: 14px 16px; cursor: pointer; background: #fbfcff; transition: box-shadow .15s, transform .15s; }
 .okb-card:hover { box-shadow: 0 4px 14px #3479df1a; transform: translateY(-2px); }

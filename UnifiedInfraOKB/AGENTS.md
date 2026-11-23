@@ -13,7 +13,7 @@ v2 基线（2026-11-16）取代 v1 全部设计；v1 旧文档已整体删除，
 4. docs/design/api-boundaries.md（REST 四原语契约，含非因果边语义）
 5. docs/development/README.md（切片派发与验证）
 
-当前状态：S0 建馆 + S1 查询切片已实现（go.mod、模型、仓储、摄取、提取、四原语、测试见 docs/development/handoffs/2026-11-16-s0-s1-vertical-slice.md）；**v2.1 schema 已落码**（edge_kind/severity/node_kind/结构化 signature/样本优先仲裁，含 migrations/001_init_v2_1.sql 与 A8/A9 测试，见 docs/development/handoffs/2026-11-20-v2.1-schema-and-arbitration.md）。真实 LLM 提取器、S2 界面、真实 MySQL 建库仍未实现；种子边清单（UnifiedInfrastructureModel/因果边清单-draft.md）尚未灌库。不得宣称已验证真实模型或生产部署。
+当前状态：S0 建馆 + S1 查询切片已实现（go.mod、模型、仓储、摄取、提取、四原语、测试见 docs/development/handoffs/2026-11-16-s0-s1-vertical-slice.md）；v2.1 schema 已落码（edge_kind/severity/node_kind/结构化 signature/样本优先仲裁，见 docs/development/handoffs/2026-11-20-v2.1-schema-and-arbitration.md）。种子数据已灌库（seeder：因果边清单 draft 种子 + 全景 12 场景，老 v2 demo 数据已清除）；开发库为 podman MySQL（okb/okb_test），开发 server 跑在 18090。真实 LLM 提取器、S2 界面专家定稿流尚未实现；不得宣称已验证真实模型或生产部署。
 
 ## 产品边界
 
