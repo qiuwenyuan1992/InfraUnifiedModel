@@ -10,6 +10,7 @@ import DiagnosticDrawer from './components/DiagnosticDrawer.vue'
 const TopologyBrowser = defineAsyncComponent(() => import('./components/TopologyBrowser.vue'))
 const SpatialBrowser = defineAsyncComponent(() => import('./components/SpatialBrowser.vue'))
 const OkbConsole = defineAsyncComponent(() => import('./components/OkbConsole.vue'))
+const DiagnosisConsole = defineAsyncComponent(() => import('./components/DiagnosisConsole.vue'))
 
 const {
   items, loading, error, nextCursor, history, load, next, previous, section,
@@ -29,6 +30,7 @@ const okbTitles: Record<string, { title: string; desc: string }> = {
   'okb:review': { title: '复核队列', desc: '被否决降级后待人工复核的因果边，可确认恢复或维持否决。' },
   'okb:ingest': { title: '资料摄取', desc: '脱敏工单/厂商文档/专家经验入库，经提取生成候选知识；独立工单印证自动升 curated。' },
   'okb:report': { title: '诊断反馈', desc: '上报诊断使用的边与最终判定，确认升置信度、否决降级入复核，幂等去重。' },
+  'okb:diagnosis': { title: '故障诊断', desc: 'LangGraph 判定序流式执行：告警归一 → 传播推演 → 跨域取证提示 → 结论 → 飞轮回写；输入侧当前为模拟告警。' },
 }
 const okbSection = computed(() => (String(section.value).startsWith('okb') ? String(section.value) : ''))
 const sectionTitle = computed(() => {
@@ -66,6 +68,7 @@ const summary = computed(() => [
           <button :class="{ active: section === 'okb:list' }" @click="section = 'okb:list'">知识清单</button>
           <button :class="{ active: section === 'okb:graph' }" @click="section = 'okb:graph'">知识图谱</button>
           <button :class="{ active: section === 'okb:query' }" @click="section = 'okb:query'">图谱查询</button>
+          <button :class="{ active: section === 'okb:diagnosis' }" @click="section = 'okb:diagnosis'">故障诊断</button>
           <div class="nav-submenu-label">队列管理</div>
           <button :class="{ active: section === 'okb:review' }" @click="section = 'okb:review'">复核队列</button>
           <div class="nav-submenu-label">提取数据</div>
@@ -112,7 +115,8 @@ const summary = computed(() => [
         </section>
         <TopologyBrowser v-else-if="section === 'topology'" :sources="sources" :sources-loading="sourcesLoading" :sources-loaded="sourcesLoaded" :sources-error="sourcesError" />
         <SpatialBrowser v-else-if="section === 'spatial'" :sources="sources" :sources-loading="sourcesLoading" :sources-loaded="sourcesLoaded" :sources-error="sourcesError" />
-        <OkbConsole v-else-if="okbSection" :page="okbSection" @navigate="(p: string) => section = p" />
+        <OkbConsole v-else-if="okbSection && okbSection !== 'okb:diagnosis'" :page="okbSection" @navigate="(p: string) => section = p" />
+        <DiagnosisConsole v-else-if="section === 'okb:diagnosis'" />
       </main>
     </div>
     <CreateRoundDialog v-model="createOpen" :sources="sources" @created="created" />

@@ -151,14 +151,18 @@ def build_graph(okb: OkbClient) -> StateGraph:
     return g.compile()
 
 
-def diagnose(alert_signature: str, okb: OkbClient | None = None) -> dict:
-    """跑一次掉电诊断；返回终态。"""
-    okb = okb or OkbClient()
-    graph = build_graph(okb)
-    init: PowerOutageState = {
+def init_state(alert_signature: str) -> PowerOutageState:
+    """构造诊断初始态（API/CLI/测试共用）。"""
+    return {
         "alert_signature": alert_signature,
         "candidates": [], "start_code": "", "trace_result": {},
         "pending_checks": [], "cross_domain_peers": [],
         "conclusion": {}, "reported": False, "error": "",
     }
-    return graph.invoke(init)
+
+
+def diagnose(alert_signature: str, okb: OkbClient | None = None) -> dict:
+    """跑一次掉电诊断；返回终态。"""
+    okb = okb or OkbClient()
+    graph = build_graph(okb)
+    return graph.invoke(init_state(alert_signature))
