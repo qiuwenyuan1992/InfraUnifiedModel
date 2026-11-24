@@ -61,10 +61,15 @@ def propagate_trace(okb: OkbClient):
             return {}
         trace_result = okb.trace(state["start_code"], max_hops=6, top_k=10, include_draft=True)
         pending: list[dict] = []
+        seen: set[tuple[str, str]] = set()  # 多链共享前缀时按 (fact_key, edge_id) 去重
         for chain in trace_result.get("chains", []):
             for hop in chain.get("hops", []):
                 for ev in hop.get("evaluations", []) or []:
                     if ev.get("result") == "unknown":
+                        key = (ev["fact_key"], hop["edge_id"])
+                        if key in seen:
+                            continue
+                        seen.add(key)
                         pending.append({
                             "fact_key": ev["fact_key"], "op": ev["op"],
                             "edge_id": hop["edge_id"],
@@ -82,11 +87,19 @@ def cross_domain_hints(okb: OkbClient):
         if state.get("error"):
             return {}
         relations = state["trace_result"].get("relations", []) or []
-        peers = [
-            {"kind": r["edge_kind"], "other_code": r["other_stable_code"],
-             "other_severity": r.get("other_severity_online", ""), "edge_id": r["edge_id"]}
-            for r in relations if r["edge_kind"] == "same_event"
-        ]
+        peers = []
+        seen_peers: set[tuple[str, str]] = set()
+        for r in relations:
+            if r["edge_kind"] != "same_event":
+                continue
+            key = (r["edge_id"], r["other_stable_code"])
+            if key in seen_peers:
+                continue
+            seen_peers.add(key)
+            peers.append({
+                "kind": r["edge_kind"], "other_code": r["other_stable_code"],
+                "other_severity": r.get("other_severity_online", ""), "edge_id": r["edge_id"],
+            })
         return {"cross_domain_peers": peers}
 
     return node

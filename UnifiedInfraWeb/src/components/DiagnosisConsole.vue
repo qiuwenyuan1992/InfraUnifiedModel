@@ -253,6 +253,8 @@ function expectedTone(exp: Record<string, unknown>): 'success' | 'info' | 'warni
 function applySample(row: TestSample) {
   alertSignature.value = row.signature
   entityId.value = row.entity ?? ''
+  // 点样本行即跑：载入并立即诊断（旧结果清空，避免误读为"点什么都一样"）
+  void run()
 }
 
 // ---------------------------------------------------------------- 告警风暴根因反推
