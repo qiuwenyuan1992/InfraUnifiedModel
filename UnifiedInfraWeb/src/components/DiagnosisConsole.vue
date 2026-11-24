@@ -1,5 +1,45 @@
 <template>
   <div class="diag-console">
+    <!-- 测试数据概览：样本集 + 机柜连接 -->
+    <div class="diag-testdata-grid">
+      <div class="diag-section">
+        <div class="diag-section-title">测试样本集（{{ samples.length }} 条，来自 samples.py）</div>
+        <el-table :data="samples" size="small" class="diag-sample-table" @row-click="applySample">
+          <el-table-column prop="id" label="ID" width="76" />
+          <el-table-column label="部位 + 类型" min-width="210">
+            <template #default="{ row }"><span class="mono">{{ row.equipment }} · {{ row.fault_type }}</span></template>
+          </el-table-column>
+          <el-table-column prop="signature" label="归一 signature" min-width="200">
+            <template #default="{ row }"><span class="mono">{{ row.signature }}</span></template>
+          </el-table-column>
+          <el-table-column label="期望分支" min-width="110">
+            <template #default="{ row }">
+              <el-tag size="small" :type="expectedTone(row.expected)">{{ expectedLabel(row.expected) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="raw_text" label="原始文本" min-width="170" show-overflow-tooltip />
+          <el-table-column width="70" align="center">
+            <template #default><el-button link type="primary" size="small">诊断</el-button></template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <div class="diag-section">
+        <div class="diag-section-title">机柜连接关系（fixture 拓扑，{{ topoEntityCount }} 实体）</div>
+        <div v-for="group in topoGroups" :key="group.label" class="diag-topo-group">
+          <div class="diag-topo-label">
+            <el-tag size="small" :type="group.tag">{{ group.label }}</el-tag>
+            <span class="muted">{{ group.count }} 条</span>
+          </div>
+          <div class="diag-topo-edges">
+            <div v-for="(e, i) in group.edges" :key="i" class="diag-topo-edge mono">
+              {{ e[0] }} <el-icon class="diag-topo-arrow"><ArrowRight /></el-icon> {{ e[1] }}
+            </div>
+          </div>
+        </div>
+        <div class="muted diag-topo-note">模拟 POD：busbar-A 双路 PDU → 4 服务器 + TOR，端口两两直连；将来换 UnifiedInfraTopology 真实数据，接口不变。</div>
+      </div>
+    </div>
+
     <!-- 输入区 -->
     <div class="diag-input-row">
       <el-input v-model="alertSignature" placeholder="告警 signature，如 SERVER-PSU-INPUT-LOST / T30alertPsuFault"
@@ -7,14 +47,6 @@
       <el-input v-model="entityId" placeholder="实体 ID（可选，填了算影响半径）"
         class="diag-input-entity" @keyup.enter="run" clearable />
       <el-button type="primary" :loading="running" @click="run">开始诊断</el-button>
-      <el-select v-model="pickedSample" placeholder="载入样本" class="diag-sample-select" @change="onPickSample">
-        <el-option v-for="s in DEMO_SAMPLES" :key="s.sig" :label="s.label" :value="s.sig" />
-      </el-select>
-    </div>
-    <div class="diag-input-row diag-samples-row">
-      <span class="muted">模拟样本（告警=部位+类型+时间点；真库实时推演，样本文件在 UnifiedInfraDiagnosis/diagnosis/samples.py）：</span>
-      <el-tag v-for="s in DEMO_SAMPLES" :key="s.sig" class="diag-sample-tag" :type="s.hl ? 'danger' : 'info'"
-        effect="plain" @click="loadSample(s)">{{ s.label }}</el-tag>
     </div>
 
     <!-- 判定序执行流（SSE 逐节点点亮） -->
@@ -119,10 +151,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ArrowRight } from '@element-plus/icons-vue'
 
-// 判定序五节点（与 diagnosis/graphs/rack_power.py 对齐）
+// 判定序六节点（与 diagnosis/graphs/rack_power.py 对齐）
 const STEPS = [
   { key: 'normalize_alert', label: '告警归一', note: 'signature → OKB lookup → 候选异常' },
   { key: 'propagate_trace', label: '传播推演', note: '沿因果链 trace，收集 unknown 条件为待验证项' },
@@ -132,17 +164,60 @@ const STEPS = [
   { key: 'report_feedback', label: '飞轮回写', note: '判定边 report confirmed，幂等' },
 ] as const
 
-// 演示样本（与 samples.py 的 7 条对齐；hl=告警风暴场景）
-const DEMO_SAMPLES = [
-  { label: '掉电金路径', sig: 'SERVER-PSU-INPUT-LOST', entity: 'srv-001', hl: false },
-  { label: '供电树风暴(busbar)', sig: 'ALERT-BUSBAR-INPUT-LOST', entity: 'busbar-A', hl: true },
-  { label: '制冷5跳深级联', sig: 'ALERT-CHWP-FAULT', entity: '', hl: false },
-  { label: '光衰→CRC', sig: 'ALERT-OPTICAL-RX-LOW', entity: '', hl: false },
-  { label: 'GPU Xid 154', sig: 'GPU_XID_154', entity: '', hl: false },
-  { label: 'BGP邻居Down(叶子)', sig: 'ALERT-BGP-PEER-DOWN', entity: '', hl: false },
-  { label: 'T30 PSU(知识空白)', sig: 'T30alertPsuFault', entity: '', hl: false },
-  { label: '未登记告警', sig: 'DISK-MEDIA-ERROR-UNREGISTERED', entity: '', hl: false },
-] as const
+// 测试样本（后端 /api/diagnosis/samples 实时读 samples.py）
+interface TestSample {
+  id: string
+  site: string
+  equipment: string
+  fault_type: string
+  timestamp: string
+  raw_text: string
+  signature: string
+  entity?: string
+  expected: Record<string, unknown>
+}
+const samples = ref<TestSample[]>([])
+const topo = ref<{ entities: Record<string, string>; power_edges: string[][]; link_edges: string[][]; containment_edges: string[][] } | null>(null)
+
+onMounted(async () => {
+  try {
+    const [s, t] = await Promise.all([
+      fetch('/api/diagnosis/samples').then(r => r.json()),
+      fetch('/api/diagnosis/topology').then(r => r.json()),
+    ])
+    samples.value = s.samples ?? []
+    topo.value = t
+  } catch {
+    samples.value = []
+  }
+})
+
+const topoEntityCount = computed(() => Object.keys(topo.value?.entities ?? {}).length)
+const topoGroups = computed(() => [
+  { label: '供电', tag: 'danger', edges: topo.value?.power_edges ?? [] },
+  { label: '链路', tag: 'primary', edges: topo.value?.link_edges ?? [] },
+  { label: '包含', tag: 'info', edges: topo.value?.containment_edges ?? [] },
+].map(g => ({ ...g, count: g.edges.length })))
+
+function expectedLabel(exp: Record<string, unknown>): string {
+  if (exp.unmapped) return '未登记'
+  if (exp.knowledge_gap) return '知识空白'
+  if (exp.empty_chain) return '叶子节点'
+  if (exp.radius_entities) return '影响半径'
+  return '金路径'
+}
+
+function expectedTone(exp: Record<string, unknown>): 'success' | 'info' | 'warning' | 'danger' {
+  if (exp.unmapped) return 'info'
+  if (exp.knowledge_gap || exp.empty_chain) return 'warning'
+  if (exp.radius_entities) return 'danger'
+  return 'success'
+}
+
+function applySample(row: TestSample) {
+  alertSignature.value = row.signature
+  entityId.value = row.entity ?? ''
+}
 
 // 诊断结果结构（与 diagnosis/api.py done 事件对齐）
 interface ChainHop { target: string; evidence_level: string; revision_id: string }
@@ -165,7 +240,6 @@ interface DiagnosisResult {
 
 const alertSignature = ref('SERVER-PSU-INPUT-LOST')
 const entityId = ref('srv-001')
-const pickedSample = ref('')
 const running = ref(false)
 const started = ref(false)
 const errorMsg = ref('')
@@ -194,16 +268,6 @@ function stepState(key: string): string {
 function stepNote(key: string): string {
   const step = STEPS.find(s => s.key === key)
   return step?.note ?? ''
-}
-
-function loadSample(s: { label: string; sig: string; entity: string }) {
-  alertSignature.value = s.sig
-  entityId.value = s.entity
-}
-
-function onPickSample(sig: string) {
-  const s = DEMO_SAMPLES.find(x => x.sig === sig)
-  if (s) loadSample(s)
 }
 
 async function run() {
@@ -259,12 +323,17 @@ async function run() {
 
 <style scoped>
 .diag-console { display: flex; flex-direction: column; gap: 16px; }
+.diag-testdata-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; align-items: start; }
 .diag-input-row { display: flex; gap: 10px; align-items: center; }
 .diag-input { max-width: 320px; }
 .diag-input-entity { max-width: 220px; }
-.diag-sample-select { width: 160px; }
-.diag-samples-row { flex-wrap: wrap; }
-.diag-sample-tag { cursor: pointer; }
+.diag-sample-table { cursor: pointer; }
+.diag-topo-group { margin-bottom: 8px; }
+.diag-topo-label { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.diag-topo-edges { display: flex; flex-direction: column; gap: 2px; }
+.diag-topo-edge { font-size: 11px; color: #4a5568; display: flex; align-items: center; gap: 4px; }
+.diag-topo-arrow { color: #8a94a6; font-size: 10px; }
+.diag-topo-note { font-size: 11px; margin-top: 6px; }
 .diag-radius-group { margin-bottom: 8px; padding: 6px 8px; border: 1px dashed #dfe6ef; border-radius: 6px; }
 .diag-radius-code { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
 .diag-radius-entities { display: flex; gap: 4px; flex-wrap: wrap; }

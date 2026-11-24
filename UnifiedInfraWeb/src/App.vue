@@ -31,9 +31,9 @@ const okbTitles: Record<string, { title: string; desc: string }> = {
   'okb:ingest': { title: '资料摄取', desc: '脱敏工单/厂商文档/专家经验入库，经提取生成候选知识；独立工单印证自动升 curated。' },
   'okb:report': { title: '诊断反馈', desc: '上报诊断使用的边与最终判定，确认升置信度、否决降级入复核，幂等去重。' },
 }
-// 一级页：故障诊断（与故障知识平级）
+// 一级页：故障诊断-测试（与故障知识平级；数据为模拟样本+fixture 拓扑）
 const sectionTitles: Record<string, { title: string; desc: string }> = {
-  'diag:run': { title: '故障诊断', desc: 'LangGraph 判定序流式执行：告警归一 → 传播推演 → 跨域取证提示 → 结论 → 飞轮回写；输入侧当前为模拟告警。' },
+  'diag:run': { title: '故障诊断-测试', desc: 'LangGraph 判定序流式执行：告警归一 → 传播推演 → 跨域取证提示 → 影响半径 → 结论 → 飞轮回写；输入为模拟告警样本（samples.py）+ fixture 机柜拓扑，知识库为真库实时推演。' },
 }
 const okbSection = computed(() => (String(section.value).startsWith('okb') ? String(section.value) : ''))
 const sectionTitle = computed(() => {
@@ -65,7 +65,7 @@ const summary = computed(() => [
         <button :class="{ active: section === 'sources' }" @click="section = 'sources'"><el-icon><Connection /></el-icon>数据来源</button>
         <button :class="{ active: section === 'topology' }" @click="section = 'topology'"><el-icon><Connection /></el-icon>拓扑浏览</button>
         <button :class="{ active: section === 'spatial' }" @click="section = 'spatial'"><el-icon><DataLine /></el-icon>空间三维</button>
-        <button :class="{ active: section === 'diag:run' }" @click="section = 'diag:run'"><el-icon><Warning /></el-icon>故障诊断</button>
+        <button :class="{ active: section === 'diag:run' }" @click="section = 'diag:run'"><el-icon><Warning /></el-icon>故障诊断-测试</button>
         <button class="nav-group" :class="{ open: okbOpen }" @click="okbOpen = !okbOpen">
           <el-icon><Warning /></el-icon>故障知识<el-icon class="nav-arrow" :class="{ open: okbOpen }"><ArrowRight /></el-icon>
         </button>

@@ -21,14 +21,19 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from diagnosis.graphs.rack_power import build_graph, init_state
+from diagnosis.samples import SAMPLES, normalize
+from diagnosis.tools.inventory import FixtureInventory
 from diagnosis.tools.okb import OkbClient
 
 app = FastAPI(title="UnifiedInfraDiagnosis API", version="0.1.0")
 
 
 class DiagnoseRequest(BaseModel):
-    alert_signature: str
-    entity_id: str | None = None  # 告警实体：给定时计算影响半径（因果图×拓扑合遍历）
+    alert_signature: str = ""        # 直接给 signature（兼容既有调用/手工输入）
+    equipment: str | None = None     # 部位：与 fault_type 同时给定时走归一路径（告警原生形态）
+    fault_type: str | None = None    # 故障类型
+    timestamp: str | None = None     # 时间点：暂不参与判定（时间窗/风暴对账后续接入）
+    entity_id: str | None = None     # 告警实体：给定时计算影响半径（因果图×拓扑合遍历）
     include_draft: bool = True
 
 
@@ -49,7 +54,11 @@ async def run_diagnosis(req: DiagnoseRequest) -> StreamingResponse:
     """
     okb = OkbClient()
     graph = build_graph(okb)
-    state = init_state(req.alert_signature, entity_id=req.entity_id)
+    signature = req.alert_signature
+    if req.equipment and req.fault_type:
+        # 告警原生形态（部位+类型）→ 归一；未登记组合走人工路径（不编造）
+        signature = normalize(req.equipment, req.fault_type) or f"UNREGISTERED:{req.equipment}.{req.fault_type}"
+    state = init_state(signature, entity_id=req.entity_id)
 
     async def gen() -> AsyncIterator[str]:
         # 单次执行聚合终态：updates 流逐节点推送，同时累积各节点产物——
@@ -89,3 +98,15 @@ async def run_diagnosis(req: DiagnoseRequest) -> StreamingResponse:
 async def healthz() -> dict:
     okb = OkbClient()
     return {"status": "ok", "okb": okb.healthz()}
+
+
+@app.get("/api/diagnosis/samples")
+async def list_samples() -> dict:
+    """测试样本集（samples.py 实时读取）：测试页展示与一键载入。"""
+    return {"samples": SAMPLES}
+
+
+@app.get("/api/diagnosis/topology")
+async def fixture_topology() -> dict:
+    """fixture 拓扑快照：机柜连接关系（供电树/端口链路/空间包含）。"""
+    return FixtureInventory().snapshot()

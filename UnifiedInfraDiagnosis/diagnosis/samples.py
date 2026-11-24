@@ -22,6 +22,7 @@ ALERT_REGISTRY: dict[tuple[str, str], str] = {
     ("gpu", "xid_154"): "GPU_XID_154",
     ("net.bgp", "peer_down"): "ALERT-BGP-PEER-DOWN",
     ("net.link", "down"): "ALERT-LINK-DOWN",
+    ("power.busbar", "input_lost"): "ALERT-BUSBAR-INPUT-LOST",
 }
 
 # 合成告警样本：部位+类型+时间点+期望诊断行为
@@ -34,6 +35,7 @@ SAMPLES: list[dict] = [
         "timestamp": "2026-11-21T10:00:00Z",
         "raw_text": "服务器电源模块输入丢失告警",  # 将来 LLM 语义化的输入
         "signature": "SERVER-PSU-INPUT-LOST",
+        "entity": "srv-001",             # fixture 拓扑实体（影响半径用）
         "expected": {
             "start_code": "server.psu.input_lost",
             "reaches": "server.sys.crash.unexpected",  # 主链应推进到宕机
@@ -126,6 +128,22 @@ SAMPLES: list[dict] = [
         "expected": {
             "unmapped": True,        # 未登记：走人工登记路径，不编造
             "reported": False,
+        },
+    },
+    {
+        "id": "sim-008",
+        "site": "fixture-pod-a",
+        "equipment": "power.busbar",
+        "fault_type": "input_lost",
+        "timestamp": "2026-11-21T10:35:00Z",
+        "raw_text": "机柜母线输入失电（告警风暴场景）",
+        "signature": "ALERT-BUSBAR-INPUT-LOST",
+        "entity": "busbar-A",
+        "expected": {
+            "start_code": "power.rack.busbar.input_lost",
+            "reaches": "net.port.down",
+            "radius_entities": ["pdu-A", "pdu-B", "srv-001:p0", "tor-A:E1", "cab-A12"],
+            "reported": True,
         },
     },
 ]

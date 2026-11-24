@@ -86,3 +86,12 @@ class FixtureInventory:
                 if src == e and _ENTITIES.get(dst) == entity_type:
                     found.add(dst)
         return sorted(found)
+
+    def snapshot(self) -> dict:
+        """fixture 拓扑快照：实体 + 三类连接关系（测试页展示机柜连接用）。"""
+        return {
+            "entities": dict(sorted(_ENTITIES.items())),
+            "power_edges": [list(e) for e in sorted(_POWER_EDGES)],
+            "link_edges": [list(e) for e in sorted(_LINK_EDGES)],
+            "containment_edges": [list(e) for e in sorted(_LOC_EDGES)],
+        }

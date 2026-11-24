@@ -38,7 +38,7 @@ def test_sample_diagnosis(sample: dict, okb: OkbClient):
         return
 
     assert mapped == sample["signature"], f"{sample['id']} 归一映射不一致"
-    state = diagnose(sample["signature"], okb=okb)
+    state = diagnose(sample["signature"], okb=okb, entity_id=sample.get("entity"))
 
     # 起点
     assert state["candidates"], f"{sample['id']} lookup 未命中 {sample['signature']}"
@@ -77,6 +77,12 @@ def test_sample_diagnosis(sample: dict, okb: OkbClient):
     if "peers_include" in exp:
         peers = {p["other_code"] for p in state["cross_domain_peers"]}
         assert exp["peers_include"] in peers, f"{sample['id']} 对端缺失: {peers}"
+
+    # 影响半径（样本带 fixture 实体时计算：因果图×拓扑合遍历）
+    if "radius_entities" in exp:
+        entities = {a["entity"] for a in state["impact_radius"].get("expected_alerts", [])}
+        for want in exp["radius_entities"]:
+            assert want in entities, f"{sample['id']} 影响半径缺实体 {want}: {sorted(entities)}"
 
     assert state["reported"] is True, f"{sample['id']} 飞轮应回写"
 
