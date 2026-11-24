@@ -165,9 +165,14 @@
       </div>
 
       <!-- 影响半径（因果图×拓扑合遍历：预期告警集） -->
-      <div class="diag-section" v-if="radiusGroups.length">
+      <div class="diag-section" v-if="radiusGroups.length || (result.impact_radius?.surface ?? []).length">
         <div class="diag-section-title">
           影响半径（{{ result.impact_radius?.expected_alerts?.length ?? 0 }} 条预期告警，起点实体 {{ result.impact_radius?.start_entity }}）
+        </div>
+        <div v-if="(result.impact_radius?.surface ?? []).length" class="diag-check">
+          <el-tag size="small" type="warning">观测面</el-tag>
+          <el-tag v-for="p in result.impact_radius?.surface ?? []" :key="p" size="small" class="mono">{{ p }}</el-tag>
+          <span class="muted">逻辑会话解析到的承载端口（本端 + 对端）</span>
         </div>
         <div v-for="(group, code) in radiusGroups" :key="code" class="diag-radius-group">
           <div class="diag-radius-code">
@@ -248,14 +253,20 @@ const topoGroups = computed(() => [
   { label: '包含', tag: 'info', edges: topo.value?.containment_edges ?? [] },
 ].map(g => ({ ...g, count: g.edges.length })))
 
-// 拓扑高亮联动：风暴根因（红）优先，否则正向诊断的起点实体；受影响 = 影响半径/风暴告警实体
+// 拓扑高亮联动：风暴根因（红）优先，否则正向诊断的起点实体；
+// 受影响 = 影响半径实体 + 逻辑会话观测面端口（BGP 本端+对端）
 const topoHighlight = computed<{ root: string; affected: string[] }>(() => {
   if (stormResult.value?.root_cause) {
     return { root: stormResult.value.root_cause.entity, affected: stormResult.value.affected_entities }
   }
   const radius = result.value?.impact_radius
-  const root = result.value && radius && radius.expected_alerts.length ? entityId.value.trim() : ''
-  return { root, affected: radius?.expected_alerts.map(a => a.entity) ?? [] }
+  const root = result.value && radius && (radius.expected_alerts.length || (radius.surface ?? []).length)
+    ? entityId.value.trim() : ''
+  const affected = [
+    ...(radius?.expected_alerts.map(a => a.entity) ?? []),
+    ...(radius?.surface ?? []),
+  ]
+  return { root, affected }
 })
 
 function expectedLabel(exp: Record<string, unknown>): string {
@@ -359,7 +370,7 @@ interface DiagnosisResult {
   candidates: Array<{ anomaly_id: string; stable_code: string; name: string; status: string; severity_online?: string; clock_hint?: string }>
   pending_checks: Array<{ fact_key: string; op: string; edge_id: string }>
   cross_domain_peers: Array<{ kind: string; other_code: string; other_severity?: string }>
-  impact_radius?: { start_entity: string; expected_alerts: Array<{ entity: string; stable_code: string; edge_id: string }>; unbound: Array<{ stable_code: string; reason: string }> }
+  impact_radius?: { start_entity: string; surface?: string[]; expected_alerts: Array<{ entity: string; stable_code: string; edge_id: string }>; unbound: Array<{ stable_code: string; reason: string }> }
 }
 
 const alertSignature = ref('SERVER-PSU-INPUT-LOST')
