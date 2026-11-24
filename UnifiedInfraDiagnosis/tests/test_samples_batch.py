@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from diagnosis.graphs.rack_power import diagnose
+from diagnosis.graphs.judge_graph import diagnose
 from diagnosis.samples import SAMPLES, normalize
 from diagnosis.tools.okb import OkbClient
 
@@ -31,7 +31,7 @@ def test_sample_diagnosis(sample: dict, okb: OkbClient):
     mapped = normalize(sample["equipment"], sample["fault_type"])
     if exp.get("unmapped"):
         assert mapped is None, f"{sample['id']} 未登记告警不应有映射"
-        state = diagnose(sample["signature"], okb=okb)
+        state = diagnose(sample["signature"], okb=okb, report_enabled=False)
         assert state["error"], "未登记必须走人工路径（error 说明）"
         assert state["conclusion"].get("status") == "unmapped_alert"
         assert state["conclusion"].get("summary"), "未登记也要有一句话结论"
@@ -39,7 +39,10 @@ def test_sample_diagnosis(sample: dict, okb: OkbClient):
         return
 
     assert mapped == sample["signature"], f"{sample['id']} 归一映射不一致"
-    state = diagnose(sample["signature"], okb=okb, entity_id=sample.get("entity"))
+    # report_enabled=False：测试不回写知识置信度（防污染——宕机边被测试
+    # 跑成 curated 的教训）；判定序完整执行，仅飞轮节点跳过
+    state = diagnose(sample["signature"], okb=okb, entity_id=sample.get("entity"),
+                     report_enabled=False)
     assert state["conclusion"].get("summary"), f"{sample['id']} 结论必须含一句话总结"
 
     # 起点
@@ -86,7 +89,8 @@ def test_sample_diagnosis(sample: dict, okb: OkbClient):
         for want in exp["radius_entities"]:
             assert want in entities, f"{sample['id']} 影响半径缺实体 {want}: {sorted(entities)}"
 
-    assert state["reported"] is True, f"{sample['id']} 飞轮应回写"
+    # 测试模式永不回写（report_enabled=False）：飞轮只吃真实诊断
+    assert state["reported"] is False, f"{sample['id']} 测试模式不应回写知识置信度"
 
 
 def test_registry_covers_all_registered_samples():

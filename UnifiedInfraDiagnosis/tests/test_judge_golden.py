@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from diagnosis.graphs.rack_power import diagnose
+from diagnosis.graphs.judge_graph import diagnose
 from diagnosis.tools.okb import OkbClient
 
 
@@ -48,12 +48,12 @@ def test_power_outage_golden_path(okb: OkbClient):
     assert any(p["other_code"] == "power.rack.pdu.output_lost_dual" for p in peers), \
         f"必须提示同柜 PDU 掉电对端: {peers}"
 
-    # 结论带证据回链与回写完成
+    # 结论带证据回链；金路径存在待验证条件（psu_redundancy）→ 按守卫不回写
     conclusion = state["conclusion"]
     assert conclusion["status"] == "candidate_chains"
     assert conclusion["start_code"] == "server.psu.input_lost"
     assert conclusion["primary_chain"]
-    assert state["reported"] is True
+    assert state["reported"] is False, "判定未验证（pending 未清零）不回写——飞轮不吃未确证判定"
 
 
 def test_t30_psu_fault_knowledge_gap(okb: OkbClient):

@@ -136,7 +136,7 @@
       <div class="diag-section" v-if="result">
         <div class="diag-section-title">飞轮回写</div>
         <el-tag :type="result.reported ? 'success' : 'info'">
-          {{ result.reported ? '已回写 confirmed（置信度已更新）' : '未回写（无链/知识空白/判定未确证——守卫不回写）' }}
+          {{ result.reported ? '已回写 confirmed（置信度已更新）' : '测试模式：不回写（飞轮只吃真实告警流的诊断，测试跑不抬升置信度）' }}
         </el-tag>
       </div>
       </div><!-- /diag-result -->
@@ -188,7 +188,7 @@
       </div>
       </div><!-- /diag-main -->
 
-      <!-- ============ 右栏：拓扑常驻（诊断联动高亮） ============ -->
+      <!-- ============ 右栏：拓扑常驻（诊断联动高亮） + 诊断对话 ============ -->
       <div class="diag-side">
         <div class="diag-section diag-topo-panel">
           <div class="diag-section-title">拓扑视图（{{ topoEntityCount }} 实体）</div>
@@ -197,6 +197,27 @@
             :root="topoHighlight.root" :affected="topoHighlight.affected" />
           <el-empty v-else description="拓扑加载中" :image-size="48" />
           <div class="muted diag-topo-note">供电实线 / 链路虚线 / 包含点线；红色=疑似根因、橙色=受影响。模拟 POD（双机柜各 6 服务器双 PSU、2 TOR、双上联 spine）；将来换 UnifiedInfraTopology 真实数据，接口不变。</div>
+        </div>
+
+        <!-- 诊断对话（LLM 座位：拿诊断终态回答追问；未配置时如实提示） -->
+        <div class="diag-section">
+          <div class="diag-section-title">诊断对话（对最近一次诊断追问）</div>
+          <div class="diag-chat">
+            <div class="diag-chat-messages">
+              <div v-for="(m, i) in chatMessages" :key="i" class="diag-chat-msg" :class="`diag-chat-msg-${m.role}`">
+                <div class="diag-chat-bubble">{{ m.content }}</div>
+              </div>
+              <el-empty v-if="!chatMessages.length && !chatError" description="先跑一次诊断，然后问它：为什么是这个结论？证据是什么？下一步该查什么？"
+                :image-size="48" />
+              <el-alert v-if="chatError" :title="chatError" type="warning" :closable="false" />
+            </div>
+            <div class="diag-chat-input-row">
+              <el-input v-model="chatInput" placeholder="如：为什么判定会宕机？" class="diag-chat-input"
+                :disabled="chatLoading" @keyup.enter="sendChat" clearable />
+              <el-button type="primary" :loading="chatLoading" :disabled="!chatInput.trim()" @click="sendChat">发送</el-button>
+            </div>
+            <div v-if="chatContextInjected" class="muted diag-chat-ctx">本次注入的诊断上下文（LLM 只见这些，不编造）：{{ chatContextInjected.slice(0, 120) }}…</div>
+          </div>
         </div>
       </div>
     </div><!-- /diag-layout -->
@@ -385,6 +406,47 @@ async function showEvidence(ref: string) {
     evidenceError.value = e instanceof Error ? e.message : String(e)
   } finally {
     evidenceLoading.value = false
+  }
+}
+
+// ---------------------------------------------------------------- 诊断对话（LLM 座位）
+interface ChatMessage { role: 'user' | 'assistant'; content: string }
+const chatMessages = ref<ChatMessage[]>([])
+const chatInput = ref('')
+const chatLoading = ref(false)
+const chatError = ref('')
+const chatContextInjected = ref('')
+
+async function sendChat() {
+  const question = chatInput.value.trim()
+  if (!question || chatLoading.value) return
+  chatError.value = ''
+  chatInput.value = ''
+  chatMessages.value = [...chatMessages.value, { role: 'user', content: question }]
+  chatLoading.value = true
+  try {
+    // 历史取最近 8 条（控上下文长度）
+    const history = chatMessages.value.slice(-9, -1)
+      .map(m => ({ role: m.role, content: m.content }))
+    const resp = await fetch('/api/diagnosis/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, history }),
+    })
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }))
+      throw new Error(err.detail ?? `HTTP ${resp.status}`)
+    }
+    const data = await resp.json()
+    chatMessages.value = [...chatMessages.value, { role: 'assistant', content: data.answer }]
+    chatContextInjected.value = data.context_injected ?? ''
+  } catch (e) {
+    chatError.value = e instanceof Error ? e.message : String(e)
+    // 失败的提问不留在历史里，用户可重发
+    chatMessages.value = chatMessages.value.slice(0, -1)
+    chatInput.value = question
+  } finally {
+    chatLoading.value = false
   }
 }
 
@@ -605,6 +667,18 @@ async function run() {
 .diag-evidence-item { margin: 8px 0; }
 .diag-evidence-text { font-size: 12px; color: #4a5568; margin-top: 2px; word-break: break-all; }
 .diag-evidence-rev { margin-bottom: 6px; }
+
+/* 诊断对话 */
+.diag-chat { display: flex; flex-direction: column; gap: 8px; }
+.diag-chat-messages { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; padding: 4px 0; }
+.diag-chat-msg { display: flex; }
+.diag-chat-msg-user { justify-content: flex-end; }
+.diag-chat-bubble { max-width: 85%; padding: 6px 10px; border-radius: 8px; font-size: 12px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
+.diag-chat-msg-user .diag-chat-bubble { background: #ecf5ff; color: #303133; border: 1px solid #d9ecff; }
+.diag-chat-msg-assistant .diag-chat-bubble { background: #f5f7fa; color: #303133; border: 1px solid #e4e7ed; }
+.diag-chat-input-row { display: flex; gap: 8px; }
+.diag-chat-input { flex: 1; }
+.diag-chat-ctx { font-size: 11px; }
 .diag-radius-group { margin-bottom: 8px; padding: 6px 8px; border: 1px dashed #dfe6ef; border-radius: 6px; }
 .diag-radius-code { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
 .diag-radius-entities { display: flex; gap: 4px; flex-wrap: wrap; }

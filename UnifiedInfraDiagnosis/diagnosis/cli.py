@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from diagnosis.graphs.rack_power import diagnose
+from diagnosis.graphs.judge_graph import diagnose
 
 
 def main() -> None:

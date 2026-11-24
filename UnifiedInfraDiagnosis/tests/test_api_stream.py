@@ -36,7 +36,8 @@ def test_sse_golden_path(client: TestClient):
     done = [e["payload"] for e in events if e["event"] == "done"][0]
     assert done["conclusion"]["start_code"] == "server.psu.input_lost"
     assert done["conclusion"]["primary_chain"], "主链必须带证据回链"
-    assert done["reported"] is True
+    # 判定存在待验证条件（psu_redundancy unknown）：按守卫不回写
+    assert done["reported"] is False
     assert any(p["other_code"] == "power.rack.pdu.output_lost_dual"
                for p in done["cross_domain_peers"])
 

@@ -1,14 +1,19 @@
-"""机柜掉电判定序（金路径场景）：告警 → lookup → 跨域取证提示 → 诊断结论 → report 回写。
+"""通用故障诊断判定序（正向）：告警 → 归一 → 传播推演 → 跨域提示 → 影响半径 → 结论 → 飞轮回写。
 
-判定序依据《跨域关联全景》掉电场景 A：
+原 rack_power.py（掉电场景金路径骨架）演进为通用判定序：11 样本跨
+服务器/电力/网络/制冷五域走同一图——场景差异住 OKB（因果知识）与
+InventoryPort（拓扑展开），流程本身无场景分支。判定序骨架：
+
 1. 归一入口：告警 signature → OKB lookup → 候选异常（含 severity/clock_hint）
 2. 传播推演：对候选起点 trace（facts 可选注入观测事实）
-3. 跨域取证提示：same_event 对端（同柜 PDU 掉电）作为待检查项输出
-4. 证据回链：每条判定边附 edge_id + revision_id
-5. 飞轮回写：report confirmed/rejected（判定置信的边）
+3. 跨域取证提示：same_event 对端作为待检查项输出
+4. 影响半径：trace 结果 × InventoryPort 拓扑展开（需 entity_id）
+5. 结论生成：主链 + 证据回链（edge_id + revision_id）+ 一句话总结
+6. 飞轮回写：report confirmed（守卫：pending 未清零/测试模式不回写）
 
-确定性节点为主，无 LLM 节点——本图是判定序的最小金路径骨架；
-LLM 介入点（告警语义化/结论总结）后续按需插入，必须可降级为规则节点。
+确定性节点为主，无 LLM 节点——LLM 介入点（告警语义化/结论总结）
+后续按需插入，必须可降级为规则节点。骨架最初依据《跨域关联全景》
+掉电场景 A，金路径回归见 tests/test_judge_golden.py。
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ class PowerOutageState(TypedDict):
 
     alert_signature: str
     entity_id: str                  # 告警实体（可选：无实体输入时影响半径跳过）
+    report_enabled: bool            # 飞轮回写开关（测试/演示关闭——防置信度污染）
     candidates: list[dict]          # lookup 候选（含 severity/clock/peers）
     start_code: str                 # 选定的 trace 起点
     trace_result: dict              # OKB trace 输出（chains + relations）
@@ -182,18 +188,26 @@ def conclude(_okb: OkbClient):
 
 
 def report_feedback(okb: OkbClient):
-    """节点5：飞轮回写——判定使用的边 report confirmed（幂等，diagnosis_ref 唯一）。"""
+    """节点5：飞轮回写——判定使用的边 report confirmed（幂等，diagnosis_ref 唯一）。
+
+    污染防护：pending_checks 未清零时不回写（判定未验证，不产出置信）；
+    测试/演示路径（report_enabled=False）不回写——测试反复跑不抬升
+    知识置信度（此前宕机边被测试跑成 curated 即此教训）。
+    """
 
     def node(state: PowerOutageState) -> dict:
-        if state.get("error"):
+        if state.get("error") or not state.get("report_enabled", True):
             return {"reported": False}
         chains = state["trace_result"].get("chains", [])
         if not chains:
             return {"reported": False}
+        # 判定未验证（存在 unknown 待取证项）不回写：只回写已确证的判定
+        if state.get("pending_checks"):
+            return {"reported": False}
         ref = f"diagnosis:{state['alert_signature']}"
         for hop in chains[0].get("hops", []):
             try:
-                okb.report(ref, hop["edge_id"], "confirmed", notes="金路径自动回写")
+                okb.report(ref, hop["edge_id"], "confirmed", notes="判定序自动回写")
             except Exception:  # noqa: BLE001 - 飞轮回写失败不阻塞诊断输出
                 return {"reported": False}
         return {"reported": True}
@@ -220,11 +234,16 @@ def build_graph(okb: OkbClient) -> StateGraph:
     return g.compile()
 
 
-def init_state(alert_signature: str, entity_id: str | None = None) -> PowerOutageState:
-    """构造诊断初始态（API/CLI/测试共用）；entity 可选，给定时计算影响半径。"""
+def init_state(alert_signature: str, entity_id: str | None = None,
+               report_enabled: bool = True) -> PowerOutageState:
+    """构造诊断初始态（API/CLI/测试共用）；entity 可选，给定时计算影响半径。
+
+    report_enabled=False 供测试/演示：跑完整判定序但不回写知识置信度。
+    """
     return {
         "alert_signature": alert_signature,
         "entity_id": entity_id or "",
+        "report_enabled": report_enabled,
         "candidates": [], "start_code": "", "trace_result": {},
         "pending_checks": [], "cross_domain_peers": [],
         "impact_radius": {},
@@ -232,8 +251,9 @@ def init_state(alert_signature: str, entity_id: str | None = None) -> PowerOutag
     }
 
 
-def diagnose(alert_signature: str, okb: OkbClient | None = None, entity_id: str | None = None) -> dict:
-    """跑一次掉电诊断；返回终态。"""
+def diagnose(alert_signature: str, okb: OkbClient | None = None, entity_id: str | None = None,
+             report_enabled: bool = True) -> dict:
+    """跑一次掉电诊断；返回终态。测试/演示传 report_enabled=False 防污染。"""
     okb = okb or OkbClient()
     graph = build_graph(okb)
-    return graph.invoke(init_state(alert_signature, entity_id=entity_id))
+    return graph.invoke(init_state(alert_signature, entity_id=entity_id, report_enabled=report_enabled))

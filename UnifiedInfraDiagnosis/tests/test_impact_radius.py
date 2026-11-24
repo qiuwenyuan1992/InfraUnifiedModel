@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from diagnosis.graphs.impact import bind_entities, compute_impact_radius, reconcile_storm
-from diagnosis.graphs.rack_power import diagnose
+from diagnosis.graphs.judge_graph import diagnose
 from diagnosis.tools.inventory import FixtureInventory
 from diagnosis.tools.okb import OkbClient
 
