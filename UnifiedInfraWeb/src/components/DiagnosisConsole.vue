@@ -37,7 +37,41 @@
             </div>
           </div>
         </div>
-        <div class="muted diag-topo-note">模拟 POD：busbar-A 双路 PDU → 4 服务器 + TOR，端口两两直连；将来换 UnifiedInfraTopology 真实数据，接口不变。</div>
+        <div class="muted diag-topo-note">模拟 POD：双机柜（A12/B13 各 6 服务器，双 PSU 双路），每柜 2 TOR，TOR 双上联 spine-1/2；将来换 UnifiedInfraTopology 真实数据，接口不变。</div>
+      </div>
+    </div>
+
+    <!-- 告警风暴 → 根因反推（同柜多服务器 PSU 告警 → 上层故障） -->
+    <div class="diag-section">
+      <div class="diag-section-title">告警风暴 → 根因反推（多台服务器 PSU 告警 ⇒ 上层 PDU/母线故障）</div>
+      <div class="diag-storm-btns">
+        <el-button size="small" type="danger" plain :loading="stormLoading === 'pdu'" @click="runStorm('pdu')">
+          模拟 PDU-A1 路故障（6 台 psu1 告警）
+        </el-button>
+        <el-button size="small" type="danger" :loading="stormLoading === 'busbar'" @click="runStorm('busbar')">
+          模拟母线 busbar-A 故障（12 台全告）
+        </el-button>
+        <el-button size="small" type="info" plain :loading="stormLoading === 'cross'" @click="runStorm('cross')">
+          模拟跨柜独立告警（不硬凑根因）
+        </el-button>
+      </div>
+      <div v-if="stormResult" class="diag-storm-result">
+        <template v-if="stormResult.root_cause">
+          <div class="diag-storm-root">
+            <el-tag type="danger">疑似根因</el-tag>
+            <span class="mono diag-storm-root-entity">{{ stormResult.root_cause.entity }}</span>
+            <span class="mono">{{ stormResult.root_cause.stable_code }}</span>
+            <el-tag size="small" :type="stormResult.root_cause.verify === 'knowledge_backed' ? 'success' : 'warning'">
+              {{ stormResult.root_cause.verify === 'knowledge_backed' ? 'OKB 验证通过' : '拓扑推断（知识空白）' }}
+            </el-tag>
+          </div>
+          <div class="diag-storm-affected">
+            <span class="muted">{{ stormResult.alert_count }} 条告警实体：</span>
+            <el-tag v-for="e in stormResult.affected_entities" :key="e" size="small" class="mono">{{ e }}</el-tag>
+          </div>
+          <p class="diag-storm-rationale">{{ stormResult.rationale }}</p>
+        </template>
+        <el-alert v-else :title="stormResult.rationale" type="info" :closable="false" />
       </div>
     </div>
 
@@ -221,6 +255,44 @@ function applySample(row: TestSample) {
   entityId.value = row.entity ?? ''
 }
 
+// ---------------------------------------------------------------- 告警风暴根因反推
+interface StormResult {
+  independent: boolean
+  root_cause: { entity: string; entity_type: string; stable_code: string; verify: string } | null
+  affected_entities: string[]
+  alert_count?: number
+  rationale: string
+}
+const stormResult = ref<StormResult | null>(null)
+const stormLoading = ref('')
+
+async function runStorm(kind: 'pdu' | 'busbar' | 'cross') {
+  stormLoading.value = kind
+  try {
+    // 按场景构造告警风暴（真实接入时这就是告警流推送的形态）
+    let entities: string[]
+    if (kind === 'pdu') {
+      entities = [1, 2, 3, 4, 5, 6].map(i => `srv-${String(i).padStart(3, '0')}:psu1`)
+    } else if (kind === 'busbar') {
+      entities = [1, 2, 3, 4, 5, 6].flatMap(i => [`srv-${String(i).padStart(3, '0')}:psu1`, `srv-${String(i).padStart(3, '0')}:psu2`])
+    } else {
+      entities = ['srv-001:psu1', 'srv-101:psu1']
+    }
+    const resp = await fetch('/api/diagnosis/storm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alerts: entities.map(e => ({ entity: e, stable_code: 'server.psu.input_lost' })) }),
+    })
+    if (!resp.ok) throw new Error(`风暴诊断服务异常（HTTP ${resp.status}）`)
+    stormResult.value = await resp.json()
+  } catch (e) {
+    stormResult.value = null
+    errorMsg.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    stormLoading.value = ''
+  }
+}
+
 // 设备的可读位置：fixture 实体（具体设备）优先，否则站点
 function deviceOf(row: TestSample): string {
   return row.entity ?? row.site
@@ -357,10 +429,15 @@ async function run() {
 .diag-sample-sub { font-size: 11px; }
 .diag-topo-group { margin-bottom: 8px; }
 .diag-topo-label { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
-.diag-topo-edges { display: flex; flex-direction: column; gap: 2px; }
+.diag-topo-edges { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
 .diag-topo-edge { font-size: 11px; color: #4a5568; display: flex; align-items: center; gap: 4px; }
 .diag-topo-arrow { color: #8a94a6; font-size: 10px; }
 .diag-topo-note { font-size: 11px; margin-top: 6px; }
+.diag-storm-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.diag-storm-root { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.diag-storm-root-entity { font-weight: 700; color: #c45656; }
+.diag-storm-affected { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
+.diag-storm-rationale { font-size: 12px; color: #8a94a6; margin: 0; }
 .diag-radius-group { margin-bottom: 8px; padding: 6px 8px; border: 1px dashed #dfe6ef; border-radius: 6px; }
 .diag-radius-code { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
 .diag-radius-entities { display: flex; gap: 4px; flex-wrap: wrap; }

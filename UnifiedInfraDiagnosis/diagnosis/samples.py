@@ -150,7 +150,7 @@ SAMPLES: list[dict] = [
         "expected": {
             "start_code": "power.rack.busbar.input_lost",
             "reaches": "net.port.down",
-            "radius_entities": ["pdu-A", "pdu-B", "srv-001:p0", "tor-A:E1", "cab-A12"],
+            "radius_entities": ["pdu-A1", "pdu-A2", "srv-001:p0", "tor-A1:E1", "cab-A12"],
             "reported": True,
         },
     },

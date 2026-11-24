@@ -21,6 +21,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from diagnosis.graphs.rack_power import build_graph, init_state
+from diagnosis.graphs.storm import infer_power_root
 from diagnosis.samples import SAMPLES, normalize
 from diagnosis.tools.inventory import FixtureInventory
 from diagnosis.tools.okb import OkbClient
@@ -110,3 +111,20 @@ async def list_samples() -> dict:
 async def fixture_topology() -> dict:
     """fixture 拓扑快照：机柜连接关系（供电树/端口链路/空间包含）。"""
     return FixtureInventory().snapshot()
+
+
+class StormAlert(BaseModel):
+    entity: str          # 告警实体（如 srv-001:psu1）
+    stable_code: str     # 异常类型（如 server.psu.input_lost）
+
+
+class StormRequest(BaseModel):
+    alerts: list[StormAlert]
+
+
+@app.post("/api/diagnosis/storm")
+async def storm_diagnosis(req: StormRequest) -> dict:
+    """告警风暴根因反推：多条同型告警 → 最近公共供电祖先 = 疑似上层故障。"""
+    okb = OkbClient()
+    alerts = [{"entity": a.entity, "stable_code": a.stable_code} for a in req.alerts]
+    return infer_power_root(alerts, FixtureInventory(), okb=okb)
