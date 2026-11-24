@@ -33,7 +33,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-001",
         "label": "服务器 PSU 输入丢失",
-        "site": "langfang-a12",           # 部位：廊坊A12
+        "site": "fixture-pod-a",          # fixture 拓扑站点（与 inventory.py 一致）
         "equipment": "server.psu",         # 部件：服务器电源
         "fault_type": "input_lost",        # 类型：输入丢失
         "timestamp": "2026-11-21T10:00:00Z",
@@ -51,7 +51,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-002",
         "label": "冷冻水泵故障停机",
-        "site": "langfang-a12",
+        "site": "fixture-pod-a",
         "equipment": "cooling.chilled_water_pump",
         "fault_type": "fault",
         "timestamp": "2026-11-21T10:05:00Z",
@@ -67,12 +67,13 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-003",
         "label": "光模块接收光功率低",
-        "site": "langfang-b03",
+        "site": "fixture-pod-a",
         "equipment": "net.optical",
         "fault_type": "rx_power_abnormal",
         "timestamp": "2026-11-21T10:10:00Z",
         "raw_text": "光模块接收光功率低于灵敏度阈值",
         "signature": "ALERT-OPTICAL-RX-LOW",
+        "entity": "srv-101",
         "expected": {
             "start_code": "server.optical.rx_power.abnormal",
             "reaches": "server.nic.crc_error",   # 光衰→CRC（vendor_doc 查证边）
@@ -82,7 +83,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-004",
         "label": "GPU Xid 154 错误",
-        "site": "langfang-b03",
+        "site": "fixture-pod-a",
         "equipment": "gpu",
         "fault_type": "xid_154",
         "timestamp": "2026-11-21T10:15:00Z",
@@ -98,7 +99,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-005",
         "label": "BGP 邻居 Down",
-        "site": "langfang-a12",
+        "site": "fixture-pod-a",
         "equipment": "net.bgp",
         "fault_type": "peer_down",
         "timestamp": "2026-11-21T10:20:00Z",
@@ -166,7 +167,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-006",
         "label": "动环 PSU 故障（T30）",
-        "site": "langfang-a12",
+        "site": "fixture-pod-a",
         "equipment": "power.psu",
         "fault_type": "fault",
         "timestamp": "2026-11-21T10:25:00Z",
