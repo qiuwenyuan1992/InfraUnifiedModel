@@ -46,6 +46,27 @@ class LlmClient:
     def available(self) -> bool:
         return bool(self.base_url and self.api_key)
 
+    def chat_messages(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+        """完整消息列表对话（agent 回路用）：支持 OpenAI tools 协议。
+
+        返回原始 message dict（含 content/reasoning_content/tool_calls），
+        调用方自行维护消息历史（assistant/tool 消息回填）。
+        """
+        if not self.available():
+            raise RuntimeError("LLM 未配置：OKB_LLM_BASE_URL / OKB_LLM_API_KEY 未设置")
+        import httpx
+
+        payload: dict = {"model": self.model, "messages": messages}
+        if tools:
+            payload["tools"] = tools
+        resp = httpx.post(
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json=payload, timeout=120,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]
+
     def chat(self, system: str, user: str, history: list[dict] | None = None) -> dict:
         """单轮对话（history 为对话历史 messages，不含 system/user）。
 

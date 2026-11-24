@@ -35,6 +35,8 @@ const props = defineProps<{
   containmentEdges?: string[][]
   root?: string
   affected?: string[]
+  examined?: string[]     // Agent 正在查询的实体（蓝框脉冲）
+  evidence?: string[]     // 取证证据实体（绿框）
 }>()
 
 const W = 940
@@ -133,6 +135,8 @@ const cabinetRects = computed(() => {
 
 function nodeClass(id: string): string {
   if (props.root && ownerOf(props.root) === id) return 'topo-node-root'
+  if ((props.evidence ?? []).some(e => ownerOf(e) === id)) return 'topo-node-evidence'
+  if ((props.examined ?? []).some(e => ownerOf(e) === id)) return 'topo-node-examined'
   if (hotSet.value.has(id)) return 'topo-node-affected'
   return ''
 }
@@ -152,6 +156,11 @@ function nodeClass(id: string): string {
 .topo-node text { font-size: 11px; fill: #4a5568; font-family: monospace; }
 .topo-node-affected rect { fill: #fdf6ec; stroke: #e6a23c; }
 .topo-node-affected text { fill: #a0641a; }
+.topo-node-examined rect { fill: #f0f9ff; stroke: #409eff; animation: topo-pulse 1.2s ease-in-out infinite; }
+.topo-node-examined text { fill: #2570c0; }
+.topo-node-evidence rect { fill: #f0f9eb; stroke: #67c23a; stroke-width: 2; }
+.topo-node-evidence text { fill: #4e8a35; }
+@keyframes topo-pulse { 50% { stroke-opacity: 0.35; } }
 .topo-node-root rect { fill: #fef0f0; stroke: #f56c6c; stroke-width: 2; }
 .topo-node-root text { fill: #c45656; font-weight: 700; }
 .topo-legend text { font-size: 11px; fill: #8a94a6; }

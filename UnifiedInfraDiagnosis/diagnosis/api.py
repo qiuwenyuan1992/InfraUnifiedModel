@@ -201,6 +201,46 @@ async def langgraph_mermaid(which: str = "judge") -> dict:
     return {"which": which, "mermaid": mermaid, "nodes": nodes}
 
 
+class ExploreRequest(BaseModel):
+    alert_signature: str
+    entity_id: str = ""
+
+
+@app.post("/api/diagnosis/explore")
+async def explore_diagnosis(req: ExploreRequest) -> StreamingResponse:
+    """探索式诊断（SSE）：Agent 用工具查数据，过程逐事件可视化。
+
+    事件流：step（每次工具调用：tool/args/result/thought/topo 动作——前端
+    拓扑动态呈现的数据源）→ done（conclusion/pruned/facts）→ error。
+    LLM 配置时走模型自主回路（OpenAI tools 协议），否则规则降级
+    （固定序，同事件流）——AGENTS 降级纪律。
+    """
+    from diagnosis.graphs.explore import run_explore
+
+    okb = OkbClient()
+    llm = LlmClient()
+
+    async def gen() -> AsyncIterator[str]:
+        queue: list[tuple[str, dict]] = []
+
+        def emit(ev: str, payload: dict) -> None:
+            queue.append((ev, payload))
+
+        # 同步跑 agent（工具调用快），事件经队列转 SSE 帧
+        import asyncio
+
+        def runner():
+            return run_explore(req.alert_signature, req.entity_id, okb, llm, emit=emit)
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, runner)
+        for ev, payload in queue:
+            yield _event(ev, payload)
+        yield _event("done", {**result, "llm_mode": bool(llm.available())})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 class ObservedAlert(BaseModel):
     entity: str
     stable_code: str

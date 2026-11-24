@@ -33,7 +33,37 @@
             <el-input v-model="alertSignature" placeholder="告警 signature" class="diag-input" @keyup.enter="run" clearable />
             <el-input v-model="entityId" placeholder="实体 ID（影响半径用）" class="diag-input-entity" @keyup.enter="run" clearable />
             <el-button type="primary" :loading="running" @click="run">开始诊断</el-button>
+            <el-button type="success" plain :loading="exploring" @click="runExploreMode">探索式诊断（Agent 过程可视化）</el-button>
           </div>
+        </div>
+
+        <!-- ③' 探索式诊断：Agent 工具调用时间线 + 因果链剪枝 -->
+        <div v-if="exploreSteps.length || exploring" class="diag-section">
+          <div class="diag-section-title">
+            Agent 探索过程（{{ exploreSteps.length }} 步{{ exploreDone ? '，已完成' : '，进行中…' }}）
+            <el-tag v-if="exploreLlm" size="small" type="success">LLM 自主决策</el-tag>
+            <el-tag v-else size="small" type="info">规则降级路径</el-tag>
+          </div>
+          <!-- 因果链剪枝视图：取证前后对比，被剪枝的跳划线置灰 -->
+          <div v-if="exploreChain.length" class="diag-prune-chain">
+            <template v-for="(hop, i) in exploreChain" :key="i">
+              <span class="mono diag-prune-hop" :class="{ pruned: explorePruned.includes(hop) }">
+                {{ hop }}<span v-if="explorePruned.includes(hop)" class="diag-prune-x"> ✕已剪枝</span>
+              </span>
+              <el-icon v-if="i < exploreChain.length - 1" class="diag-arrow"><ArrowRight /></el-icon>
+            </template>
+          </div>
+          <div class="diag-explore-steps">
+            <div v-for="(s, i) in exploreSteps" :key="i" class="diag-explore-step"
+              :class="{ active: i === exploreSteps.length - 1 && !exploreDone }">
+              <span class="diag-explore-idx">{{ i + 1 }}</span>
+              <el-tag size="small" :type="toolTone(s.tool)">{{ s.tool }}</el-tag>
+              <span class="mono diag-explore-args">{{ argsSummary(s.args) }}</span>
+              <span class="diag-explore-result muted">{{ resultSummary(s) }}</span>
+              <div v-if="s.thought" class="diag-explore-thought">💭 {{ s.thought.slice(0, 120) }}{{ s.thought.length > 120 ? '…' : '' }}</div>
+            </div>
+          </div>
+          <el-alert v-if="exploreConclusion" :title="exploreConclusion" type="success" show-icon :closable="false" />
         </div>
 
         <!-- ③ 判定序执行流（SSE 逐节点点亮；风暴时自动切换为风暴四节点） -->
@@ -194,7 +224,8 @@
           <div class="diag-section-title">拓扑视图（{{ topoEntityCount }} 实体）</div>
           <TopologyGraph v-if="topo" :entities="topo.entities" :power-edges="topo.power_edges"
             :link-edges="topo.link_edges" :containment-edges="topo.containment_edges"
-            :root="topoHighlight.root" :affected="topoHighlight.affected" />
+            :root="topoHighlight.root" :affected="topoHighlight.affected"
+            :examined="exploreTopo.examined" :evidence="exploreTopo.evidence" />
           <el-empty v-else description="拓扑加载中" :image-size="48" />
           <div class="muted diag-topo-note">供电实线 / 链路虚线 / 包含点线；红色=疑似根因、橙色=受影响。模拟 POD（双机柜各 6 服务器双 PSU、2 TOR、双上联 spine）；将来换 UnifiedInfraTopology 真实数据，接口不变。</div>
         </div>
@@ -506,6 +537,118 @@ async function sendChat() {
   }
 }
 
+// ---------------------------------------------------------------- 探索式诊断（Agent 过程可视化）
+interface ExploreStep {
+  index: number
+  tool: string
+  args: Record<string, unknown>
+  result: Record<string, unknown>
+  thought?: string
+  topo: { examined?: string[]; evidence?: string[] }
+}
+const exploreSteps = ref<ExploreStep[]>([])
+const exploring = ref(false)
+const exploreDone = ref(false)
+const exploreLlm = ref(false)
+const exploreConclusion = ref('')
+const exploreChain = ref<string[]>([])
+const explorePruned = ref<string[]>([])
+const exploreTopo = computed<{ examined: string[]; evidence: string[] }>(() => {
+  const last = [...exploreSteps.value].reverse().find(s => s.topo?.examined?.length || s.topo?.evidence?.length)
+  return { examined: last?.topo?.examined ?? [], evidence: last?.topo?.evidence ?? [] }
+})
+
+function toolTone(tool: string): 'success' | 'primary' | 'warning' | 'info' | 'danger' {
+  if (tool === 'lookup_alert') return 'primary'
+  if (tool === 'verify_fact') return 'success'
+  if (tool === 'submit_conclusion') return 'warning'
+  return 'info'
+}
+
+function argsSummary(args: Record<string, unknown>): string {
+  const vals = Object.values(args ?? {}).map(v => String(v))
+  return vals.join(' ') || '{}'
+}
+
+function resultSummary(s: ExploreStep): string {
+  const r = s.result ?? {}
+  if (s.tool === 'lookup_alert') {
+    return r.candidates ? `→ ${((r.candidates as Array<{ stable_code: string }>)[0]?.stable_code ?? '?')}` : '→ 无候选'
+  }
+  if (s.tool === 'trace_causal') {
+    const chains = (r.chains as string[][]) ?? []
+    const pending = (r.pending_checks as string[]) ?? []
+    const pruned = (r.pruned as string[]) ?? []
+    let out = `→ ${chains.length} 条链`
+    if (pending.length) out += `，待取证：${pending.join('、')}`
+    if (pruned?.length) out += `，剪枝：${pruned.join('、')}`
+    return out
+  }
+  if (s.tool === 'verify_fact') {
+    return `→ ${r.fact_key ?? ''} = ${r.value ?? '?'}`
+  }
+  if (s.tool === 'submit_conclusion') return '→ 已提交'
+  if (s.tool === 'degraded') return `→ ${String((r as { reason?: string }).reason ?? '')}`
+  return ''
+}
+
+async function runExploreMode() {
+  if (exploring.value || !alertSignature.value.trim()) return
+  exploring.value = true
+  exploreDone.value = false
+  exploreSteps.value = []
+  exploreChain.value = []
+  explorePruned.value = []
+  exploreConclusion.value = ''
+  try {
+    const resp = await fetch('/api/diagnosis/explore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        alert_signature: alertSignature.value.trim(),
+        entity_id: entityId.value.trim(),
+      }),
+    })
+    if (!resp.ok || !resp.body) throw new Error(`探索服务异常（HTTP ${resp.status}）`)
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      let idx: number
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const frame = buf.slice(0, idx)
+        buf = buf.slice(idx + 2)
+        const evName = /^event: (.+)$/m.exec(frame)?.[1]
+        const dataRaw = /^data: (.+)$/m.exec(frame)?.[1]
+        if (!evName || !dataRaw) continue
+        const payload = JSON.parse(dataRaw)
+        if (evName === 'step') {
+          exploreSteps.value = [...exploreSteps.value, payload]
+          // 首次 trace 展示因果链；verify 后链重算
+          if (payload.tool === 'trace_causal' && Array.isArray(payload.result?.chains)) {
+            const chain = payload.result.chains[0] ?? []
+            if (chain.length) exploreChain.value = chain
+          }
+        } else if (evName === 'done') {
+          exploreDone.value = true
+          exploreLlm.value = !!payload.llm_mode
+          explorePruned.value = payload.pruned ?? []
+          exploreConclusion.value = payload.conclusion?.summary ?? ''
+        } else if (evName === 'error') {
+          throw new Error(payload.message)
+        }
+      }
+    }
+  } catch (e) {
+    errorMsg.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    exploring.value = false
+  }
+}
+
 function applySample(row: TestSample) {
   activeStorm.value = ''            // 正反向场景互斥：切单告警清风暴态
   stormResult.value = null
@@ -772,6 +915,21 @@ async function run() {
 .diag-chat-reasoning :deep(.el-collapse-item__header) { font-size: 12px; color: #8a94a6; height: 28px; line-height: 28px; }
 .diag-chat-reasoning :deep(.el-collapse-item__wrap) { border: none; }
 .diag-chat-reasoning-text { font-size: 11px; color: #8a94a6; white-space: pre-wrap; max-height: 160px; overflow-y: auto; }
+
+/* 探索式诊断：步骤时间线 + 剪枝链 */
+.diag-explore-steps { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.diag-explore-step { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  padding: 5px 8px; border: 1px solid #e4e9f0; border-radius: 6px; }
+.diag-explore-step.active { border-color: #67c23a; box-shadow: 0 0 0 2px rgba(103,194,58,.15); }
+.diag-explore-idx { font-size: 11px; color: #8a94a6; min-width: 14px; }
+.diag-explore-args { font-size: 11px; color: #4a5568; }
+.diag-explore-result { font-size: 11px; }
+.diag-explore-thought { width: 100%; font-size: 11px; color: #8a94a6; margin-top: 2px; }
+.diag-prune-chain { display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 8px 10px; border: 1px dashed #dfe6ef; border-radius: 8px; background: #fafbfd; }
+.diag-prune-hop { font-size: 12px; color: #4a5568; padding: 2px 6px; border-radius: 4px; background: #fff; }
+.diag-prune-hop.pruned { color: #b0b6bf; text-decoration: line-through; background: #f5f7fa; }
+.diag-prune-x { color: #f56c6c; text-decoration: none; font-size: 11px; }
 .diag-radius-group { margin-bottom: 8px; padding: 6px 8px; border: 1px dashed #dfe6ef; border-radius: 6px; }
 .diag-radius-code { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
 .diag-radius-entities { display: flex; gap: 4px; flex-wrap: wrap; }
