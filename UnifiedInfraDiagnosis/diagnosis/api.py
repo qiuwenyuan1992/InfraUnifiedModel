@@ -28,6 +28,7 @@ app = FastAPI(title="UnifiedInfraDiagnosis API", version="0.1.0")
 
 class DiagnoseRequest(BaseModel):
     alert_signature: str
+    entity_id: str | None = None  # 告警实体：给定时计算影响半径（因果图×拓扑合遍历）
     include_draft: bool = True
 
 
@@ -48,7 +49,7 @@ async def run_diagnosis(req: DiagnoseRequest) -> StreamingResponse:
     """
     okb = OkbClient()
     graph = build_graph(okb)
-    state = init_state(req.alert_signature)
+    state = init_state(req.alert_signature, entity_id=req.entity_id)
 
     async def gen() -> AsyncIterator[str]:
         # 单次执行聚合终态：updates 流逐节点推送，同时累积各节点产物——
@@ -74,6 +75,7 @@ async def run_diagnosis(req: DiagnoseRequest) -> StreamingResponse:
                     "candidates": aggregated.get("candidates", []),
                     "pending_checks": aggregated.get("pending_checks", []),
                     "cross_domain_peers": aggregated.get("cross_domain_peers", []),
+                    "impact_radius": aggregated.get("impact_radius", {}),
                     "error": aggregated.get("error", ""),
                 },
             )

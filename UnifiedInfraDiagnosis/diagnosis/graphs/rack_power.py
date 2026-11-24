@@ -18,6 +18,8 @@ from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from diagnosis.graphs.impact import compute_impact_radius
+from diagnosis.tools.inventory import FixtureInventory
 from diagnosis.tools.okb import OkbClient
 
 
@@ -25,11 +27,13 @@ class PowerOutageState(TypedDict):
     """掉电诊断会话状态（F1：会话状态归编排层，checkpointer 持久化）。"""
 
     alert_signature: str
+    entity_id: str                  # 告警实体（可选：无实体输入时影响半径跳过）
     candidates: list[dict]          # lookup 候选（含 severity/clock/peers）
     start_code: str                 # 选定的 trace 起点
     trace_result: dict              # OKB trace 输出（chains + relations）
     pending_checks: Annotated[list[dict], operator.add]  # 待验证检查项（facts unknown 的条件）
     cross_domain_peers: list[dict]  # same_event 对端（跨域取证提示）
+    impact_radius: dict             # 影响半径（因果图×拓扑合遍历的预期告警集）
     conclusion: dict                # 诊断结论（含 evidence 回链）
     reported: bool                  # report 回写完成标记
     error: str                      # 非致命错误记录
@@ -88,6 +92,24 @@ def cross_domain_hints(okb: OkbClient):
     return node
 
 
+def impact_radius_node(_okb: OkbClient, inventory: FixtureInventory | None = None):
+    """节点3.5：影响半径——trace 结果 × 拓扑实例展开（两张图合遍历）。
+
+    无实体输入（纯 signature）或 lookup 未命中时跳过；绑定规则为确定性
+    规则表（LLM 座位降级实现：将来 LLM 读边语义选展开关系，展开仍由引擎
+    执行，证据链可回归）。制冷域拓扑未同步 → 绑定不可用，如实标记。
+    """
+
+    def node(state: PowerOutageState) -> dict:
+        if state.get("error") or not state.get("entity_id"):
+            return {}
+        inv = inventory or FixtureInventory()
+        radius = compute_impact_radius(state["trace_result"], state["entity_id"], inv)
+        return {"impact_radius": radius}
+
+    return node
+
+
 def conclude(_okb: OkbClient):
     """节点4：结论生成——纯规则节点：主链 + 待验证项 + 跨域提示 + 证据回链。"""
 
@@ -140,29 +162,33 @@ def build_graph(okb: OkbClient) -> StateGraph:
     g.add_node("normalize_alert", normalize_alert(okb))
     g.add_node("propagate_trace", propagate_trace(okb))
     g.add_node("cross_domain_hints", cross_domain_hints(okb))
+    g.add_node("impact_radius", impact_radius_node(okb))
     g.add_node("conclude", conclude(okb))
     g.add_node("report_feedback", report_feedback(okb))
     g.add_edge("__start__", "normalize_alert")
     g.add_edge("normalize_alert", "propagate_trace")
     g.add_edge("propagate_trace", "cross_domain_hints")
-    g.add_edge("cross_domain_hints", "conclude")
+    g.add_edge("cross_domain_hints", "impact_radius")
+    g.add_edge("impact_radius", "conclude")
     g.add_edge("conclude", "report_feedback")
     g.add_edge("report_feedback", END)
     return g.compile()
 
 
-def init_state(alert_signature: str) -> PowerOutageState:
-    """构造诊断初始态（API/CLI/测试共用）。"""
+def init_state(alert_signature: str, entity_id: str | None = None) -> PowerOutageState:
+    """构造诊断初始态（API/CLI/测试共用）；entity 可选，给定时计算影响半径。"""
     return {
         "alert_signature": alert_signature,
+        "entity_id": entity_id or "",
         "candidates": [], "start_code": "", "trace_result": {},
         "pending_checks": [], "cross_domain_peers": [],
+        "impact_radius": {},
         "conclusion": {}, "reported": False, "error": "",
     }
 
 
-def diagnose(alert_signature: str, okb: OkbClient | None = None) -> dict:
+def diagnose(alert_signature: str, okb: OkbClient | None = None, entity_id: str | None = None) -> dict:
     """跑一次掉电诊断；返回终态。"""
     okb = okb or OkbClient()
     graph = build_graph(okb)
-    return graph.invoke(init_state(alert_signature))
+    return graph.invoke(init_state(alert_signature, entity_id=entity_id))
