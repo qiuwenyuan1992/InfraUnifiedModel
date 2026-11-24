@@ -140,9 +140,25 @@ class FixtureInventory:
         return sorted(((e, d) for e, d in dist.items() if e != entity_id), key=lambda x: x[1])
 
     def link_endpoints(self, servers: list[str]) -> list[str]:
-        """服务器集 → 其端口及链路对端（本端+对端都会观测到链路异常）。"""
+        """实体集 → 其端口及链路对端（本端+对端）。
+
+        输入可以是宿主（服务器/交换机，查端口归属）也可以直接是端口 id
+        （沿链路查对端）——影响半径从端口实体起算时不需要宿主中介。
+        """
         ports: set[str] = set()
         for s in servers:
+            is_port = any(s in e for e in _LINK_EDGES) or any(
+                p == s for _, p in _OWN_EDGES
+            )
+            if is_port:
+                # 本身就是端口：直接沿链路找对端
+                for a, b in _LINK_EDGES:
+                    if a == s:
+                        ports.add(b)
+                    elif b == s:
+                        ports.add(a)
+                ports.add(s)
+                continue
             for owner, port in _OWN_EDGES:
                 if owner == s:
                     ports.add(port)

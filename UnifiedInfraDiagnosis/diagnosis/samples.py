@@ -125,6 +125,7 @@ SAMPLES: list[dict] = [
             "start_code": "net.port.down",
             "reaches": "net.traffic.zero",          # 单上联条件：流量归零
             "pending": ["single_uplink"],
+            "radius_entities": ["tor-A1:P1", "spine-1:P1"],  # 端口本端+链路对端
             "reported": True,
         },
     },

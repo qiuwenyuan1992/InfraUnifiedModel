@@ -26,9 +26,18 @@ def bind_entities(frontier: set[str], target_code: str, inventory: FixtureInvent
         # 服务器侧异常：供电可达的服务器（含起点自身）
         return inventory.power_scope(frontier, entity_type="server")
     if target_code.startswith("net."):
-        # 网络侧异常：受影响服务器的端口及链路对端（本端+对端）
+        # 网络侧异常：受影响服务器的端口及链路对端（本端+对端）。
+        # 起点本身就是端口/交换机实体（不在供电树）时，power_scope 为空——
+        # 直接沿链路展开起点自身的端口与对端。
         servers = inventory.power_scope(frontier, entity_type="server")
-        return inventory.link_endpoints(servers)
+        if servers:
+            return inventory.link_endpoints(servers)
+        # 端口归属宿主：srv-001:p0 → srv-001；宿主再展链路
+        owners = {e.split(":")[0] for e in frontier}
+        servers = inventory.power_scope(owners, entity_type="server")
+        if servers:
+            return inventory.link_endpoints(servers)
+        return inventory.link_endpoints(sorted(frontier))
     if target_code.startswith("env."):
         # 环境侧异常：所在空间容器（房间等，层级由拓扑决定）
         return inventory.containers(frontier, entity_type="room")
