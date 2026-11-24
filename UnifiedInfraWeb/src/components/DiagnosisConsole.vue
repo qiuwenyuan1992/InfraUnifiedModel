@@ -310,6 +310,7 @@ const EQUIPMENT_NAMES: Record<string, string> = {
   'net.optical': '光模块',
   'net.bgp': 'BGP 会话',
   'net.link': '网络链路',
+  'net.port': '网络端口',
   'gpu': 'GPU',
   'storage.disk': '硬盘',
 }
