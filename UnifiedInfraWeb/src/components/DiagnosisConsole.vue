@@ -41,6 +41,14 @@
       </div>
     </div>
 
+    <!-- 拓扑可视化（诊断联动高亮：红=疑似根因 / 橙=受影响） -->
+    <div class="diag-section">
+      <div class="diag-section-title">拓扑视图（{{ topoEntityCount }} 实体；供电实线 / 链路虚线；诊断后红色=根因、橙色=受影响）</div>
+      <TopologyGraph v-if="topo" :entities="topo.entities" :power-edges="topo.power_edges"
+        :link-edges="topo.link_edges" :root="topoHighlight.root" :affected="topoHighlight.affected" />
+      <el-empty v-else description="拓扑加载中" :image-size="48" />
+    </div>
+
     <!-- 告警风暴 → 根因反推（同柜多服务器 PSU 告警 → 上层故障） -->
     <div class="diag-section">
       <div class="diag-section-title">告警风暴 → 根因反推（多台服务器 PSU 告警 ⇒ 上层 PDU/母线故障）</div>
@@ -101,6 +109,9 @@
 
     <!-- 结果区 -->
     <div v-if="result" class="diag-result">
+      <!-- 一句话结论（规则版总结） -->
+      <el-alert v-if="conclusion.summary" :title="conclusion.summary" type="warning" show-icon :closable="false" />
+
       <!-- 归一候选 -->
       <div class="diag-section">
         <div class="diag-section-title">告警归一（{{ result.candidates.length }} 候选）</div>
@@ -188,6 +199,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ArrowRight } from '@element-plus/icons-vue'
+import TopologyGraph from './TopologyGraph.vue'
 
 // 判定序六节点（与 diagnosis/graphs/rack_power.py 对齐）
 const STEPS = [
@@ -234,6 +246,16 @@ const topoGroups = computed(() => [
   { label: '链路', tag: 'primary', edges: topo.value?.link_edges ?? [] },
   { label: '包含', tag: 'info', edges: topo.value?.containment_edges ?? [] },
 ].map(g => ({ ...g, count: g.edges.length })))
+
+// 拓扑高亮联动：风暴根因（红）优先，否则正向诊断的起点实体；受影响 = 影响半径/风暴告警实体
+const topoHighlight = computed<{ root: string; affected: string[] }>(() => {
+  if (stormResult.value?.root_cause) {
+    return { root: stormResult.value.root_cause.entity, affected: stormResult.value.affected_entities }
+  }
+  const radius = result.value?.impact_radius
+  const root = result.value && radius && radius.expected_alerts.length ? entityId.value.trim() : ''
+  return { root, affected: radius?.expected_alerts.map(a => a.entity) ?? [] }
+})
 
 function expectedLabel(exp: Record<string, unknown>): string {
   if (exp.unmapped) return '未登记'
@@ -326,6 +348,7 @@ interface DiagnosisConclusion {
   start_code?: string
   severity?: string
   clock_hint?: string
+  summary?: string
   primary_chain?: ChainHop[]
   error?: string
 }

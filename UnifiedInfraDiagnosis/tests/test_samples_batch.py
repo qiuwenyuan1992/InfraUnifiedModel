@@ -34,11 +34,13 @@ def test_sample_diagnosis(sample: dict, okb: OkbClient):
         state = diagnose(sample["signature"], okb=okb)
         assert state["error"], "未登记必须走人工路径（error 说明）"
         assert state["conclusion"].get("status") == "unmapped_alert"
+        assert state["conclusion"].get("summary"), "未登记也要有一句话结论"
         assert state["reported"] is False
         return
 
     assert mapped == sample["signature"], f"{sample['id']} 归一映射不一致"
     state = diagnose(sample["signature"], okb=okb, entity_id=sample.get("entity"))
+    assert state["conclusion"].get("summary"), f"{sample['id']} 结论必须含一句话总结"
 
     # 起点
     assert state["candidates"], f"{sample['id']} lookup 未命中 {sample['signature']}"

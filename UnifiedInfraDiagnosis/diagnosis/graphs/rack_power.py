@@ -124,26 +124,58 @@ def impact_radius_node(_okb: OkbClient, inventory: FixtureInventory | None = Non
 
 
 def conclude(_okb: OkbClient):
-    """节点4：结论生成——纯规则节点：主链 + 待验证项 + 跨域提示 + 证据回链。"""
+    """节点4：结论生成——主链 + 待验证项 + 跨域提示 + 证据回链 + 一句话人话总结。
+
+    summary 为规则降级实现（LLM 结论生成座位的兜底）：把碎片证据拼成人话。
+    """
 
     def node(state: PowerOutageState) -> dict:
         if state.get("error"):
-            return {"conclusion": {"status": "unmapped_alert", "error": state["error"]}}
+            return {"conclusion": {
+                "status": "unmapped_alert", "error": state["error"],
+                "summary": f"未登记告警（{state['alert_signature']}），知识库无映射——请走人工登记，不猜测。",
+            }}
         chains = state["trace_result"].get("chains", [])
         primary = chains[0] if chains else None
+        cand = state["candidates"][0]
+        hops = (primary or {}).get("hops", [])
         conclusion: dict[str, Any] = {
             "status": "candidate_chains",
             "start_code": state["start_code"],
-            "severity": state["candidates"][0].get("severity_online", ""),
-            "clock_hint": state["candidates"][0].get("clock_hint", ""),
+            "severity": cand.get("severity_online", ""),
+            "clock_hint": cand.get("clock_hint", ""),
             "primary_chain": [
                 {"target": h["target_stable_code"], "evidence_level": h["evidence_level"],
                  "revision_id": h.get("revision_id", "")}
-                for h in (primary or {}).get("hops", [])
+                for h in hops
             ],
             "pending_checks": state.get("pending_checks", []),
             "cross_domain_peers": state.get("cross_domain_peers", []),
         }
+
+        # ---- 一句话总结（规则版）：类型层结论 + 影响半径 + 取证建议
+        name = cand.get("name", state["start_code"])
+        radius = state.get("impact_radius") or {}
+        n_expected = len(radius.get("expected_alerts", []))
+        parts: list[str] = []
+        if not hops:
+            if state["trace_result"].get("relations"):
+                parts.append(f"{name}：图上无因果出边（末端观测/知识空白），无法推演后续影响")
+            else:
+                parts.append(f"{name}：知识空白（无因果出边、无关联关系）")
+        else:
+            parts.append(f"{name}：沿因果链可发展到 {hops[-1]['target_stable_code']}")
+        pend = state.get("pending_checks", [])
+        if pend:
+            keys = "、".join(sorted({p["fact_key"] for p in pend}))
+            parts.append(f"需先取证验证：{keys}")
+        peers = state.get("cross_domain_peers", [])
+        if peers:
+            parts.append(f"建议同步核查对端（{peers[0]['other_code']} 等 {len(peers)} 项）")
+        if n_expected:
+            n_ent = len({a["entity"] for a in radius["expected_alerts"]})
+            parts.append(f"影响半径：预计波及 {n_ent} 个实体的 {n_expected} 条告警")
+        conclusion["summary"] = "；".join(parts) + "。"
         return {"conclusion": conclusion}
 
     return node
