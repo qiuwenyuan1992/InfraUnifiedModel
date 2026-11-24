@@ -1,129 +1,69 @@
 <template>
   <div class="diag-console">
-    <!-- 测试数据概览：样本集 + 机柜连接 -->
-    <div class="diag-testdata-grid">
-      <div class="diag-section">
-        <div class="diag-section-title">测试样本集（{{ samples.length }} 条，来自 samples.py）</div>
-        <el-table :data="samples" size="small" class="diag-sample-table" @row-click="applySample">
-          <el-table-column label="故障场景（设备 · 故障）" min-width="230">
-            <template #default="{ row }">
-              <div class="diag-sample-label">{{ row.label }}</div>
-              <div class="muted diag-sample-sub mono">{{ deviceOf(row) }} · {{ faultOf(row) }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="归一 signature" min-width="190">
-            <template #default="{ row }"><span class="mono">{{ row.signature }}</span></template>
-          </el-table-column>
-          <el-table-column label="期望分支" width="100">
-            <template #default="{ row }">
-              <el-tag size="small" :type="expectedTone(row.expected)">{{ expectedLabel(row.expected) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column width="60" align="center">
-            <template #default><el-button link type="primary" size="small">诊断</el-button></template>
-          </el-table-column>
-        </el-table>
-      </div>
-      <div class="diag-section">
-        <div class="diag-section-title">机柜连接关系（fixture 拓扑，{{ topoEntityCount }} 实体）</div>
-        <div v-for="group in topoGroups" :key="group.label" class="diag-topo-group">
-          <div class="diag-topo-label">
-            <el-tag size="small" :type="group.tag">{{ group.label }}</el-tag>
-            <span class="muted">{{ group.count }} 条</span>
+    <div class="diag-layout">
+      <!-- ============ 左栏：主工作流（选场景 → 诊断 → 结果） ============ -->
+      <div class="diag-main">
+        <!-- ① 选择测试场景（单告警样本 / 告警风暴，点选即诊断） -->
+        <div class="diag-section">
+          <div class="diag-section-title">① 选择测试场景（点选即诊断）</div>
+          <div class="diag-scene-group-label">单告警（正向：已知故障 → 推影响）</div>
+          <div class="diag-scene-grid">
+            <button v-for="s in samples" :key="s.id" class="diag-scene-btn"
+              :class="{ active: alertSignature === s.signature }" @click="applySample(s)">
+              <span class="diag-scene-btn-label">{{ s.label }}</span>
+              <span class="muted diag-scene-btn-sub mono">{{ deviceOf(s) }}</span>
+              <el-tag size="small" :type="expectedTone(s.expected)" class="diag-scene-btn-tag">{{ expectedLabel(s.expected) }}</el-tag>
+            </button>
           </div>
-          <div class="diag-topo-edges">
-            <div v-for="(e, i) in group.edges" :key="i" class="diag-topo-edge mono">
-              {{ e[0] }} <el-icon class="diag-topo-arrow"><ArrowRight /></el-icon> {{ e[1] }}
+          <div class="diag-scene-group-label">告警风暴（反向：多台告警 → 反推上层根因）</div>
+          <div class="diag-scene-grid">
+            <button v-for="sc in STORM_SCENES" :key="sc.kind" class="diag-scene-btn diag-scene-btn-storm"
+              :class="{ active: activeStorm === sc.kind }" @click="runStorm(sc.kind)">
+              <span class="diag-scene-btn-label">{{ sc.label }}</span>
+              <span class="muted diag-scene-btn-sub">{{ sc.note }}</span>
+              <el-tag size="small" type="danger" class="diag-scene-btn-tag">风暴反推</el-tag>
+            </button>
+          </div>
+        </div>
+
+        <!-- ② 当前输入（选中场景载入，可手改） -->
+        <div class="diag-section">
+          <div class="diag-section-title">② 诊断输入</div>
+          <div class="diag-input-row">
+            <el-input v-model="alertSignature" placeholder="告警 signature" class="diag-input" @keyup.enter="run" clearable />
+            <el-input v-model="entityId" placeholder="实体 ID（影响半径用）" class="diag-input-entity" @keyup.enter="run" clearable />
+            <el-button type="primary" :loading="running" @click="run">开始诊断</el-button>
+          </div>
+        </div>
+
+        <!-- ③ 判定序执行流（SSE 逐节点点亮） -->
+        <div v-if="started" class="diag-steps">
+          <div v-for="step in STEPS" :key="step.key" class="diag-step" :class="stepState(step.key)">
+            <i class="diag-step-dot" />
+            <div>
+              <div class="diag-step-name">{{ step.label }}</div>
+              <div class="diag-step-note">{{ stepNote(step.key) }}</div>
             </div>
           </div>
         </div>
-        <div class="muted diag-topo-note">模拟 POD：双机柜（A12/B13 各 6 服务器，双 PSU 双路），每柜 2 TOR，TOR 双上联 spine-1/2；将来换 UnifiedInfraTopology 真实数据，接口不变。</div>
-      </div>
-    </div>
 
-    <!-- 拓扑可视化（诊断联动高亮：红=疑似根因 / 橙=受影响） -->
-    <div class="diag-section">
-      <div class="diag-section-title">拓扑视图（{{ topoEntityCount }} 实体；供电实线 / 链路虚线；诊断后红色=根因、橙色=受影响）</div>
-      <TopologyGraph v-if="topo" :entities="topo.entities" :power-edges="topo.power_edges"
-        :link-edges="topo.link_edges" :containment-edges="topo.containment_edges"
-        :root="topoHighlight.root" :affected="topoHighlight.affected" />
-      <el-empty v-else description="拓扑加载中" :image-size="48" />
-    </div>
+        <el-empty v-if="started && !running && !result && !errorMsg && !stormResult" description="无结果" :image-size="60" />
+        <el-alert v-if="errorMsg" :title="errorMsg" type="error" :closable="false" class="diag-error" />
 
-    <!-- 告警风暴 → 根因反推（同柜多服务器 PSU 告警 → 上层故障） -->
-    <div class="diag-section">
-      <div class="diag-section-title">告警风暴 → 根因反推（多台服务器 PSU 告警 ⇒ 上层 PDU/母线故障）</div>
-      <div class="diag-storm-btns">
-        <el-button size="small" type="danger" plain :loading="stormLoading === 'pdu'" @click="runStorm('pdu')">
-          模拟 PDU-A1 路故障（6 台 psu1 告警）
-        </el-button>
-        <el-button size="small" type="danger" :loading="stormLoading === 'busbar'" @click="runStorm('busbar')">
-          模拟母线 busbar-A 故障（12 台全告）
-        </el-button>
-        <el-button size="small" type="info" plain :loading="stormLoading === 'cross'" @click="runStorm('cross')">
-          模拟跨柜独立告警（不硬凑根因）
-        </el-button>
-      </div>
-      <div v-if="stormResult" class="diag-storm-result">
-        <template v-if="stormResult.root_cause">
-          <div class="diag-storm-root">
-            <el-tag type="danger">疑似根因</el-tag>
-            <span class="mono diag-storm-root-entity">{{ stormResult.root_cause.entity }}</span>
-            <span class="mono">{{ stormResult.root_cause.stable_code }}</span>
-            <el-tag size="small" :type="stormResult.root_cause.verify === 'knowledge_backed' ? 'success' : 'warning'">
-              {{ stormResult.root_cause.verify === 'knowledge_backed' ? 'OKB 验证通过' : '拓扑推断（知识空白）' }}
-            </el-tag>
+        <!-- ④ 结果（正向诊断） -->
+        <div v-if="result" class="diag-result">
+          <el-alert v-if="conclusion.summary" :title="conclusion.summary" type="warning" show-icon :closable="false" />
+
+          <div class="diag-section">
+            <div class="diag-section-title">告警归一（{{ result.candidates.length }} 候选）</div>
+            <div v-for="c in result.candidates" :key="c.anomaly_id" class="diag-candidate">
+              <el-tag size="small" :type="c.status === 'curated' ? 'success' : 'info'">{{ c.status }}</el-tag>
+              <span class="mono">{{ c.stable_code }}</span>
+              <span>{{ c.name }}</span>
+              <el-tag v-if="c.severity_online" size="small" type="danger">线上 {{ c.severity_online }}</el-tag>
+              <el-tag v-if="c.clock_hint" size="small" type="warning">时钟 {{ c.clock_hint }}</el-tag>
+            </div>
           </div>
-          <div class="diag-storm-affected">
-            <span class="muted">{{ stormResult.alert_count }} 条告警实体：</span>
-            <el-tag v-for="e in stormResult.affected_entities" :key="e" size="small" class="mono">{{ e }}</el-tag>
-          </div>
-          <p class="diag-storm-rationale">{{ stormResult.rationale }}</p>
-        </template>
-        <el-alert v-else :title="stormResult.rationale" type="info" :closable="false" />
-      </div>
-    </div>
-
-    <!-- 输入区 -->
-    <div class="diag-input-row">
-      <el-input v-model="alertSignature" placeholder="告警 signature，如 SERVER-PSU-INPUT-LOST / T30alertPsuFault"
-        class="diag-input" @keyup.enter="run" clearable />
-      <el-input v-model="entityId" placeholder="实体 ID（可选，填了算影响半径）"
-        class="diag-input-entity" @keyup.enter="run" clearable />
-      <el-button type="primary" :loading="running" @click="run">开始诊断</el-button>
-    </div>
-
-    <!-- 判定序执行流（SSE 逐节点点亮） -->
-    <div v-if="started" class="diag-steps">
-      <div v-for="step in STEPS" :key="step.key" class="diag-step" :class="stepState(step.key)">
-        <i class="diag-step-dot" />
-        <div>
-          <div class="diag-step-name">{{ step.label }}</div>
-          <div class="diag-step-note">{{ stepNote(step.key) }}</div>
-        </div>
-      </div>
-    </div>
-
-    <el-empty v-if="started && !running && !result && !errorMsg" description="无结果" :image-size="60" />
-
-    <el-alert v-if="errorMsg" :title="errorMsg" type="error" :closable="false" class="diag-error" />
-
-    <!-- 结果区 -->
-    <div v-if="result" class="diag-result">
-      <!-- 一句话结论（规则版总结） -->
-      <el-alert v-if="conclusion.summary" :title="conclusion.summary" type="warning" show-icon :closable="false" />
-
-      <!-- 归一候选 -->
-      <div class="diag-section">
-        <div class="diag-section-title">告警归一（{{ result.candidates.length }} 候选）</div>
-        <div v-for="c in result.candidates" :key="c.anomaly_id" class="diag-candidate">
-          <el-tag size="small" :type="c.status === 'curated' ? 'success' : 'info'">{{ c.status }}</el-tag>
-          <span class="mono">{{ c.stable_code }}</span>
-          <span>{{ c.name }}</span>
-          <el-tag v-if="c.severity_online" size="small" type="danger">线上 {{ c.severity_online }}</el-tag>
-          <el-tag v-if="c.clock_hint" size="small" type="warning">时钟 {{ c.clock_hint }}</el-tag>
-        </div>
-      </div>
 
       <!-- 主链（证据回链 + 跳转图谱/证据） -->
       <div class="diag-section" v-if="conclusion.primary_chain?.length">
@@ -137,10 +77,11 @@
               <el-tag size="small" :type="hop.evidence_level === 'runtime_verified' ? 'success' : 'info'">
                 {{ hop.evidence_level }}
               </el-tag>
+              <el-button link type="primary" size="small" @click="showEvidence(hop.target)">证据</el-button>
             </span>
           </template>
         </div>
-        <div class="muted diag-chain-hint">点击节点可跳转知识图谱；证据可回链至 OKB 出处。</div>
+        <div class="muted diag-chain-hint">点击节点可跳转知识图谱；点"证据"回链 OKB 出处片段。</div>
       </div>
 
       <!-- 待验证检查项（evidence-driven） -->
@@ -192,13 +133,88 @@
       </div>
 
       <!-- 飞轮回写 -->
-      <div class="diag-section">
+      <div class="diag-section" v-if="result">
         <div class="diag-section-title">飞轮回写</div>
         <el-tag :type="result.reported ? 'success' : 'info'">
-          {{ result.reported ? '已回写 confirmed（置信度已更新）' : '未回写（无链或知识空白）' }}
+          {{ result.reported ? '已回写 confirmed（置信度已更新）' : '未回写（无链/知识空白/判定未确证——守卫不回写）' }}
         </el-tag>
       </div>
-    </div>
+      </div><!-- /diag-result -->
+
+      <!-- ④' 风暴反推结果 -->
+      <div v-if="stormResult" class="diag-result">
+        <el-alert :title="stormResult.conclusion?.summary || stormResult.rationale"
+          :type="stormResult.root_cause ? 'error' : 'info'" show-icon :closable="false" />
+        <div v-if="stormResult.root_cause" class="diag-section">
+          <div class="diag-section-title">疑似根因</div>
+          <div class="diag-storm-root">
+            <el-tag type="danger">{{ stormResult.root_cause.entity }}</el-tag>
+            <span class="mono">{{ stormResult.root_cause.stable_code }}</span>
+            <el-tag size="small" :type="stormResult.root_cause.verify === 'knowledge_backed' ? 'success' : 'warning'">
+              {{ stormResult.root_cause.verify === 'knowledge_backed' ? 'OKB 验证通过' : '拓扑推断（知识空白）' }}
+            </el-tag>
+            <span class="muted">{{ stormResult.alert_count }} 条告警的共同供电祖先</span>
+          </div>
+        </div>
+        <p class="diag-storm-rationale">{{ stormResult.rationale }}</p>
+      </div>
+
+      <!-- ⑤ 对账（正向诊断有半径时可用） -->
+      <div class="diag-section" v-if="result?.impact_radius?.expected_alerts?.length">
+        <div class="diag-section-title">⑤ 对账（预期告警集 vs 实际观测——缺失即信号）</div>
+        <div class="diag-reconcile-row">
+          <el-input v-model="observedText" type="textarea" :rows="3"
+            placeholder="实际观测到的告警，每行一条：实体, 异常类型（如 pdu-A1, power.rack.pdu.output_lost_dual）"
+            class="diag-reconcile-input" />
+          <el-button type="primary" plain :loading="reconciling" @click="runReconcile">对账</el-button>
+        </div>
+        <div v-if="reconcileResult" class="diag-reconcile-result">
+          <el-alert :title="reconcileResult.summary" :type="reconcileTone" show-icon :closable="false" />
+          <div class="diag-reconcile-groups">
+            <div class="diag-reconcile-group">
+              <el-tag size="small" type="success">命中 {{ reconcileResult.matched.length }}</el-tag>
+              <div v-for="(m, i) in reconcileResult.matched" :key="'m' + i" class="mono diag-reconcile-item">{{ m[0] }} · {{ m[1] }}</div>
+            </div>
+            <div class="diag-reconcile-group">
+              <el-tag size="small" type="danger">缺失 {{ reconcileResult.missing.length }}</el-tag>
+              <div v-for="(m, i) in reconcileResult.missing" :key="'g' + i" class="mono diag-reconcile-item">{{ m[0] }} · {{ m[1] }}</div>
+            </div>
+            <div class="diag-reconcile-group">
+              <el-tag size="small" type="warning">预期外 {{ reconcileResult.unexpected.length }}</el-tag>
+              <div v-for="(m, i) in reconcileResult.unexpected" :key="'u' + i" class="mono diag-reconcile-item">{{ m[0] }} · {{ m[1] }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div><!-- /diag-main -->
+
+      <!-- ============ 右栏：拓扑常驻（诊断联动高亮） ============ -->
+      <div class="diag-side">
+        <div class="diag-section diag-topo-panel">
+          <div class="diag-section-title">拓扑视图（{{ topoEntityCount }} 实体）</div>
+          <TopologyGraph v-if="topo" :entities="topo.entities" :power-edges="topo.power_edges"
+            :link-edges="topo.link_edges" :containment-edges="topo.containment_edges"
+            :root="topoHighlight.root" :affected="topoHighlight.affected" />
+          <el-empty v-else description="拓扑加载中" :image-size="48" />
+          <div class="muted diag-topo-note">供电实线 / 链路虚线 / 包含点线；红色=疑似根因、橙色=受影响。模拟 POD（双机柜各 6 服务器双 PSU、2 TOR、双上联 spine）；将来换 UnifiedInfraTopology 真实数据，接口不变。</div>
+        </div>
+      </div>
+    </div><!-- /diag-layout -->
+
+    <!-- 证据出处弹窗 -->
+    <el-dialog v-model="evidenceDialog" :title="`证据出处：${evidenceRef}`" width="560px">
+      <div v-if="evidenceLoading" class="muted">回链查询中…</div>
+      <el-alert v-else-if="evidenceError" :title="evidenceError" type="warning" :closable="false" />
+      <div v-else>
+        <div class="muted diag-evidence-rev">revision {{ evidenceData?.revision_id }}</div>
+        <div v-for="it in evidenceData?.items ?? []" :key="it.evidence_id" class="diag-evidence-item">
+          <el-tag size="small">{{ it.level }}</el-tag>
+          <span class="muted">{{ it.source_kind || it.kind }}</span>
+          <div class="diag-evidence-text">{{ it.summary }}</div>
+        </div>
+        <el-empty v-if="!evidenceData?.items?.length" description="无出处片段（知识空白如实展示）" :image-size="48" />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -232,6 +248,14 @@ interface TestSample {
 }
 const samples = ref<TestSample[]>([])
 const topo = ref<{ entities: Record<string, string>; power_edges: string[][]; link_edges: string[][]; containment_edges: string[][] } | null>(null)
+
+// 风暴场景（与后端 runStorm 构造对齐）
+const STORM_SCENES = [
+  { kind: 'pdu', label: 'PDU-A1 路故障', note: '6 台服务器 psu1 告警' },
+  { kind: 'busbar', label: '母线 busbar-A 故障', note: '12 台全告（psu1+psu2）' },
+  { kind: 'cross', label: '跨柜独立告警', note: 'A 柜 + B 柜各 1 条，不硬凑根因' },
+] as const
+const activeStorm = ref('')
 
 onMounted(async () => {
   try {
@@ -284,10 +308,92 @@ function expectedTone(exp: Record<string, unknown>): 'success' | 'info' | 'warni
   return 'success'
 }
 
+// ---------------------------------------------------------------- 对账（预期 vs 观测）
+interface ReconcileResult {
+  matched: [string, string][]
+  missing: [string, string][]
+  unexpected: [string, string][]
+  summary: string
+}
+const observedText = ref('')
+const reconcileResult = ref<ReconcileResult | null>(null)
+const reconciling = ref(false)
+const reconcileTone = computed(() =>
+  reconcileResult.value?.missing.length || reconcileResult.value?.unexpected.length ? 'warning' : 'success')
+
+async function runReconcile() {
+  if (reconciling.value || !result.value) return
+  const observed = observedText.value.split('\n').map(l => l.trim()).filter(Boolean)
+    .map(l => {
+      const [entity, stable_code] = l.split(',').map(s => s.trim())
+      return { entity, stable_code: stable_code ?? '' }
+    })
+  if (!observed.length) {
+    errorMsg.value = '请先填写观测告警（每行：实体, 异常类型）'
+    return
+  }
+  reconciling.value = true
+  try {
+    const resp = await fetch('/api/diagnosis/reconcile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        alert_signature: alertSignature.value.trim(),
+        entity_id: entityId.value.trim(),
+        observed,
+      }),
+    })
+    if (!resp.ok) throw new Error(`对账服务异常（HTTP ${resp.status}）`)
+    reconcileResult.value = await resp.json()
+  } catch (e) {
+    reconcileResult.value = null
+    errorMsg.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    reconciling.value = false
+  }
+}
+
+// ---------------------------------------------------------------- 证据回链（evidence 原语出口）
+interface EvidenceItem {
+  evidence_id: string
+  kind: string
+  level: string
+  source_kind?: string
+  summary: string
+}
+interface EvidenceResponse {
+  revision_id: string
+  items: EvidenceItem[]
+}
+const evidenceDialog = ref(false)
+const evidenceRef = ref('')
+const evidenceLoading = ref(false)
+const evidenceError = ref('')
+const evidenceData = ref<EvidenceResponse | null>(null)
+
+async function showEvidence(ref: string) {
+  evidenceRef.value = ref
+  evidenceDialog.value = true
+  evidenceLoading.value = true
+  evidenceError.value = ''
+  evidenceData.value = null
+  try {
+    const resp = await fetch(`/api/diagnosis/evidence?ref=${encodeURIComponent(ref)}`)
+    if (!resp.ok) throw new Error(`证据回链失败（HTTP ${resp.status}）`)
+    evidenceData.value = await resp.json()
+  } catch (e) {
+    evidenceError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    evidenceLoading.value = false
+  }
+}
+
 function applySample(row: TestSample) {
+  activeStorm.value = ''            // 正反向场景互斥：切单告警清风暴态
+  stormResult.value = null
   alertSignature.value = row.signature
   entityId.value = row.entity ?? ''
-  // 点样本行即跑：载入并立即诊断（旧结果清空，避免误读为"点什么都一样"）
+  // 点场景即跑：载入并立即诊断（旧结果清空，避免误读为"点什么都一样"）
   void run()
 }
 
@@ -298,12 +404,17 @@ interface StormResult {
   affected_entities: string[]
   alert_count?: number
   rationale: string
+  conclusion?: { summary?: string; rationale?: string }
 }
 const stormResult = ref<StormResult | null>(null)
 const stormLoading = ref('')
 
 async function runStorm(kind: 'pdu' | 'busbar' | 'cross') {
   stormLoading.value = kind
+  result.value = null               // 互斥：切风暴清正向结果
+  started.value = false
+  reconcileResult.value = null
+  activeStorm.value = kind
   try {
     // 按场景构造告警风暴（真实接入时这就是告警流推送的形态）
     let entities: string[]
@@ -458,24 +569,42 @@ async function run() {
 
 <style scoped>
 .diag-console { display: flex; flex-direction: column; gap: 16px; }
-.diag-testdata-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; align-items: start; }
+/* 左右分栏：左=主工作流（选场景/诊断/结果），右=拓扑常驻联动 */
+.diag-layout { display: grid; grid-template-columns: minmax(480px, 1.1fr) minmax(380px, 0.9fr); gap: 16px; align-items: start; }
+.diag-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.diag-side { position: sticky; top: 12px; }
+.diag-topo-panel { margin-bottom: 0; }
+
+/* 场景选择：卡片按钮网格 */
+.diag-scene-group-label { font-size: 12px; color: #8a94a6; margin: 10px 0 6px; }
+.diag-scene-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.diag-scene-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 8px 10px; border: 1px solid #dfe6ef; border-radius: 8px; background: #fff;
+  cursor: pointer; text-align: left; transition: border-color .15s, box-shadow .15s; }
+.diag-scene-btn:hover { border-color: #8fb7e8; }
+.diag-scene-btn.active { border-color: #409eff; box-shadow: 0 0 0 2px rgba(64,158,255,.15); background: #f0f7ff; }
+.diag-scene-btn-storm.active { border-color: #f56c6c; box-shadow: 0 0 0 2px rgba(245,108,108,.15); background: #fef4f4; }
+.diag-scene-btn-label { font-size: 13px; font-weight: 600; color: #303133; }
+.diag-scene-btn-sub { font-size: 11px; }
+.diag-scene-btn-tag { align-self: flex-start; }
+
 .diag-input-row { display: flex; gap: 10px; align-items: center; }
-.diag-input { max-width: 320px; }
-.diag-input-entity { max-width: 220px; }
-.diag-sample-table { cursor: pointer; }
-.diag-sample-label { font-weight: 600; font-size: 13px; }
-.diag-sample-sub { font-size: 11px; }
-.diag-topo-group { margin-bottom: 8px; }
-.diag-topo-label { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
-.diag-topo-edges { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
-.diag-topo-edge { font-size: 11px; color: #4a5568; display: flex; align-items: center; gap: 4px; }
-.diag-topo-arrow { color: #8a94a6; font-size: 10px; }
+.diag-input { flex: 1; max-width: 340px; }
+.diag-input-entity { max-width: 240px; }
 .diag-topo-note { font-size: 11px; margin-top: 6px; }
 .diag-storm-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .diag-storm-root { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .diag-storm-root-entity { font-weight: 700; color: #c45656; }
 .diag-storm-affected { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
 .diag-storm-rationale { font-size: 12px; color: #8a94a6; margin: 0; }
+.diag-reconcile-row { display: flex; gap: 10px; align-items: flex-start; }
+.diag-reconcile-input { flex: 1; }
+.diag-reconcile-groups { display: flex; gap: 14px; margin-top: 8px; }
+.diag-reconcile-group { flex: 1; min-width: 0; }
+.diag-reconcile-item { font-size: 11px; color: #4a5568; margin: 2px 0; }
+.diag-evidence-item { margin: 8px 0; }
+.diag-evidence-text { font-size: 12px; color: #4a5568; margin-top: 2px; word-break: break-all; }
+.diag-evidence-rev { margin-bottom: 6px; }
 .diag-radius-group { margin-bottom: 8px; padding: 6px 8px; border: 1px dashed #dfe6ef; border-radius: 6px; }
 .diag-radius-code { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
 .diag-radius-entities { display: flex; gap: 4px; flex-wrap: wrap; }
