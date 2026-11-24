@@ -22,6 +22,9 @@ ALERT_REGISTRY: dict[tuple[str, str], str] = {
     ("gpu", "xid_154"): "GPU_XID_154",
     ("net.bgp", "peer_down"): "ALERT-BGP-PEER-DOWN",
     ("net.link", "down"): "ALERT-LINK-DOWN",
+    ("net.port", "down"): "ALERT-LINK-DOWN",
+    ("net.port", "flapping"): "ALERT-PORT-FLAPPING",
+    ("net.port", "crc_error"): "ALERT-PORT-CRC-ERROR",
     ("power.busbar", "input_lost"): "ALERT-BUSBAR-INPUT-LOST",
 }
 
@@ -106,6 +109,57 @@ SAMPLES: list[dict] = [
             # bgp 是叶子节点（BFD→BGP 方向）：链为空是知识如实，不是失败
             "empty_chain": True,
             "reported": False,
+        },
+    },
+    {
+        "id": "sim-009",
+        "label": "交换机端口 Down",
+        "site": "fixture-pod-a",
+        "equipment": "net.port",
+        "fault_type": "down",
+        "timestamp": "2026-11-21T10:40:00Z",
+        "raw_text": "交换机端口 Link Down（TOR 上联口）",
+        "signature": "ALERT-LINK-DOWN",
+        "entity": "tor-A1:P1",
+        "expected": {
+            "start_code": "net.port.down",
+            "reaches": "net.traffic.zero",          # 单上联条件：流量归零
+            "pending": ["single_uplink"],
+            "reported": True,
+        },
+    },
+    {
+        "id": "sim-010",
+        "label": "端口震荡（链路不稳）",
+        "site": "fixture-pod-a",
+        "equipment": "net.port",
+        "fault_type": "flapping",
+        "timestamp": "2026-11-21T10:45:00Z",
+        "raw_text": "端口在 1 分钟内反复 Up/Down（震荡）",
+        "signature": "ALERT-PORT-FLAPPING",
+        "entity": "tor-A1:P1",
+        "expected": {
+            "start_code": "net.port.flapping",
+            "reaches": "net.traffic.sudden_drop",   # 震荡→down→流量突降（3 跳）
+            "min_hops": 2,
+            "reported": True,
+        },
+    },
+    {
+        "id": "sim-011",
+        "label": "端口 CRC 错误",
+        "site": "fixture-pod-a",
+        "equipment": "net.port",
+        "fault_type": "crc_error",
+        "timestamp": "2026-11-21T10:50:00Z",
+        "raw_text": "端口 CRC 错误计数持续增长（光口误码）",
+        "signature": "ALERT-PORT-CRC-ERROR",
+        "entity": "tor-A1:P1",
+        "expected": {
+            "start_code": "net.port.crc_error",
+            "reaches": "net.port.down",             # CRC 保护触发端口关闭
+            "pending": ["crc_error_down_protection"],
+            "reported": True,
         },
     },
     {
