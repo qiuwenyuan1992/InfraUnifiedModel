@@ -57,6 +57,7 @@ SAMPLES: list[dict] = [
         "timestamp": "2026-11-21T10:05:00Z",
         "raw_text": "冷冻水泵故障停机",
         "signature": "ALERT-CHWP-FAULT",
+        "entity": "pump-1",            # 制冷域占位实体（拓扑未同步，半径如实降级）
         "expected": {
             "start_code": "cooling.chilled_water.pump_fault",
             "reaches": "env.room.smoke",      # 5跳级联终点（演示 deep chain）
@@ -175,6 +176,7 @@ SAMPLES: list[dict] = [
         "timestamp": "2026-11-21T10:25:00Z",
         "raw_text": "动环 PSU 故障告警（T30）",
         "signature": "T30alertPsuFault",
+        "entity": "dci-psu-1",         # 动环域占位实体（拓扑未同步，如实降级）
         "expected": {
             "start_code": "power.psu.fault",
             "knowledge_gap": True,   # 归一命中但无因果出边：知识空白如实展示

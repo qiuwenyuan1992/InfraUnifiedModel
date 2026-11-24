@@ -51,6 +51,11 @@ for _sp in _SPINES:
 for _b in _BGP_SESSIONS:
     _ENTITIES[_b] = "bgp_session"
 
+# 动环/制冷域占位实体（拓扑未同步域的如实标注，不挂在 pod-A 下）
+# pump-1 冷冻水泵 / dci-psu-1 动环电源：位置=机房外独立供电/暖通域
+_ENTITIES["pump-1"] = "chilled_water_pump"    # 制冷：冷冻水泵
+_ENTITIES["dci-psu-1"] = "dci_psu"            # 动环：动环电源
+
 # 供电树：busbar → PDU →（PSU → 服务器 / TOR）；A/B 路 PDU 分带本柜服务器与一台 TOR
 _POWER_EDGES: set[tuple[str, str]] = {
     ("busbar-A", "pdu-A1"), ("busbar-A", "pdu-A2"),

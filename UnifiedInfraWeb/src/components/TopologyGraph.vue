@@ -43,10 +43,11 @@ const rows = [
   { types: ['pdu'], label: 'PDU', y: 105 },
   { types: ['server'], label: '服务器', y: 170 },
   { types: ['switch-cab'], label: 'TOR', y: 235 },
-  { types: ['switch-pod'], label: 'Spine', y: 300 },
+  { types: ['switch-pod', 'bgp_session'], label: 'Spine/会话', y: 300 },
   { types: ['pod'], label: 'POD', y: 355 },
+  { types: ['chilled_water_pump', 'dci_psu'], label: '动环/制冷', y: 415 },
 ]
-const H = 415
+const H = 470
 
 // 端口/PSU → 宿主（命名约定 id:sub → id）
 function ownerOf(id: string): string {
@@ -56,7 +57,7 @@ function ownerOf(id: string): string {
 // 节点分类：TOR（机柜内）与 Spine（POD 级）同为 switch，按 id 前缀分
 function rowTypeOf(id: string, type: string): string {
   if (type === 'switch') return id.startsWith('spine') ? 'switch-pod' : 'switch-cab'
-  if (type === 'bgp_session') return 'switch-pod'  // 骨干 BGP 会话与 Spine 同层渲染
+  if (type === 'bgp_session') return 'bgp_session'
   if (type === 'busbar') return 'busbar'
   return type
 }
