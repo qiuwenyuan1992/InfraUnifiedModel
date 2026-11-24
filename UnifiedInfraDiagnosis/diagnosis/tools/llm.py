@@ -126,10 +126,28 @@ SYSTEM_PROMPT = """你是基础设施故障诊断助手。你正在回答运维�
 
 
 def build_diagnosis_context(state: dict) -> str:
-    """诊断终态 → LLM 上下文（结构化压缩，控制 token）。"""
+    """诊断终态 → LLM 上下文（结构化压缩，控制 token）。
+
+    支持两种形态：正向判定序（judge）与风暴反推（storm，kind 标记）。
+    """
     conclusion = state.get("conclusion", {})
+    if state.get("kind") == "storm":
+        parts: list[str] = []
+        root = state.get("root_cause") or {}
+        parts.append(f"诊断形态: 告警风暴根因反推（{len(state.get('affected_entities', []))} 条同型告警）")
+        if root:
+            parts.append(f"疑似根因: {root.get('entity', '')}（{root.get('stable_code', '')}）")
+            parts.append(f"根因验证: {state.get('verify', '')}（knowledge_backed=OKB 因果图验证通过）")
+        else:
+            parts.append("根因: 无共同供电点，独立故障（如实不硬凑）")
+        ents = state.get("affected_entities", [])
+        if ents:
+            parts.append("告警实体: " + ", ".join(sorted(ents)[:20]))
+        parts.append(f"一句话结论: {conclusion.get('summary', '')}")
+        parts.append(f"推理依据: {conclusion.get('rationale', '')}")
+        return "\n".join(parts)
     start_code = state.get("start_code") or conclusion.get("start_code", "")
-    parts: list[str] = []
+    parts = []
     parts.append(f"告警: {state.get('alert_signature', '')}（实体: {state.get('entity_id') or '未指定'}）")
     parts.append(f"归一异常: {start_code}")
     chain = conclusion.get("primary_chain", [])

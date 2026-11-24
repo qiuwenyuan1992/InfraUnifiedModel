@@ -150,6 +150,9 @@ async def storm_diagnosis(req: StormRequest) -> dict:
         [{"entity": a.entity, "stable_code": a.stable_code} for a in req.alerts]))
     root = result.get("root_cause")
     conclusion = result.get("conclusion", {})
+    # 写入对话上下文缓存（风暴结果同样可被追问）
+    _LAST_DIAGNOSIS.clear()
+    _LAST_DIAGNOSIS.update({**result, "kind": "storm"})
     return {
         "independent": result["independent"],
         "root_cause": {**root, "verify": result["verify"]} if root else None,
