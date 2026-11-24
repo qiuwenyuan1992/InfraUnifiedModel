@@ -42,8 +42,9 @@ const rows = [
   { types: ['server'], label: '服务器', y: 170 },
   { types: ['switch-cab'], label: 'TOR', y: 235 },
   { types: ['switch-pod'], label: 'Spine', y: 300 },
+  { types: ['pod'], label: 'POD', y: 355 },
 ]
-const H = 360
+const H = 415
 
 // 端口/PSU → 宿主（命名约定 id:sub → id）
 function ownerOf(id: string): string {

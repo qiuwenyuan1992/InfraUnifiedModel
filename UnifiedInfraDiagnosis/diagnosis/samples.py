@@ -33,7 +33,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-001",
         "label": "服务器 PSU 输入丢失",
-        "site": "fixture-pod-a",          # fixture 拓扑站点（与 inventory.py 一致）
+        "site": "pod-A",          # fixture 拓扑站点（与 inventory.py 一致）
         "equipment": "server.psu",         # 部件：服务器电源
         "fault_type": "input_lost",        # 类型：输入丢失
         "timestamp": "2026-11-21T10:00:00Z",
@@ -51,7 +51,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-002",
         "label": "冷冻水泵故障停机",
-        "site": "fixture-pod-a",
+        "site": "pod-A",
         "equipment": "cooling.chilled_water_pump",
         "fault_type": "fault",
         "timestamp": "2026-11-21T10:05:00Z",
@@ -67,7 +67,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-003",
         "label": "光模块接收光功率低",
-        "site": "fixture-pod-a",
+        "site": "pod-A",
         "equipment": "net.optical",
         "fault_type": "rx_power_abnormal",
         "timestamp": "2026-11-21T10:10:00Z",
@@ -83,7 +83,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-004",
         "label": "GPU Xid 154 错误",
-        "site": "fixture-pod-a",
+        "site": "pod-A",
         "equipment": "gpu",
         "fault_type": "xid_154",
         "timestamp": "2026-11-21T10:15:00Z",
@@ -99,7 +99,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-005",
         "label": "BGP 邻居 Down",
-        "site": "fixture-pod-a",
+        "site": "pod-A",
         "equipment": "net.bgp",
         "fault_type": "peer_down",
         "timestamp": "2026-11-21T10:20:00Z",
@@ -115,7 +115,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-009",
         "label": "交换机端口 Down",
-        "site": "fixture-pod-a",
+        "site": "pod-A",
         "equipment": "net.port",
         "fault_type": "down",
         "timestamp": "2026-11-21T10:40:00Z",
@@ -133,7 +133,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-010",
         "label": "端口震荡（链路不稳）",
-        "site": "fixture-pod-a",
+        "site": "pod-A",
         "equipment": "net.port",
         "fault_type": "flapping",
         "timestamp": "2026-11-21T10:45:00Z",
@@ -150,7 +150,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-011",
         "label": "端口 CRC 错误",
-        "site": "fixture-pod-a",
+        "site": "pod-A",
         "equipment": "net.port",
         "fault_type": "crc_error",
         "timestamp": "2026-11-21T10:50:00Z",
@@ -167,7 +167,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-006",
         "label": "动环 PSU 故障（T30）",
-        "site": "fixture-pod-a",
+        "site": "pod-A",
         "equipment": "power.psu",
         "fault_type": "fault",
         "timestamp": "2026-11-21T10:25:00Z",
@@ -196,7 +196,7 @@ SAMPLES: list[dict] = [
     {
         "id": "sim-008",
         "label": "机柜母线失电（风暴）",
-        "site": "fixture-pod-a",
+        "site": "pod-A",
         "equipment": "power.busbar",
         "fault_type": "input_lost",
         "timestamp": "2026-11-21T10:35:00Z",
