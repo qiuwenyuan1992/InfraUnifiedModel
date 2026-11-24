@@ -49,9 +49,11 @@ def compute_impact_radius(trace_result: dict, start_entity: str, inventory: Fixt
     """沿 trace 因果链逐跳绑定实体，产出预期告警集（影响半径）。
 
     预期≠必发：条件未验证的跳同样进入预期集（可能性由告警风暴对账处理）。
-    每条预期告警携带 edge_id/revision_id 证据回链。
+    每条预期告警携带 edge_id/revision_id 证据回链；多条链共享前缀时
+    按 (entity, stable_code) 去重——同一预期告警只保留一条证据。
     """
     expected: list[dict] = []
+    seen: set[tuple[str, str]] = set()
     unbound: list[dict] = []
     for chain in trace_result.get("chains", []):
         frontier = {start_entity}
@@ -67,6 +69,10 @@ def compute_impact_radius(trace_result: dict, start_entity: str, inventory: Fixt
                 continue  # 前沿不动：绑定不可用的跳不展开，如实记录
             frontier = set(bound)
             for entity in bound:
+                key = (entity, target)
+                if key in seen:
+                    continue
+                seen.add(key)
                 expected.append({
                     "entity": entity,
                     "stable_code": target,
