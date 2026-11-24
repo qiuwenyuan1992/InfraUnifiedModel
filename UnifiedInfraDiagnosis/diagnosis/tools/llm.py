@@ -10,6 +10,29 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+
+def _load_env_file() -> None:
+    """加载模块根目录 .env（不进 Git；已 export 的环境变量优先）。
+
+    手工解析而非引入 python-dotenv：需求仅 KEY=VALUE 单行格式，
+    避免为一个 12 行函数加依赖。注释（# 开头）与空行跳过，值去引号。
+    """
+    env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+    if not env_path.is_file():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip("'\"")
+        if key and key not in os.environ:  # export 的环境变量优先
+            os.environ[key] = value
+
+
+_load_env_file()
 
 
 class LlmClient:
@@ -23,8 +46,12 @@ class LlmClient:
     def available(self) -> bool:
         return bool(self.base_url and self.api_key)
 
-    def chat(self, system: str, user: str, history: list[dict] | None = None) -> str:
-        """单轮对话（history 为对话历史 messages，不含 system/user）。"""
+    def chat(self, system: str, user: str, history: list[dict] | None = None) -> dict:
+        """单轮对话（history 为对话历史 messages，不含 system/user）。
+
+        返回 {"content": 回答, "reasoning": 思考过程}——思考模型
+        （GLM 系）的 reasoning_content 原样透传，前端折叠展示。
+        """
         if not self.available():
             raise RuntimeError("LLM 未配置：OKB_LLM_BASE_URL / OKB_LLM_API_KEY 未设置")
         import json
@@ -39,11 +66,52 @@ class LlmClient:
             f"{self.base_url}/chat/completions",
             headers={"Authorization": f"Bearer {self.api_key}"},
             json={"model": self.model, "messages": messages},
-            timeout=60,
+            timeout=120,
         )
         resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        message = resp.json()["choices"][0]["message"]
+        return {"content": message["content"], "reasoning": message.get("reasoning_content", "")}
+
+    def chat_stream(self, system: str, user: str, history: list[dict] | None = None):
+        """流式对话：yield {"kind": "reasoning"|"answer", "delta": "…"}。
+
+        OpenAI 兼容 stream=true：逐行读 SSE data 帧，解析 delta 里的
+        reasoning_content（思考模型）与 content（回答），按到达顺序透传。
+        """
+        if not self.available():
+            raise RuntimeError("LLM 未配置：OKB_LLM_BASE_URL / OKB_LLM_API_KEY 未设置")
+        import json
+
+        import httpx
+
+        messages = [{"role": "system", "content": system}]
+        for m in history or []:
+            messages.append({"role": m["role"], "content": m["content"]})
+        messages.append({"role": "user", "content": user})
+        with httpx.stream(
+            "POST",
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json={"model": self.model, "messages": messages, "stream": True},
+            timeout=120,
+        ) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    delta = json.loads(payload)["choices"][0]["delta"]
+                except (ValueError, KeyError, IndexError):
+                    continue
+                reasoning = delta.get("reasoning_content")
+                if reasoning:
+                    yield {"kind": "reasoning", "delta": reasoning}
+                content = delta.get("content")
+                if content:
+                    yield {"kind": "answer", "delta": content}
 
 
 # 诊断对话系统提示词：证据纪律写进 prompt（不可编造是产品命根）
@@ -68,6 +136,8 @@ def build_diagnosis_context(state: dict) -> str:
     if chain:
         hops = " → ".join([start_code] + [h["target"] for h in chain])
         parts.append(f"主因果链: {hops}")
+        levels = "、".join(f"{h['target']}({h.get('evidence_level', '?')})" for h in chain)
+        parts.append(f"各跳证据等级: {levels}")
     else:
         parts.append("主因果链: 无（知识空白或叶子节点）")
     pend = state.get("pending_checks", [])

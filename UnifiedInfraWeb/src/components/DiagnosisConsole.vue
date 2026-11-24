@@ -203,9 +203,19 @@
         <div class="diag-section">
           <div class="diag-section-title">诊断对话（对最近一次诊断追问）</div>
           <div class="diag-chat">
-            <div class="diag-chat-messages">
+            <div class="diag-chat-messages" ref="chatMessagesEl">
               <div v-for="(m, i) in chatMessages" :key="i" class="diag-chat-msg" :class="`diag-chat-msg-${m.role}`">
-                <div class="diag-chat-bubble">{{ m.content }}</div>
+                <div class="diag-chat-bubble">
+                  <!-- 思考过程（折叠；流式时自动展开滚动） -->
+                  <el-collapse v-if="m.reasoning" class="diag-chat-reasoning" :model-value="m.streaming ? ['r'] : []">
+                    <el-collapse-item :name="'r'" :title="m.streaming ? '思考中…' : '思考过程'">
+                      <div class="diag-chat-reasoning-text">{{ m.reasoning }}</div>
+                    </el-collapse-item>
+                  </el-collapse>
+                  <span v-if="m.content">{{ m.content }}</span>
+                  <span v-if="m.streaming" class="diag-chat-cursor" />
+                  <span v-if="m.streaming && !m.content && !m.reasoning" class="muted">连接模型网关中…</span>
+                </div>
               </div>
               <el-empty v-if="!chatMessages.length && !chatError" description="先跑一次诊断，然后问它：为什么是这个结论？证据是什么？下一步该查什么？"
                 :image-size="48" />
@@ -218,6 +228,12 @@
             </div>
             <div v-if="chatContextInjected" class="muted diag-chat-ctx">本次注入的诊断上下文（LLM 只见这些，不编造）：{{ chatContextInjected.slice(0, 120) }}…</div>
           </div>
+        </div>
+
+        <!-- LangGraph 运行图 -->
+        <div class="diag-section">
+          <div class="diag-section-title">LangGraph 运行图</div>
+          <RunGraph />
         </div>
       </div>
     </div><!-- /diag-layout -->
@@ -240,8 +256,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ArrowRight } from '@element-plus/icons-vue'
+import RunGraph from './RunGraph.vue'
 import TopologyGraph from './TopologyGraph.vue'
 
 // 判定序六节点（与 diagnosis/graphs/rack_power.py 对齐）
@@ -409,13 +426,20 @@ async function showEvidence(ref: string) {
   }
 }
 
-// ---------------------------------------------------------------- 诊断对话（LLM 座位）
-interface ChatMessage { role: 'user' | 'assistant'; content: string }
+// ---------------------------------------------------------------- 诊断对话（LLM 座位，SSE 流式）
+interface ChatMessage { role: 'user' | 'assistant'; content: string; reasoning?: string; streaming?: boolean }
 const chatMessages = ref<ChatMessage[]>([])
 const chatInput = ref('')
 const chatLoading = ref(false)
 const chatError = ref('')
 const chatContextInjected = ref('')
+const chatMessagesEl = ref<HTMLElement | null>(null)
+
+// 流式时滚到最新消息
+watch(() => chatMessages.value[chatMessages.value.length - 1]?.content, async () => {
+  await nextTick()
+  chatMessagesEl.value?.scrollTo({ top: chatMessagesEl.value.scrollHeight, behavior: 'smooth' })
+})
 
 async function sendChat() {
   const question = chatInput.value.trim()
@@ -423,12 +447,14 @@ async function sendChat() {
   chatError.value = ''
   chatInput.value = ''
   chatMessages.value = [...chatMessages.value, { role: 'user', content: question }]
+  // 助手气泡先占位（流式逐段填充）
+  const assistant: ChatMessage = { role: 'assistant', content: '', reasoning: '', streaming: true }
+  chatMessages.value = [...chatMessages.value, assistant]
   chatLoading.value = true
   try {
-    // 历史取最近 8 条（控上下文长度）
-    const history = chatMessages.value.slice(-9, -1)
+    const history = chatMessages.value.slice(-9, -2)
       .map(m => ({ role: m.role, content: m.content }))
-    const resp = await fetch('/api/diagnosis/chat', {
+    const resp = await fetch('/api/diagnosis/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, history }),
@@ -437,15 +463,40 @@ async function sendChat() {
       const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }))
       throw new Error(err.detail ?? `HTTP ${resp.status}`)
     }
-    const data = await resp.json()
-    chatMessages.value = [...chatMessages.value, { role: 'assistant', content: data.answer }]
-    chatContextInjected.value = data.context_injected ?? ''
+    const reader = resp.body!.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      let idx: number
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const frame = buf.slice(0, idx)
+        buf = buf.slice(idx + 2)
+        const evName = /^event: (.+)$/m.exec(frame)?.[1]
+        const dataRaw = /^data: (.+)$/m.exec(frame)?.[1]
+        if (!evName || !dataRaw) continue
+        const payload = JSON.parse(dataRaw)
+        if (evName === 'reasoning_delta') {
+          assistant.reasoning = (assistant.reasoning ?? '') + payload.delta
+        } else if (evName === 'answer_delta') {
+          assistant.content += payload.delta
+        } else if (evName === 'done') {
+          chatContextInjected.value = payload.context_injected ?? ''
+        } else if (evName === 'error') {
+          throw new Error(payload.message)
+        }
+        chatMessages.value = [...chatMessages.value]  // 响应式刷新
+      }
+    }
   } catch (e) {
     chatError.value = e instanceof Error ? e.message : String(e)
-    // 失败的提问不留在历史里，用户可重发
-    chatMessages.value = chatMessages.value.slice(0, -1)
+    // 流式中断：空回答的占位气泡移除，问题可重发
+    chatMessages.value = chatMessages.value.filter(m => !(m.streaming && !m.content && !m.reasoning))
     chatInput.value = question
   } finally {
+    assistant.streaming = false
     chatLoading.value = false
   }
 }
@@ -679,6 +730,13 @@ async function run() {
 .diag-chat-input-row { display: flex; gap: 8px; }
 .diag-chat-input { flex: 1; }
 .diag-chat-ctx { font-size: 11px; }
+.diag-chat-cursor { display: inline-block; width: 6px; height: 14px; background: #409eff;
+  margin-left: 2px; vertical-align: text-bottom; animation: diag-blink 1s steps(2) infinite; }
+@keyframes diag-blink { 50% { opacity: 0; } }
+.diag-chat-reasoning { margin-bottom: 6px; border: none; }
+.diag-chat-reasoning :deep(.el-collapse-item__header) { font-size: 12px; color: #8a94a6; height: 28px; line-height: 28px; }
+.diag-chat-reasoning :deep(.el-collapse-item__wrap) { border: none; }
+.diag-chat-reasoning-text { font-size: 11px; color: #8a94a6; white-space: pre-wrap; max-height: 160px; overflow-y: auto; }
 .diag-radius-group { margin-bottom: 8px; padding: 6px 8px; border: 1px dashed #dfe6ef; border-radius: 6px; }
 .diag-radius-code { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
 .diag-radius-entities { display: flex; gap: 4px; flex-wrap: wrap; }

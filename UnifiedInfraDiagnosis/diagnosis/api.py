@@ -169,6 +169,19 @@ async def evidence(ref: str) -> dict:
     return OkbClient().evidence(ref)
 
 
+@app.get("/api/diagnosis/graph")
+async def langgraph_mermaid(which: str = "judge") -> dict:
+    """LangGraph 运行图（mermaid 语法）：which=judge 正向判定序 / storm 风暴反推。"""
+    okb = OkbClient()
+    graph = build_storm_graph(okb) if which == "storm" else build_graph(okb)
+    try:
+        mermaid = graph.get_graph().draw_mermaid()
+    except Exception as exc:  # noqa: BLE001 - draw 失败降级为节点清单
+        mermaid = ""
+    nodes = ["__start__"] + [n for n in graph.nodes] + ["__end__"] if mermaid else list(graph.nodes)
+    return {"which": which, "mermaid": mermaid, "nodes": nodes}
+
+
 class ObservedAlert(BaseModel):
     entity: str
     stable_code: str
@@ -223,7 +236,7 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/diagnosis/chat")
 async def chat(req: ChatRequest) -> dict:
-    """诊断对话：对最近一次诊断追问，LLM 拿诊断终态（结论/链/待验证/半径）作答。
+    """诊断对话（非流式）：对最近一次诊断追问，LLM 拿诊断终态作答。
 
     座位纪律（AGENTS.md）：LLM 必须可降级——未配置 OKB_LLM_BASE_URL/
     OKB_LLM_API_KEY 时 422 如实说明，不伪装模型回答；上下文由
@@ -240,10 +253,43 @@ async def chat(req: ChatRequest) -> dict:
         raise HTTPException(status_code=422, detail="尚无诊断结果：先跑一次诊断，再对它追问")
     try:
         context = build_diagnosis_context(_LAST_DIAGNOSIS)
-        answer = llm.chat(SYSTEM_PROMPT, f"诊断上下文：\n{context}\n\n追问：{req.question}",
+        result = llm.chat(SYSTEM_PROMPT, f"诊断上下文：\n{context}\n\n追问：{req.question}",
                           history=req.history)
-        return {"answer": answer, "context_injected": context}
+        return {"answer": result["content"], "reasoning": result["reasoning"],
+                "context_injected": context}
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001 - 网关异常如实上抛
         raise HTTPException(status_code=502, detail=f"LLM 网关调用失败：{exc}") from exc
+
+
+@app.post("/api/diagnosis/chat/stream")
+async def chat_stream(req: ChatRequest) -> StreamingResponse:
+    """诊断对话（SSE 流式）：思考过程与回答逐段推送。
+
+    事件序列：reasoning_delta（思考逐段，思考模型）→ answer_delta
+    （回答逐段）→ done（终态，含注入的上下文）→ error（网关异常）。
+    未配置/无诊断结果仍 422 降级（LLM 可降级纪律）。
+    """
+    from fastapi import HTTPException
+
+    llm = LlmClient()
+    if not llm.available():
+        raise HTTPException(status_code=422, detail=(
+            "LLM 未配置：设置 OKB_LLM_BASE_URL / OKB_LLM_API_KEY / OKB_LLM_MODEL "
+            "（OpenAI 兼容协议）后重启 8100 生效；未配置时诊断判定序不受影响（规则降级）"))
+    if not _LAST_DIAGNOSIS:
+        raise HTTPException(status_code=422, detail="尚无诊断结果：先跑一次诊断，再对它追问")
+
+    context = build_diagnosis_context(_LAST_DIAGNOSIS)
+    prompt = f"诊断上下文：\n{context}\n\n追问：{req.question}"
+
+    async def gen() -> AsyncIterator[str]:
+        try:
+            for chunk in llm.chat_stream(SYSTEM_PROMPT, prompt, history=req.history):
+                yield _event(f"{chunk['kind']}_delta", {"delta": chunk["delta"]})
+            yield _event("done", {"context_injected": context})
+        except Exception as exc:  # noqa: BLE001 - SSE 必须以 error 帧收尾
+            yield _event("error", {"message": str(exc)})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")

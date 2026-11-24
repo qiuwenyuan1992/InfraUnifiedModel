@@ -24,8 +24,10 @@ def client():
     return TestClient(app)
 
 
-def test_chat_unconfigured_llm_degrades(client: TestClient):
+def test_chat_unconfigured_llm_degrades(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     """LLM 未配置：422 + 如实降级说明（不伪装成模型回答）。"""
+    for k in ("OKB_LLM_BASE_URL", "OKB_LLM_API_KEY", "OKB_LLM_MODEL"):
+        monkeypatch.delenv(k, raising=False)  # 开发者本机可能配了 .env
     resp = client.post("/api/diagnosis/chat", json={"question": "为什么判定会宕机？"})
     assert resp.status_code == 422
     assert "未配置" in resp.json()["detail"]
@@ -50,6 +52,47 @@ def test_chat_context_builder_contains_evidence():
     assert "psu_redundancy" in ctx
     assert "srv-001" in ctx
     assert "掉电" in ctx
+    assert "curated" in ctx, "主链各跳的证据等级必须注入（LLM 要能引用等级）"
+
+
+def test_chat_returns_reasoning(monkeypatch: pytest.MonkeyPatch):
+    """思考模型的 reasoning_content 透传（前端折叠展示）。"""
+    import httpx
+
+    class FakeResp:
+        def raise_for_status(self) -> None: pass
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": "答", "reasoning_content": "思考中…"}}]}
+
+    captured: dict = {}
+
+    def fake_post(url: str, headers: dict = None, json: dict = None, timeout=None):
+        captured.update(url=url, body=json)
+        return FakeResp()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    for k in ("OKB_LLM_BASE_URL", "OKB_LLM_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("OKB_LLM_BASE_URL", "https://gw.example/v1")
+    monkeypatch.setenv("OKB_LLM_API_KEY", "k")
+    client = LlmClient()
+    result = client.chat("sys", "问")
+    assert result["content"] == "答"
+    assert result["reasoning"] == "思考中…"
+    assert captured["url"] == "https://gw.example/v1/chat/completions"
+    assert captured["body"]["messages"][0]["role"] == "system"
+
+
+def test_langgraph_mermaid_endpoint(client: TestClient):
+    """LangGraph 运行图：mermaid 语法 + 节点清单（可视化数据源）。"""
+    resp = client.get("/api/diagnosis/graph", params={"which": "judge"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "normalize_alert" in body["nodes"]
+    assert "report_feedback" in body["nodes"]
+    assert body["mermaid"], "mermaid 语法必须生成"
+    resp2 = client.get("/api/diagnosis/graph", params={"which": "storm"})
+    assert "infer_common_ancestor" in resp2.json()["nodes"]
 
 
 def test_system_prompt_has_evidence_discipline():
@@ -58,12 +101,12 @@ def test_system_prompt_has_evidence_discipline():
     assert "诊断上下文" in SYSTEM_PROMPT
 
 
-def test_llm_client_config_gating():
+def test_llm_client_config_gating(monkeypatch: pytest.MonkeyPatch):
     """无配置 available=False（降级路径的开关）。"""
+    for k in ("OKB_LLM_BASE_URL", "OKB_LLM_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
     c = LlmClient()
-    # 测试环境无 OKB_LLM_BASE_URL/KEY（若开发者本机设了则跳过该断言）
-    import os
-    if os.environ.get("OKB_LLM_BASE_URL") and os.environ.get("OKB_LLM_API_KEY"):
-        assert c.available()
-    else:
-        assert not c.available()
+    assert not c.available()
+    monkeypatch.setenv("OKB_LLM_BASE_URL", "https://gw.example/v1")
+    monkeypatch.setenv("OKB_LLM_API_KEY", "k")
+    assert LlmClient().available()
