@@ -54,16 +54,18 @@ def bind_entities(frontier: set[str], target_code: str, inventory: FixtureInvent
     return None
 
 
-def compute_impact_radius(trace_result: dict, start_entity: str, inventory: FixtureInventory) -> dict:
+def compute_impact_radius(trace_result: dict, start_entity: str, inventory: FixtureInventory, start_code: str = "") -> dict:
     """沿 trace 因果链逐跳绑定实体，产出预期告警集（影响半径）。
 
     预期≠必发：条件未验证的跳同样进入预期集（可能性由告警风暴对账处理）。
     每条预期告警携带 edge_id/revision_id 证据回链；多条链共享前缀时
     按 (entity, stable_code) 去重——同一预期告警只保留一条证据。
+    逻辑会话实体（BGP）另附 surface：观测面端口对（本端+对端）。
     """
     expected: list[dict] = []
     seen: set[tuple[str, str]] = set()
     unbound: list[dict] = []
+    surface = inventory.session_surface(start_entity)
     for chain in trace_result.get("chains", []):
         frontier = {start_entity}
         for hop in chain.get("hops", []):
@@ -88,7 +90,7 @@ def compute_impact_radius(trace_result: dict, start_entity: str, inventory: Fixt
                     "edge_id": hop.get("edge_id", ""),
                     "revision_id": hop.get("revision_id", ""),
                 })
-    return {"start_entity": start_entity, "expected_alerts": expected, "unbound": unbound}
+    return {"start_entity": start_entity, "surface": surface, "expected_alerts": expected, "unbound": unbound}
 
 
 def reconcile_storm(radius: dict, observed: list[dict]) -> dict:

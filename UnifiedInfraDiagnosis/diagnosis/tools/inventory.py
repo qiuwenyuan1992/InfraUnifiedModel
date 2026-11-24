@@ -18,6 +18,13 @@ _SERVERS_B = [f"srv-{i:03d}" for i in range(101, 107)]  # cab-B13：101..106
 _TORS = ["tor-A1", "tor-A2", "tor-B1", "tor-B2"]
 _SPINES = ["spine-1", "spine-2"]
 
+# BGP 会话（逻辑实体）：bgp-1 骨干会话，由 spine↔tor 上联链路承载；
+# bgp-2 服务器侧会话。会话不是物理设备——观测面解析到承载端口（本端+对端）
+_BGP_SESSIONS: dict[str, tuple[str, str]] = {
+    "bgp-1": ("spine-1:P1", "tor-A1:P1"),   # 骨干：spine-1↔tor-A1 上联
+    "bgp-2": ("spine-2:P4", "tor-B2:P2"),   # 骨干：spine-2↔tor-B2 上联
+}
+
 _ENTITIES: dict[str, str] = {
     "busbar-A": "busbar", "busbar-B": "busbar",
     "pod-A": "pod",
@@ -41,6 +48,8 @@ for _sp in _SPINES:
     _ENTITIES[_sp] = "switch"
     for _i in range(1, 5):  # 下联口收 4 台 TOR 的上联
         _ENTITIES[f"{_sp}:P{_i}"] = "port"
+for _b in _BGP_SESSIONS:
+    _ENTITIES[_b] = "bgp_session"
 
 # 供电树：busbar → PDU →（PSU → 服务器 / TOR）；A/B 路 PDU 分带本柜服务器与一台 TOR
 _POWER_EDGES: set[tuple[str, str]] = {
@@ -177,6 +186,15 @@ class FixtureInventory:
                 if src == e and _ENTITIES.get(dst) == entity_type:
                     found.add(dst)
         return sorted(found)
+
+    def session_surface(self, entity_id: str) -> list[str]:
+        """逻辑会话（BGP 等）→ 观测面：承载链路的端口对（本端+对端）。
+
+        会话告警（peer_down）物理上在两端口的链路上观测——告警语义化/
+        影响半径都应把会话解析到多端口，而非单实体。
+        """
+        pair = _BGP_SESSIONS.get(entity_id)
+        return list(pair) if pair else []
 
     def snapshot(self) -> dict:
         """fixture 拓扑快照：实体 + 三类连接关系（测试页展示机柜连接用）。"""

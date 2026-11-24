@@ -8,6 +8,7 @@
     <!-- 边：供电（实线）/ 链路（虚线） -->
     <line v-for="(e, i) in resolvedPower" :key="'p' + i" :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2" class="topo-edge topo-edge-power" :class="{ 'topo-edge-hot': e.hot }" />
     <line v-for="(e, i) in resolvedLink" :key="'l' + i" :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2" class="topo-edge topo-edge-link" :class="{ 'topo-edge-hot': e.hot }" />
+    <line v-for="(e, i) in resolvedContainment" :key="'c' + i" :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2" class="topo-edge topo-edge-contain" :class="{ 'topo-edge-hot': e.hot }" />
     <!-- 节点 -->
     <g v-for="n in nodes" :key="n.id" :transform="`translate(${n.x}, ${n.y})`" class="topo-node" :class="nodeClass(n.id)">
       <rect x="-32" y="-13" width="64" height="26" rx="5" />
@@ -31,6 +32,7 @@ const props = defineProps<{
   entities: Record<string, string>
   powerEdges: string[][]
   linkEdges: string[][]
+  containmentEdges?: string[][]
   root?: string
   affected?: string[]
 }>()
@@ -54,6 +56,7 @@ function ownerOf(id: string): string {
 // 节点分类：TOR（机柜内）与 Spine（POD 级）同为 switch，按 id 前缀分
 function rowTypeOf(id: string, type: string): string {
   if (type === 'switch') return id.startsWith('spine') ? 'switch-pod' : 'switch-cab'
+  if (type === 'bgp_session') return 'switch-pod'  // 骨干 BGP 会话与 Spine 同层渲染
   if (type === 'busbar') return 'busbar'
   return type
 }
@@ -108,6 +111,7 @@ function resolveEdges(raw: string[][]) {
 
 const resolvedPower = computed(() => resolveEdges(props.powerEdges))
 const resolvedLink = computed(() => resolveEdges(props.linkEdges))
+const resolvedContainment = computed(() => resolveEdges(props.containmentEdges ?? []))
 
 // 机柜框：按包含关系聚合成员坐标
 const cabinetRects = computed(() => {
@@ -141,6 +145,7 @@ function nodeClass(id: string): string {
 .topo-edge { stroke-width: 1; }
 .topo-edge-power { stroke: #d3dce6; }
 .topo-edge-link { stroke: #8fb7e8; stroke-dasharray: 4 3; }
+.topo-edge-contain { stroke: #c8d0dc; stroke-dasharray: 2 5; stroke-width: 2; }
 .topo-edge-hot { stroke: #f56c6c; stroke-width: 2.5; }
 .topo-node rect { fill: #fff; stroke: #c8d0dc; }
 .topo-node text { font-size: 11px; fill: #4a5568; font-family: monospace; }

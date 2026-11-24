@@ -105,10 +105,12 @@ SAMPLES: list[dict] = [
         "timestamp": "2026-11-21T10:20:00Z",
         "raw_text": "BGP 邻居 Down，BFD 先行检测",
         "signature": "ALERT-BGP-PEER-DOWN",
+        "entity": "bgp-1",             # 逻辑会话实体；观测面解析到承载端口对
         "expected": {
             "start_code": "net.protocol.bgp.peer_down",
             # bgp 是叶子节点（BFD→BGP 方向）：链为空是知识如实，不是失败
             "empty_chain": True,
+            "surface_entities": ["spine-1:P1", "tor-A1:P1"],  # 本端+对端端口
             "reported": False,
         },
     },

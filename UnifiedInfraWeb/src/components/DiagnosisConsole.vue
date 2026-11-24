@@ -45,7 +45,8 @@
     <div class="diag-section">
       <div class="diag-section-title">拓扑视图（{{ topoEntityCount }} 实体；供电实线 / 链路虚线；诊断后红色=根因、橙色=受影响）</div>
       <TopologyGraph v-if="topo" :entities="topo.entities" :power-edges="topo.power_edges"
-        :link-edges="topo.link_edges" :root="topoHighlight.root" :affected="topoHighlight.affected" />
+        :link-edges="topo.link_edges" :containment-edges="topo.containment_edges"
+        :root="topoHighlight.root" :affected="topoHighlight.affected" />
       <el-empty v-else description="拓扑加载中" :image-size="48" />
     </div>
 
