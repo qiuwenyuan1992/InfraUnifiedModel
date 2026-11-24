@@ -139,28 +139,44 @@ class StormRequest(BaseModel):
 
 
 @app.post("/api/diagnosis/storm")
-async def storm_diagnosis(req: StormRequest) -> dict:
-    """告警风暴根因反推：走 LangGraph 风暴判定序（四节点，可流式）。
+async def storm_diagnosis(req: StormRequest) -> StreamingResponse:
+    """告警风暴根因反推：走 LangGraph 风暴判定序（四节点，SSE 流式）。
 
-    响应字段与页面兼容（rationale 保留在顶层，结论细化进 conclusion）。
+    与正向 /run 同机制：node_update 逐节点推送（步骤条联动），done 带
+    终态（字段与页面兼容：rationale 顶层保留，结论细化进 conclusion）。
     """
     okb = OkbClient()
     graph = build_storm_graph(okb)
-    result = graph.invoke(init_storm_state(
-        [{"entity": a.entity, "stable_code": a.stable_code} for a in req.alerts]))
-    root = result.get("root_cause")
-    conclusion = result.get("conclusion", {})
-    # 写入对话上下文缓存（风暴结果同样可被追问）
-    _LAST_DIAGNOSIS.clear()
-    _LAST_DIAGNOSIS.update({**result, "kind": "storm"})
-    return {
-        "independent": result["independent"],
-        "root_cause": {**root, "verify": result["verify"]} if root else None,
-        "affected_entities": result.get("affected_entities", []),
-        "alert_count": len(result.get("affected_entities", [])),
-        "rationale": conclusion.get("rationale", ""),
-        "conclusion": conclusion,
-    }
+    state = init_storm_state(
+        [{"entity": a.entity, "stable_code": a.stable_code} for a in req.alerts])
+
+    async def gen() -> AsyncIterator[str]:
+        aggregated: dict = dict(state)
+        try:
+            for chunk in graph.stream(state, stream_mode="updates"):
+                for node_name, node_out in chunk.items():
+                    if not isinstance(node_out, dict):
+                        continue
+                    yield _event("node_update", {"node": node_name, "data": node_out})
+                    aggregated.update(node_out)
+            root = aggregated.get("root_cause")
+            conclusion = aggregated.get("conclusion", {})
+            result = {
+                "independent": aggregated.get("independent", False),
+                "root_cause": {**root, "verify": aggregated.get("verify", "")} if root else None,
+                "affected_entities": aggregated.get("affected_entities", []),
+                "alert_count": len(aggregated.get("affected_entities", [])),
+                "rationale": conclusion.get("rationale", ""),
+                "conclusion": conclusion,
+            }
+            # 写入对话上下文缓存（风暴结果同样可被追问）
+            _LAST_DIAGNOSIS.clear()
+            _LAST_DIAGNOSIS.update({**aggregated, "kind": "storm"})
+            yield _event("done", result)
+        except Exception as exc:  # noqa: BLE001 - SSE 必须以 error 帧收尾
+            yield _event("error", {"message": str(exc)})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @app.get("/api/diagnosis/evidence")

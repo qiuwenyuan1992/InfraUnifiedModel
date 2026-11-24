@@ -21,14 +21,16 @@ def client():
 
 
 def test_storm_populates_chat_context(client: TestClient, monkeypatch: pytest.MonkeyPatch):
-    """跑一次风暴 → chat 不再报'尚无诊断'（改报 LLM 未配置——可区分）。"""
+    """跑一次风暴（SSE）→ chat 不再报'尚无诊断'（改报 LLM 未配置——可区分）。"""
     from diagnosis import api as api_mod
     api_mod._LAST_DIAGNOSIS.clear()
-    resp = client.post("/api/diagnosis/storm", json={"alerts": [
+    with client.stream("POST", "/api/diagnosis/storm", json={"alerts": [
         {"entity": "srv-001:psu1", "stable_code": "server.psu.input_lost"},
         {"entity": "srv-002:psu1", "stable_code": "server.psu.input_lost"},
-    ]})
-    assert resp.status_code == 200
+    ]}) as resp:
+        assert resp.status_code == 200
+        body = "".join(line for line in resp.iter_lines() if line.startswith("event:"))
+    assert "done" in body, "SSE 必须跑完（done 帧后缓存才写入）"
     for k in ("OKB_LLM_BASE_URL", "OKB_LLM_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     chat = client.post("/api/diagnosis/chat", json={"question": "根因是什么？"})

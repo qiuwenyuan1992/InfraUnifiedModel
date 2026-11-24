@@ -61,13 +61,22 @@ def test_storm_graph_independent_case(okb: OkbClient):
 
 
 def test_storm_api_uses_graph(okb: OkbClient):
-    """端点契约不变（页面字段兼容），底层走图。"""
+    """端点契约（SSE）：node_update 四节点依序 + done 带根因结果。"""
+    import json
+
     from diagnosis.api import app
 
     with TestClient(app) as client:
-        resp = client.post("/api/diagnosis/storm", json={"alerts": _alerts(3)})
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["root_cause"]["entity"] == "pdu-A1"
-        assert body["alert_count"] == 3
-        assert "节点" in body["conclusion"]["summary"] or body["conclusion"]["summary"]
+        with client.stream("POST", "/api/diagnosis/storm", json={"alerts": _alerts(3)}) as resp:
+            assert resp.status_code == 200
+            events = []
+            for line in resp.iter_lines():
+                if line.startswith("event: "):
+                    events.append([line[7:], None])
+                elif line.startswith("data: ") and events and events[-1][1] is None:
+                    events[-1][1] = json.loads(line[6:])
+        nodes = [e[1]["node"] for e in events if e[0] == "node_update"]
+        assert nodes == ["ingest_alerts", "infer_common_ancestor", "verify_against_okb", "conclude"]
+        done = [e[1] for e in events if e[0] == "done"][0]
+        assert done["root_cause"]["entity"] == "pdu-A1"
+        assert done["alert_count"] == 3

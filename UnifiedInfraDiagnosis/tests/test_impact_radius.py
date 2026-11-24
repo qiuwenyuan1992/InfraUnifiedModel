@@ -148,21 +148,29 @@ def test_storm_cross_domain_independent(okb: OkbClient):
 
 
 def test_storm_api_endpoint():
-    """/api/diagnosis/storm 端点契约：多条告警 → 根因反推结果。"""
+    """/api/diagnosis/storm 端点契约（SSE）：done 帧带根因反推结果。"""
+    import json
+
     from fastapi.testclient import TestClient
 
     from diagnosis.api import app
 
     with TestClient(app) as client:
-        resp = client.post("/api/diagnosis/storm", json={
+        with client.stream("POST", "/api/diagnosis/storm", json={
             "alerts": [
                 {"entity": "srv-001:psu1", "stable_code": "server.psu.input_lost"},
                 {"entity": "srv-002:psu1", "stable_code": "server.psu.input_lost"},
                 {"entity": "srv-003:psu1", "stable_code": "server.psu.input_lost"},
             ],
-        })
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["independent"] is False
-        assert body["root_cause"]["entity"] == "pdu-A1"
-        assert body["alert_count"] == 3
+        }) as resp:
+            assert resp.status_code == 200
+            events = []
+            for line in resp.iter_lines():
+                if line.startswith("event: "):
+                    events.append([line[7:], None])
+                elif line.startswith("data: ") and events and events[-1][1] is None:
+                    events[-1][1] = json.loads(line[6:])
+        done = [e[1] for e in events if e[0] == "done"][0]
+        assert done["independent"] is False
+        assert done["root_cause"]["entity"] == "pdu-A1"
+        assert done["alert_count"] == 3

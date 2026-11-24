@@ -36,13 +36,13 @@
           </div>
         </div>
 
-        <!-- ③ 判定序执行流（SSE 逐节点点亮） -->
+        <!-- ③ 判定序执行流（SSE 逐节点点亮；风暴时自动切换为风暴四节点） -->
         <div v-if="started" class="diag-steps">
-          <div v-for="step in STEPS" :key="step.key" class="diag-step" :class="stepState(step.key)">
+          <div v-for="step in activeSteps" :key="step" class="diag-step" :class="stepState(step)">
             <i class="diag-step-dot" />
             <div>
-              <div class="diag-step-name">{{ step.label }}</div>
-              <div class="diag-step-note">{{ stepNote(step.key) }}</div>
+              <div class="diag-step-name">{{ NODE_META[step]?.label ?? step }}</div>
+              <div class="diag-step-note">{{ NODE_META[step]?.note ?? '' }}</div>
             </div>
           </div>
         </div>
@@ -261,15 +261,20 @@ import { ArrowRight } from '@element-plus/icons-vue'
 import RunGraph from './RunGraph.vue'
 import TopologyGraph from './TopologyGraph.vue'
 
-// 判定序六节点（与 diagnosis/graphs/rack_power.py 对齐）
-const STEPS = [
-  { key: 'normalize_alert', label: '告警归一', note: 'signature → OKB lookup → 候选异常' },
-  { key: 'propagate_trace', label: '传播推演', note: '沿因果链 trace，收集 unknown 条件为待验证项' },
-  { key: 'cross_domain_hints', label: '跨域取证提示', note: 'same_event 对端（同柜/同链路另一面）' },
-  { key: 'impact_radius', label: '影响半径', note: '因果图 × 拓扑合遍历：预期告警集（需实体 ID）' },
-  { key: 'conclude', label: '结论生成', note: '主链 + 证据回链 + 待验证项' },
-  { key: 'report_feedback', label: '飞轮回写', note: '判定边 report confirmed，幂等' },
-] as const
+// 节点元数据（两张图的节点统一注册：正向判定序 6 + 风暴反推 4）
+const NODE_META: Record<string, { label: string; note: string }> = {
+  normalize_alert: { label: '告警归一', note: 'signature → OKB lookup → 候选异常' },
+  propagate_trace: { label: '传播推演', note: '沿因果链 trace，收集 unknown 条件为待验证项' },
+  cross_domain_hints: { label: '跨域取证提示', note: 'same_event 对端（同柜/同链路另一面）' },
+  impact_radius: { label: '影响半径', note: '因果图 × 拓扑合遍历：预期告警集（需实体 ID）' },
+  conclude: { label: '结论生成', note: '主链 + 证据回链 + 待验证项' },
+  report_feedback: { label: '飞轮回写', note: '判定边 report confirmed（测试模式不回写）' },
+  ingest_alerts: { label: '告警接入', note: '多告警同型分组，取最大组反推' },
+  infer_common_ancestor: { label: '公共祖先反推', note: '供电树最近公共祖先 = 疑似根因' },
+  verify_against_okb: { label: 'OKB 验证', note: 'trace 可达 / same_event 对端交叉验证' },
+}
+// 正向判定序默认序（风暴时被 SSE 实际节点序替换）
+const DEFAULT_STEPS = ['normalize_alert', 'propagate_trace', 'cross_domain_hints', 'impact_radius', 'conclude', 'report_feedback']
 
 // 测试样本（后端 /api/diagnosis/samples 实时读 samples.py）
 interface TestSample {
@@ -525,7 +530,8 @@ const stormLoading = ref('')
 async function runStorm(kind: 'pdu' | 'busbar' | 'cross') {
   stormLoading.value = kind
   result.value = null               // 互斥：切风暴清正向结果
-  started.value = false
+  started.value = true
+  doneNodes.value = []
   reconcileResult.value = null
   activeStorm.value = kind
   try {
@@ -538,13 +544,37 @@ async function runStorm(kind: 'pdu' | 'busbar' | 'cross') {
     } else {
       entities = ['srv-001:psu1', 'srv-101:psu1']
     }
+    // SSE：与正向 /run 同机制，节点逐帧点亮（步骤条联动）
     const resp = await fetch('/api/diagnosis/storm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ alerts: entities.map(e => ({ entity: e, stable_code: 'server.psu.input_lost' })) }),
     })
-    if (!resp.ok) throw new Error(`风暴诊断服务异常（HTTP ${resp.status}）`)
-    stormResult.value = await resp.json()
+    if (!resp.ok || !resp.body) throw new Error(`风暴诊断服务异常（HTTP ${resp.status}）`)
+    const reader = resp.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      let idx: number
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const frame = buf.slice(0, idx)
+        buf = buf.slice(idx + 2)
+        const evName = /^event: (.+)$/m.exec(frame)?.[1]
+        const dataRaw = /^data: (.+)$/m.exec(frame)?.[1]
+        if (!evName || !dataRaw) continue
+        const payload = JSON.parse(dataRaw)
+        if (evName === 'node_update') {
+          doneNodes.value = [...doneNodes.value, payload.node]
+        } else if (evName === 'done') {
+          stormResult.value = payload
+        } else if (evName === 'error') {
+          throw new Error(payload.message)
+        }
+      }
+    }
   } catch (e) {
     stormResult.value = null
     errorMsg.value = e instanceof Error ? e.message : String(e)
@@ -620,14 +650,19 @@ const radiusGroups = computed<Record<string, { entities: string[]; edgeId: strin
 
 function stepState(key: string): string {
   if (doneNodes.value.includes(key)) return 'done'
-  if (running.value) return 'pending'
+  if (running.value || stormLoading.value) return 'pending'
   return 'idle'
 }
 
-function stepNote(key: string): string {
-  const step = STEPS.find(s => s.key === key)
-  return step?.note ?? ''
-}
+// 步骤条动态化：收到过风暴节点序就用实际序（去重保序），否则正向默认序
+const activeSteps = computed<string[]>(() => {
+  const stormNodes = ['ingest_alerts', 'infer_common_ancestor', 'verify_against_okb', 'conclude']
+  const seen = [...new Set(doneNodes.value)]
+  if (seen.some(n => stormNodes.includes(n))) {
+    return seen.length ? seen : stormNodes
+  }
+  return DEFAULT_STEPS
+})
 
 async function run() {
   if (!alertSignature.value.trim() || running.value) return
