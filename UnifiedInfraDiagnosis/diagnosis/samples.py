@@ -29,8 +29,9 @@ ALERT_REGISTRY: dict[tuple[str, str], str] = {
 SAMPLES: list[dict] = [
     {
         "id": "sim-001",
+        "label": "服务器 PSU 输入丢失",
         "site": "langfang-a12",           # 部位：廊坊A12
-        "equipment": "server.psu",         # 部位：服务器电源
+        "equipment": "server.psu",         # 部件：服务器电源
         "fault_type": "input_lost",        # 类型：输入丢失
         "timestamp": "2026-11-21T10:00:00Z",
         "raw_text": "服务器电源模块输入丢失告警",  # 将来 LLM 语义化的输入
@@ -46,6 +47,7 @@ SAMPLES: list[dict] = [
     },
     {
         "id": "sim-002",
+        "label": "冷冻水泵故障停机",
         "site": "langfang-a12",
         "equipment": "cooling.chilled_water_pump",
         "fault_type": "fault",
@@ -61,6 +63,7 @@ SAMPLES: list[dict] = [
     },
     {
         "id": "sim-003",
+        "label": "光模块接收光功率低",
         "site": "langfang-b03",
         "equipment": "net.optical",
         "fault_type": "rx_power_abnormal",
@@ -75,6 +78,7 @@ SAMPLES: list[dict] = [
     },
     {
         "id": "sim-004",
+        "label": "GPU Xid 154 错误",
         "site": "langfang-b03",
         "equipment": "gpu",
         "fault_type": "xid_154",
@@ -90,6 +94,7 @@ SAMPLES: list[dict] = [
     },
     {
         "id": "sim-005",
+        "label": "BGP 邻居 Down",
         "site": "langfang-a12",
         "equipment": "net.bgp",
         "fault_type": "peer_down",
@@ -105,6 +110,7 @@ SAMPLES: list[dict] = [
     },
     {
         "id": "sim-006",
+        "label": "动环 PSU 故障（T30）",
         "site": "langfang-a12",
         "equipment": "power.psu",
         "fault_type": "fault",
@@ -119,6 +125,7 @@ SAMPLES: list[dict] = [
     },
     {
         "id": "sim-007",
+        "label": "硬盘介质错误（未登记）",
         "site": "unknown",
         "equipment": "storage.disk",
         "fault_type": "media_error",
@@ -132,6 +139,7 @@ SAMPLES: list[dict] = [
     },
     {
         "id": "sim-008",
+        "label": "机柜母线失电（风暴）",
         "site": "fixture-pod-a",
         "equipment": "power.busbar",
         "fault_type": "input_lost",

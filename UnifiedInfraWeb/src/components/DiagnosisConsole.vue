@@ -5,20 +5,21 @@
       <div class="diag-section">
         <div class="diag-section-title">测试样本集（{{ samples.length }} 条，来自 samples.py）</div>
         <el-table :data="samples" size="small" class="diag-sample-table" @row-click="applySample">
-          <el-table-column prop="id" label="ID" width="76" />
-          <el-table-column label="部位 + 类型" min-width="210">
-            <template #default="{ row }"><span class="mono">{{ row.equipment }} · {{ row.fault_type }}</span></template>
+          <el-table-column label="故障场景（设备 · 故障）" min-width="230">
+            <template #default="{ row }">
+              <div class="diag-sample-label">{{ row.label }}</div>
+              <div class="muted diag-sample-sub mono">{{ deviceOf(row) }} · {{ faultOf(row) }}</div>
+            </template>
           </el-table-column>
-          <el-table-column prop="signature" label="归一 signature" min-width="200">
+          <el-table-column label="归一 signature" min-width="190">
             <template #default="{ row }"><span class="mono">{{ row.signature }}</span></template>
           </el-table-column>
-          <el-table-column label="期望分支" min-width="110">
+          <el-table-column label="期望分支" width="100">
             <template #default="{ row }">
               <el-tag size="small" :type="expectedTone(row.expected)">{{ expectedLabel(row.expected) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="raw_text" label="原始文本" min-width="170" show-overflow-tooltip />
-          <el-table-column width="70" align="center">
+          <el-table-column width="60" align="center">
             <template #default><el-button link type="primary" size="small">诊断</el-button></template>
           </el-table-column>
         </el-table>
@@ -167,6 +168,7 @@ const STEPS = [
 // 测试样本（后端 /api/diagnosis/samples 实时读 samples.py）
 interface TestSample {
   id: string
+  label: string
   site: string
   equipment: string
   fault_type: string
@@ -217,6 +219,29 @@ function expectedTone(exp: Record<string, unknown>): 'success' | 'info' | 'warni
 function applySample(row: TestSample) {
   alertSignature.value = row.signature
   entityId.value = row.entity ?? ''
+}
+
+// 设备的可读位置：fixture 实体（具体设备）优先，否则站点
+function deviceOf(row: TestSample): string {
+  return row.entity ?? row.site
+}
+
+// 部件的中文可读名（编码 → 领域语言）
+const EQUIPMENT_NAMES: Record<string, string> = {
+  'server.psu': '服务器电源',
+  'power.psu': '动环电源',
+  'power.battery': 'UPS 电池',
+  'power.busbar': '机柜母线',
+  'cooling.chilled_water_pump': '冷冻水泵',
+  'net.optical': '光模块',
+  'net.bgp': 'BGP 会话',
+  'net.link': '网络链路',
+  'gpu': 'GPU',
+  'storage.disk': '硬盘',
+}
+
+function faultOf(row: TestSample): string {
+  return EQUIPMENT_NAMES[row.equipment] ?? row.equipment
 }
 
 // 诊断结果结构（与 diagnosis/api.py done 事件对齐）
@@ -328,6 +353,8 @@ async function run() {
 .diag-input { max-width: 320px; }
 .diag-input-entity { max-width: 220px; }
 .diag-sample-table { cursor: pointer; }
+.diag-sample-label { font-weight: 600; font-size: 13px; }
+.diag-sample-sub { font-size: 11px; }
 .diag-topo-group { margin-bottom: 8px; }
 .diag-topo-label { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
 .diag-topo-edges { display: flex; flex-direction: column; gap: 2px; }
