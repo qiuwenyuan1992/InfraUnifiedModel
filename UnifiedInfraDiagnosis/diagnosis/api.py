@@ -352,6 +352,10 @@ async def agui_diagnosis(input_data: dict) -> StreamingResponse:
             return
         if final.get("pruned"):
             q.put(enc.encode(CustomEvent(name="pruned", value=final["pruned"])))
+        # 结论拓扑：结构化传播链（起始码/首轮全链/剪枝分支/取证事实）——前端图渲染数据源
+        q.put(enc.encode(CustomEvent(name="conclusion_graph", value={
+            "code": final.get("code", ""), "chain": final.get("chain", []),
+            "pruned": final.get("pruned", []), "facts": final.get("facts", {})})))
         msg_id = str(uuid.uuid4())
         summary = final.get("conclusion", {}).get("summary", "")
         q.put(enc.encode(TextMessageStartEvent(message_id=msg_id, role="assistant")))

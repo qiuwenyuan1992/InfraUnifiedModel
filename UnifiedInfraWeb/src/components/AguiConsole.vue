@@ -49,10 +49,30 @@
           <el-tag v-for="p in pruned" :key="p" type="danger" class="mono agui-pruned">{{ p }} ✕已剪枝</el-tag>
         </div>
 
-        <!-- 结论（TEXT_MESSAGE 事件族） -->
-        <div class="agui-section" v-if="answer || streamingAnswer">
-          <div class="agui-section-title">结论（TEXT_MESSAGE 事件族）</div>
-          <div class="agui-answer">{{ answer || streamingAnswer }}<span v-if="streamingAnswer" class="agui-cursor" /></div>
+        <!-- 结论拓扑（CUSTOM conclusion_graph → 图渲染） -->
+        <div class="agui-section" v-if="conclusionGraph">
+          <div class="agui-section-title">结论拓扑（CUSTOM conclusion_graph）</div>
+          <div class="cg-chain">
+            <template v-for="(hop, i) in cgNodes" :key="i">
+              <div class="cg-node" :class="{ pruned: cgPruned.includes(hop) }">
+                <span class="cg-node-tag">{{ i === 0 ? '起始' : (cgPruned.includes(hop) ? '已剪枝' : '传播') }}</span>
+                <span class="mono cg-node-code">{{ hop }}</span>
+              </div>
+              <span v-if="i < cgNodes.length - 1" class="cg-arrow"
+                :class="{ ghost: cgPruned.includes(hop) }">→</span>
+            </template>
+            <span v-if="!cgNodes.length" class="muted">无传播链（未登记或无映射）</span>
+          </div>
+          <div v-if="cgSurviving.length" class="cg-verdict">
+            <el-tag type="danger" size="small">存活传播：{{ cgSurviving.join(' → ') }}</el-tag>
+          </div>
+          <div v-else class="cg-verdict">
+            <el-tag type="success" size="small">全链剪除：无进一步级联</el-tag>
+          </div>
+          <div v-if="Object.keys(conclusionGraph.facts).length" class="cg-facts">
+            <el-tag v-for="(v, k) in conclusionGraph.facts" :key="k" size="small" type="info" class="mono">取证 {{ k }} = {{ v }}</el-tag>
+          </div>
+          <div v-if="answer" class="muted agui-summary-note">{{ answer }}</div>
         </div>
 
         <el-alert v-if="error" :title="error" type="error" :closable="false" />
@@ -106,6 +126,21 @@ const toolCalls = ref<ToolCallUi[]>([])
 const pruned = ref<string[]>([])
 const answer = ref('')
 const streamingAnswer = ref('')
+// 结论拓扑：code（起始异常）→ chain（首轮全链）；pruned 分支红虚线幽灵节点
+const conclusionGraph = ref<{ code: string; chain: string[]; pruned: string[]; facts: Record<string, string> } | null>(null)
+
+const cgNodes = computed(() => {
+  const g = conclusionGraph.value
+  if (!g) return []
+  return [...new Set([g.code, ...g.chain].filter(Boolean))]
+})
+const cgPruned = computed(() => conclusionGraph.value?.pruned ?? [])
+const cgSurviving = computed(() => {
+  const g = conclusionGraph.value
+  if (!g) return []
+  // 多链扁平化去重保序（同一 hop 多条链出现只展示一次）
+  return [...new Set(g.chain.filter(h => !g.pruned.includes(h)))]
+})
 
 const topo = ref<{ entities: Record<string, string>; power_edges: string[][]; link_edges: string[][]; containment_edges: string[][] } | null>(null)
 const highlight = ref<{ root: string; examined: string[]; evidence: string[] }>({ root: '', examined: [], evidence: [] })
@@ -155,6 +190,7 @@ async function run() {
   pruned.value = []
   answer.value = ''
   streamingAnswer.value = ''
+  conclusionGraph.value = null
   highlight.value = { root: entityId.value.trim(), examined: [], evidence: [] }
   try {
     // HttpAgent 参数不含 state——每次 run 用 initialState 新建（AG-UI 状态在 agent 侧）
@@ -195,6 +231,8 @@ async function run() {
             }
           } else if (event.name === 'pruned') {
             pruned.value = event.value as string[]
+          } else if (event.name === 'conclusion_graph') {
+            conclusionGraph.value = event.value as { code: string; chain: string[]; pruned: string[]; facts: Record<string, string> }
           }
         },
         onTextMessageContentEvent: ({ event }) => {
@@ -242,8 +280,19 @@ async function run() {
 .agui-spin { color: #67c23a; animation: agui-blink 1s steps(2) infinite; }
 @keyframes agui-blink { 50% { opacity: 0; } }
 .agui-pruned { margin: 2px; }
-.agui-answer { font-size: 13px; line-height: 1.6; padding: 8px 10px; background: #f5f7fa; border-radius: 8px; }
-.agui-cursor { display: inline-block; width: 6px; height: 14px; background: #409eff; margin-left: 2px;
-  vertical-align: text-bottom; animation: agui-blink 1s steps(2) infinite; }
+.cg-chain { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+.cg-node { border: 1.5px solid #409eff; border-radius: 8px; padding: 4px 10px; background: #ecf5ff; min-width: 90px; }
+.cg-node .cg-node-tag { display: block; font-size: 10px; color: #409eff; margin-bottom: 1px; }
+.cg-node .cg-node-code { font-size: 11px; color: #303133; }
+.cg-node.pruned { border: 1.5px dashed #f56c6c; background: #fef0f0; opacity: 0.75; }
+.cg-node.pruned .cg-node-tag { color: #f56c6c; }
+.cg-node.pruned .cg-node-code { text-decoration: line-through; color: #909399; }
+.cg-arrow { color: #409eff; font-weight: bold; }
+.cg-arrow.ghost { color: #f56c6c; }
+.cg-verdict { margin: 4px 0; }
+.cg-verdict :deep(.el-tag) { height: auto; white-space: normal; }
+.cg-verdict :deep(.el-tag .el-tag__content) { display: inline; }
+.cg-facts { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.agui-summary-note { font-size: 12px; line-height: 1.5; border-top: 1px dashed #e4e9f0; padding-top: 8px; margin-top: 4px; }
 .agui-topo-note { font-size: 11px; margin-top: 6px; }
 </style>

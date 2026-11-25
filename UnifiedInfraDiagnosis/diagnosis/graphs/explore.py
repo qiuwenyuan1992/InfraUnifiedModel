@@ -314,11 +314,14 @@ def run_explore(signature: str, entity_id: str, okb: OkbClient, llm, emit: Calla
         try:
             final = _run("llm")
             return {"conclusion": {"summary": final.get("conclusion", "")},
-                    "pruned": final.get("pruned", []), "facts": final.get("facts", {}), "llm": True}
+                    "pruned": final.get("pruned", []), "facts": final.get("facts", {}),
+                    "code": final.get("code", ""), "chain": final.get("hops_first", []),
+                    "llm": True}
         except Exception as exc:  # noqa: BLE001 - LLM 失败降级规则路径
             emit("step", {"index": 0, "tool": "degraded", "args": {},
                           "result": {"reason": str(exc)},
                           "thought": "LLM agent 失败，降级规则路径", "topo": {}})
     final = _run("rule")
     return {"conclusion": {"summary": final.get("conclusion", "")},
-            "pruned": final.get("pruned", []), "facts": final.get("facts", {})}
+            "pruned": final.get("pruned", []), "facts": final.get("facts", {}),
+            "code": final.get("code", ""), "chain": final.get("hops_first", [])}

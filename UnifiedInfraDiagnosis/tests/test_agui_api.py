@@ -75,6 +75,34 @@ def test_agui_event_sequence(client: TestClient, monkeypatch: pytest.MonkeyPatch
     assert pruned_ev and "server.sys.crash.unexpected" in pruned_ev[0]["value"]
 
 
+def test_agui_conclusion_graph(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """结论拓扑：CUSTOM conclusion_graph 携带结构化传播链（code/chain/pruned/facts）。
+
+    用母线失电场景（双 PDU 全失 → 宕机分支无冗余可剪，存活链非空）；
+    PSU 场景单跳全剪属"无级联"结论，另断言。
+    """
+    with client.stream("POST", "/api/diagnosis/agui", json={
+        "threadId": "t-cg", "runId": "r-cg",
+        "state": {"alert_signature": "ALERT-BUSBAR-INPUT-LOST", "entity_id": "busbar-A"},
+    }) as resp:
+        events = _parse_sse(resp.iter_lines())
+    cg = [e for e in events if e["type"] == "CUSTOM" and e["name"] == "conclusion_graph"]
+    assert cg, "必须发 conclusion_graph CUSTOM 事件"
+    v = cg[0]["value"]
+    assert v["code"] == "power.rack.busbar.input_lost", "起始异常码"
+    surviving = [h for h in v["chain"] if h not in v["pruned"]]
+    assert surviving, f"母线失电应有存活传播链: {v}"
+    assert v["facts"], "取证事实"
+
+    # PSU 场景：冗余正常 → 全链剪除（无级联结论）
+    events = _run_agui(client, monkeypatch)
+    v2 = [e for e in events if e["type"] == "CUSTOM" and e["name"] == "conclusion_graph"][0]["value"]
+    assert v2["code"] == "server.psu.input_lost"
+    assert "server.sys.crash.unexpected" in v2["pruned"]
+    assert [h for h in v2["chain"] if h not in v2["pruned"]] == [], "单跳全剪=无级联"
+    assert v2["facts"].get("psu_redundancy") == "ok"
+
+
 def test_agui_run_ids_consistent(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     """thread_id/run_id 回传客户端会话语义（RunStarted/Finished 一致）。"""
     events = _run_agui(client, monkeypatch)
