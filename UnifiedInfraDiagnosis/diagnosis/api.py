@@ -20,8 +20,9 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from diagnosis.graphs.judge_graph import build_graph, diagnose, init_state
-from diagnosis.graphs.storm_graph import build_storm_graph, init_storm_state
+from diagnosis.graphs.unified_graph import build_unified_graph
+from diagnosis.graphs.judge_graph import diagnose, init_state
+from diagnosis.graphs.storm_graph import init_storm_state
 from diagnosis.samples import SAMPLES, normalize
 from diagnosis.tools.inventory import FixtureInventory
 from diagnosis.tools.llm import LlmClient, SYSTEM_PROMPT, build_diagnosis_context
@@ -58,7 +59,7 @@ async def run_diagnosis(req: DiagnoseRequest) -> StreamingResponse:
     - error       {message}                  未命中/异常（终态）
     """
     okb = OkbClient()
-    graph = build_graph(okb)
+    graph = build_unified_graph(okb)   # 合图：ingest 条件路由（1 条走正向分支）
     signature = req.alert_signature
     if req.equipment and req.fault_type:
         # 告警原生形态（部位+类型）→ 归一；未登记组合走人工路径（不编造）
@@ -140,13 +141,13 @@ class StormRequest(BaseModel):
 
 @app.post("/api/diagnosis/storm")
 async def storm_diagnosis(req: StormRequest) -> StreamingResponse:
-    """告警风暴根因反推：走 LangGraph 风暴判定序（四节点，SSE 流式）。
+    """告警风暴根因反推：走合图风暴分支（N 条告警条件路由，SSE 流式）。
 
-    与正向 /run 同机制：node_update 逐节点推送（步骤条联动），done 带
-    终态（字段与页面兼容：rationale 顶层保留，结论细化进 conclusion）。
+    与正向 /run 同一张图（unified_graph）：ingest 按告警条数路由到风暴
+    分支；node_update 逐节点推送（步骤条联动），done 带终态。
     """
     okb = OkbClient()
-    graph = build_storm_graph(okb)
+    graph = build_unified_graph(okb)
     state = init_storm_state(
         [{"entity": a.entity, "stable_code": a.stable_code} for a in req.alerts])
 
@@ -192,13 +193,19 @@ async def evidence(ref: str) -> dict:
 async def langgraph_mermaid(which: str = "judge") -> dict:
     """LangGraph 运行图（mermaid 语法）：which=judge 正向判定序 / storm 风暴反推。"""
     okb = OkbClient()
-    graph = build_storm_graph(okb) if which == "storm" else build_graph(okb)
+    # 合图：judge/storm 是同一张图的两个分支（which 选分支节点序返回）
+    graph = build_unified_graph(okb)
     try:
         mermaid = graph.get_graph().draw_mermaid()
     except Exception as exc:  # noqa: BLE001 - draw 失败降级为节点清单
         mermaid = ""
     nodes = ["__start__"] + [n for n in graph.nodes] + ["__end__"] if mermaid else list(graph.nodes)
-    return {"which": which, "mermaid": mermaid, "nodes": nodes}
+    branches = {
+        "judge": ["normalize_alert", "propagate_trace", "cross_domain_hints", "impact_radius", "conclude", "report_feedback"],
+        "storm": ["ingest_alerts", "infer_common_ancestor", "verify_against_okb", "conclude", "report_feedback"],
+    }
+    return {"which": which, "mermaid": mermaid, "nodes": nodes,
+            "branch": branches.get(which, [])}
 
 
 class ExploreRequest(BaseModel):

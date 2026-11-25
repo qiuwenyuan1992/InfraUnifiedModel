@@ -1,24 +1,23 @@
-"""探索式诊断：Agent 用工具查数据，过程逐事件可视化。
+"""探索式诊断：LangGraph 图驱动的 Agent 工具调用回路（过程可视化）。
 
-用户需求（2026-11-24）：把"大模型怎么查数据"在前端拓扑上动态呈现，
-含剪枝后的图。核心设计：
+收编（2026-11-24 合图重构一并完成）：此前 LLM 回路是裸 while 循环——
+违背"编排归 LangGraph"的模块纪律。现为 decide ⇄ execute 图回路：
 
-- **工具层=现有抽象**：lookup/trace/evidence 走 OkbClient（REST 四原语），
-  verify_fact/query_topology 走 InventoryPort——未来对接真实数据源
-  （cloudbee 告警流 / UnifiedInfraTopology）换实现零改接口。
-- **验证循环闭环**：trace 遇 pending → verify_fact 从拓扑取证（两张图
-  合起来的落点）→ 带 facts 重 trace → 条件不满足的边不可走（剪枝）。
-- **LLM agent 可选**：配置网关走 OpenAI tools 协议回路（模型自主决定
-  查什么）；未配置/失败降级为规则 agent（固定序，相同事件流）——
-  AGENTS 降级纪律。
-- 事件流（SSE）：step（每次工具调用：tool/args/result/thought/topo 动作）
-  → done（conclusion/pruned/facts）→ error。
+    decide（决策：LLM 模式调网关 tools 协议 / 规则模式状态机）
+      ├─ 有工具调用 → execute（执行工具、emit step 事件、更新状态）→ decide
+      └─ 终答/完成 → END
+
+工具层背靠既有抽象（OkbClient 四原语 + InventoryPort），未来对接真实
+数据源换实现零改接口。验证循环：trace 遇 pending → verify_fact 从拓扑
+取证 → facts 重 trace → 条件不满足的边不可走（剪枝）。
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from typing import Any, Callable, TypedDict
+
+from langgraph.graph import END, StateGraph
 
 from diagnosis.tools.inventory import FixtureInventory
 from diagnosis.tools.okb import OkbClient
@@ -83,11 +82,10 @@ EXPLORE_SYSTEM = """你是基础设施诊断 Agent。你只能通过提供的工
 def _resolve_fact(fact_key: str, entity_id: str, inv: FixtureInventory) -> dict:
     """从拓扑实例解析待验证条件——两张图合起来的落点。
 
-    psu_redundancy：查实体（服务器）的双路供电——冗余侧 PSU 及其上游
-    PDU 仍然在图（= 在网）即冗余未失。证据实体返回供前端点亮。
+    psu_redundancy：查实体（服务器）的冗余侧 PSU（命名约定 entity:psu2）
+    及其上游 PDU 仍在网（= 在图）即冗余未失。证据实体返回供前端点亮。
     """
     if fact_key == "psu_redundancy" and entity_id:
-        # 冗余侧 PSU（命名约定 entity:psu*）及其上游 PDU 仍在网 = 冗余未失
         snapshot = inv.snapshot()
         psu2 = f"{entity_id}:psu2"
         psu2_exists = psu2 in snapshot["entities"]
@@ -140,105 +138,187 @@ def _build_tools(okb: OkbClient, inv: FixtureInventory) -> dict[str, Callable]:
                                     query_topology, get_evidence, submit_conclusion)}
 
 
-# ---------------------------------------------------------------- 规则 agent（降级路径）
-def _rule_agent(signature: str, entity_id: str, tools: dict, emit: Callable) -> dict:
-    """固定序降级：lookup → trace → verify（每个 pending）→ re-trace → conclude。"""
-    idx = 0
+# ---------------------------------------------------------------- 图状态
+class ExploreState(TypedDict, total=False):
+    """探索回路状态：decide 写 calls/finished，execute 执行并累积事实。"""
 
-    def step(tool: str, args: dict, result: dict, thought: str, topo: dict) -> None:
-        nonlocal idx
-        idx += 1
-        emit("step", {"index": idx, "tool": tool, "args": args, "result": result,
-                      "thought": thought, "topo": topo})
-
-    step("lookup_alert", {"signature": signature}, tools["lookup_alert"](signature=signature),
-         "规则路径：归一告警", {"examined": [entity_id] if entity_id else []})
-    lookup = tools["lookup_alert"](signature=signature)
-    cands = lookup.get("candidates", [])
-    if not cands:
-        emit("error", {"message": f"告警 {signature} 未登记（lookup 无候选）——走人工登记路径"})
-        return {"conclusion": {"summary": f"未登记告警：{signature}"}, "pruned": [], "facts": {}}
-    code = cands[0]["stable_code"]
-
-    tr1 = tools["trace_causal"](code=code)
-    hops1 = [h for chain in tr1["chains"] for h in chain]
-    step("trace_causal", {"code": code}, tr1, "因果推演（未带事实，可能性链）",
-         {"examined": [entity_id] if entity_id else []})
-
-    facts: dict[str, str] = {}
-    for fk in tr1["pending_checks"]:
-        vf = tools["verify_fact"](fact_key=fk, entity_id=entity_id)
-        facts[fk] = vf["value"]
-        step("verify_fact", {"fact_key": fk, "entity_id": entity_id}, vf,
-             f"取证 {fk}（拓扑实例解析）", {"evidence": vf.get("evidence_entities", [])})
-
-    if facts:
-        tr2 = tools["trace_causal"](code=code, facts=facts)
-        hops2 = {h for chain in tr2["chains"] for h in chain}
-        pruned = [h for h in hops1 if h not in hops2]
-        step("trace_causal", {"code": code, "facts": facts},
-             {**tr2, "pruned": pruned}, "带事实重推演——条件不满足的边被剪枝",
-             {"pruned_hint": pruned})
-    else:
-        tr2, pruned = tr1, []
-
-    if pruned:
-        summary = (f"{code}：取证 {facts} 后，{('、'.join(pruned))} 分支被剪枝——"
-                   f"结论收窄为无进一步级联（降级运行/无传播）")
-    elif hops1:
-        summary = f"{code}：沿因果链可发展到 {hops1[-1]}（待验证项 {tr1['pending_checks'] or '无'}）"
-    else:
-        summary = f"{code}：图上无因果出边（叶子/知识空白）"
-    step("submit_conclusion", {"summary": summary}, {"accepted": True},
-         "提交结论", {"examined": [entity_id] if entity_id else []})
-    return {"conclusion": {"summary": summary}, "pruned": pruned, "facts": facts}
+    signature: str
+    entity_id: str
+    mode: str                    # "llm" | "rule"
+    # LLM 模式
+    messages: list[dict]
+    last_reasoning: str
+    # 回路控制
+    calls: list[dict]
+    finished: bool
+    idx: int
+    steps_done: list[str]
+    # 累积事实与结论
+    facts: dict[str, str]
+    code: str
+    hops_first: list[str]
+    pending_facts: list[str]
+    pruned: list[str]
+    conclusion: str
+    unmapped: bool
 
 
-# ---------------------------------------------------------------- LLM agent（tools 协议回路）
-def _llm_agent(signature: str, entity_id: str, tools: dict, llm, emit: Callable,
-               max_iterations: int = 8) -> dict:
-    """模型自主决定查什么：OpenAI tools 协议回路，事件流与规则路径同构。"""
-    messages = [{"role": "system", "content": EXPLORE_SYSTEM},
-                {"role": "user", "content": f"诊断告警 {signature}，实体 {entity_id or '未指定'}。"}]
-    idx = 0
-    for _ in range(max_iterations):
-        msg = llm.chat_messages(messages, tools=TOOL_SPECS)
-        tool_calls = msg.get("tool_calls") or []
-        if not tool_calls:
-            return {"conclusion": {"summary": msg.get("content", "")}, "pruned": [],
-                    "facts": {}, "llm": True}
-        messages.append({"role": "assistant", "content": msg.get("content", ""),
-                          "tool_calls": tool_calls})
-        for tc in tool_calls:
-            name = tc["function"]["name"]
-            try:
-                args = json.loads(tc["function"].get("arguments") or "{}")
-            except ValueError:
-                args = {}
+def _parse_call(tc: dict) -> tuple[str, dict]:
+    name = tc["function"]["name"]
+    try:
+        args = json.loads(tc["function"].get("arguments") or "{}")
+    except ValueError:
+        args = {}
+    return name, args
+
+
+def _topo_action(name: str, args: dict, result: dict, entity_id: str) -> dict:
+    if name == "lookup_alert" and entity_id:
+        return {"examined": [entity_id]}
+    if name == "verify_fact":
+        return {"evidence": result.get("evidence_entities", [])}
+    return {}
+
+
+# ---------------------------------------------------------------- decide / execute 节点
+def build_explore_graph(okb: OkbClient, llm: Any, tools: dict, emit: Callable,
+                        mode: str) -> Any:
+    """装配探索回路：decide ⇄ execute（条件循环，LLM/规则同构）。"""
+
+    def decide(state: ExploreState) -> dict:
+        if state.get("finished"):
+            return {}
+        if state.get("unmapped"):
+            return {"finished": True}  # 未登记：已 emit error，直接收束
+        if mode == "llm":
+            msg = llm.chat_messages(state["messages"], tools=TOOL_SPECS)
+            tool_calls = msg.get("tool_calls") or []
+            reasoning = msg.get("reasoning_content", "")
+            if not tool_calls:
+                return {"finished": True, "conclusion": msg.get("content", ""),
+                        "messages": state["messages"] + [
+                            {"role": "assistant", "content": msg.get("content", "")}]}
+            return {"calls": tool_calls, "last_reasoning": reasoning or "",
+                    "messages": state["messages"] + [
+                        {"role": "assistant", "content": msg.get("content", ""),
+                         "tool_calls": tool_calls}]}
+        # ---- 规则模式状态机（降级路径，与拆分版行为一致） ----
+        tools_done = list(state.get("steps_done", []))
+        sig, ent = state["signature"], state.get("entity_id", "")
+        def call(name: str, args: dict) -> dict:
+            return {"id": f"r{state.get('idx', 0)}", "type": "function",
+                    "function": {"name": name, "arguments": json.dumps(args)}}
+        if "lookup_alert" not in tools_done:
+            return {"calls": [call("lookup_alert", {"signature": sig})]}
+        if "trace_causal" not in tools_done:
+            return {"calls": [call("trace_causal", {"code": state["code"]})]}
+        # 逐个取证 pending（未验证的）
+        for fk in state.get("pending_facts", []):
+            if fk not in state.get("facts", {}):
+                return {"calls": [call("verify_fact", {"fact_key": fk, "entity_id": ent})]}
+        if state.get("facts") and tools_done.count("trace_causal") < 2:
+            return {"calls": [call("trace_causal", {"code": state["code"], "facts": state["facts"]})]}
+        # 结论（与拆分版同文案）——finished 由 execute 执行 submit 后设置
+        hops1 = state.get("hops_first", [])
+        pruned = state.get("pruned", [])
+        pend = state.get("pending_facts", [])
+        if pruned:
+            summary = (f"{state['code']}：取证 {state['facts']} 后，{('、'.join(pruned))} 分支被剪枝——"
+                       f"结论收窄为无进一步级联（降级运行/无传播）")
+        elif hops1:
+            summary = f"{state['code']}：沿因果链可发展到 {hops1[-1]}（待验证项 {pend or '无'}）"
+        else:
+            summary = f"{state['code']}：图上无因果出边（叶子/知识空白）"
+        return {"calls": [call("submit_conclusion", {"summary": summary})]}
+
+    def execute(state: ExploreState) -> dict:
+        if state.get("finished"):
+            return {}
+        out: dict[str, Any] = {"calls": []}
+        idx = state.get("idx", 0)
+        steps_done = list(state.get("steps_done", []))
+        entity_id = state.get("entity_id", "")
+        for tc in state.get("calls", []):
+            name, args = _parse_call(tc)
             fn = tools.get(name)
             result = fn(**args) if fn else {"error": f"未知工具 {name}"}
             idx += 1
-            topo: dict = {}
-            if name == "lookup_alert" and entity_id:
-                topo = {"examined": [entity_id]}
-            elif name == "verify_fact":
-                topo = {"evidence": result.get("evidence_entities", [])}
+            steps_done.append(name)
             emit("step", {"index": idx, "tool": name, "args": args, "result": result,
-                          "thought": msg.get("reasoning_content", ""), "topo": topo})
-            messages.append({"role": "tool", "tool_call_id": tc.get("id", ""),
+                          "thought": state.get("last_reasoning", ""),
+                          "topo": _topo_action(name, args, result, entity_id)})
+            # 状态积累（两模式共用）
+            if name == "lookup_alert":
+                cands = result.get("candidates", [])
+                if not cands:
+                    emit("error", {"message": f"告警 {state['signature']} 未登记（lookup 无候选）——走人工登记路径"})
+                    out.update({"unmapped": True, "finished": True,
+                                "conclusion": f"未登记告警：{state['signature']}"})
+                else:
+                    out["code"] = cands[0]["stable_code"]
+            elif name == "trace_causal":
+                hops = [h for chain in result.get("chains", []) for h in chain]
+                if not state.get("hops_first"):
+                    out["hops_first"] = hops
+                    out["pending_facts"] = result.get("pending_checks", [])
+                else:
+                    second = set(hops)
+                    out["pruned"] = [h for h in state["hops_first"] if h not in second]
+            elif name == "verify_fact":
+                facts = dict(state.get("facts", {}))
+                facts[result["fact_key"]] = result["value"]
+                out["facts"] = facts
+            elif name == "submit_conclusion":
+                out.update({"finished": True, "conclusion": args.get("summary", "")})
+            if mode == "llm":
+                msgs = list(out.get("messages", state.get("messages", [])))
+                msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""),
                              "content": json.dumps(result, ensure_ascii=False)[:2000]})
-    return {"conclusion": {"summary": "达到最大工具调用轮数，强制收束"}, "pruned": [], "facts": {}}
+                out["messages"] = msgs
+        out["idx"] = idx
+        out["steps_done"] = steps_done
+        return out
+
+    # steps_done 不进 TypedDict 展示（内部协议字段）——用 total=False 动态键
+    g = StateGraph(ExploreState)
+    g.add_node("decide", decide)
+    g.add_node("execute", execute)
+    g.set_entry_point("decide")
+    g.add_conditional_edges("decide", lambda s: "execute" if s.get("calls") and not s.get("finished") else END)
+    g.add_edge("execute", "decide")
+    return g.compile()
 
 
 def run_explore(signature: str, entity_id: str, okb: OkbClient, llm, emit: Callable) -> dict:
-    """探索式诊断入口：LLM agent 优先，异常降级规则 agent（同事件流）。"""
-    inv = FixtureInventory()
-    tools = _build_tools(okb, inv)
-    if llm is not None and llm.available():
+    """探索式诊断入口：LLM 模式优先，异常降级规则模式（同事件流）。"""
+    tools = _build_tools(okb, FixtureInventory())
+    mode = "llm" if (llm is not None and llm.available()) else "rule"
+
+    def _init() -> ExploreState:
+        state: ExploreState = {"signature": signature, "entity_id": entity_id, "mode": mode,
+                               "calls": [], "finished": False, "idx": 0,
+                               "facts": {}, "code": "", "hops_first": [],
+                               "pending_facts": [], "pruned": [], "conclusion": "",
+                               "steps_done": []}
+        if mode == "llm":
+            state["messages"] = [
+                {"role": "system", "content": EXPLORE_SYSTEM},
+                {"role": "user", "content": f"诊断告警 {signature}，实体 {entity_id or '未指定'}。"}]
+        return state
+
+    def _run(m: str) -> dict:
+        graph = build_explore_graph(okb, llm, tools, emit, m)
+        return graph.invoke(_init(), config={"recursion_limit": 40})
+
+    if mode == "llm":
         try:
-            return _llm_agent(signature, entity_id, tools, llm, emit)
+            final = _run("llm")
+            return {"conclusion": {"summary": final.get("conclusion", "")},
+                    "pruned": final.get("pruned", []), "facts": final.get("facts", {}), "llm": True}
         except Exception as exc:  # noqa: BLE001 - LLM 失败降级规则路径
             emit("step", {"index": 0, "tool": "degraded", "args": {},
                           "result": {"reason": str(exc)},
                           "thought": "LLM agent 失败，降级规则路径", "topo": {}})
-    return _rule_agent(signature, entity_id, tools, emit)
+    final = _run("rule")
+    return {"conclusion": {"summary": final.get("conclusion", "")},
+            "pruned": final.get("pruned", []), "facts": final.get("facts", {})}

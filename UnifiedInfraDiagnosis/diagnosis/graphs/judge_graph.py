@@ -198,7 +198,8 @@ def report_feedback(okb: OkbClient):
     def node(state: PowerOutageState) -> dict:
         if state.get("error") or not state.get("report_enabled", True):
             return {"reported": False}
-        chains = state["trace_result"].get("chains", [])
+        # 合图共享节点：风暴分支无 trace_result（如实不回写）
+        chains = (state.get("trace_result") or {}).get("chains", [])
         if not chains:
             return {"reported": False}
         # 判定未验证（存在 unknown 待取证项）不回写：只回写已确证的判定

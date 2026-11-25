@@ -84,15 +84,18 @@ def test_chat_returns_reasoning(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_langgraph_mermaid_endpoint(client: TestClient):
-    """LangGraph 运行图：mermaid 语法 + 节点清单（可视化数据源）。"""
+    """LangGraph 运行图（合图）：mermaid + 节点清单 + 分支序（可视化数据源）。"""
     resp = client.get("/api/diagnosis/graph", params={"which": "judge"})
     assert resp.status_code == 200
     body = resp.json()
     assert "normalize_alert" in body["nodes"]
     assert "report_feedback" in body["nodes"]
     assert body["mermaid"], "mermaid 语法必须生成"
+    # 合图两分支共享 conclude 与 report_feedback
+    assert body["branch"] == ["normalize_alert", "propagate_trace", "cross_domain_hints",
+                             "impact_radius", "conclude", "report_feedback"]
     resp2 = client.get("/api/diagnosis/graph", params={"which": "storm"})
-    assert "infer_common_ancestor" in resp2.json()["nodes"]
+    assert "infer_common_ancestor" in resp2.json()["branch"]
 
 
 def test_system_prompt_has_evidence_discipline():

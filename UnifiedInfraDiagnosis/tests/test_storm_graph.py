@@ -76,7 +76,9 @@ def test_storm_api_uses_graph(okb: OkbClient):
                 elif line.startswith("data: ") and events and events[-1][1] is None:
                     events[-1][1] = json.loads(line[6:])
         nodes = [e[1]["node"] for e in events if e[0] == "node_update"]
-        assert nodes == ["ingest_alerts", "infer_common_ancestor", "verify_against_okb", "conclude"]
+        # 合图风暴分支节点序（共享 conclude 与 report_feedback 出口）
+        assert nodes == ["ingest_alerts", "infer_common_ancestor",
+                         "verify_against_okb", "conclude", "report_feedback"]
         done = [e[1] for e in events if e[0] == "done"][0]
         assert done["root_cause"]["entity"] == "pdu-A1"
         assert done["alert_count"] == 3
