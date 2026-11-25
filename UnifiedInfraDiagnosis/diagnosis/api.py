@@ -248,6 +248,108 @@ async def explore_diagnosis(req: ExploreRequest) -> StreamingResponse:
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+class AguiRequest(BaseModel):
+    """兼容直连调用（非 @ag-ui/client）时的简化入参。"""
+    alert_signature: str
+    entity_id: str = ""
+
+
+@app.post("/api/diagnosis/agui/simple")
+async def agui_diagnosis_simple(req: AguiRequest) -> StreamingResponse:
+    """AG-UI 端点的简化入参形态（signature 直传）。"""
+    return await agui_diagnosis({"state": {
+        "alert_signature": req.alert_signature, "entity_id": req.entity_id}})
+
+
+@app.post("/api/diagnosis/agui")
+async def agui_diagnosis(input_data: dict) -> StreamingResponse:
+    """AG-UI 协议端点（新页面试点）：探索式诊断 → AG-UI 1.0 标准事件流。
+
+    标准入参 RunAgentInput（@ag-ui/client 的 HttpAgent 自动生成）：
+    thread_id/run_id 回传（客户端会话语义）、state{alert_signature,
+    entity_id} 或末条 user 消息作为告警输入。事件映射：RunStarted →
+    每个工具步 ToolCall 四件套（Start/Args/End/Result）+ CUSTOM
+    topo_action（拓扑点亮数据源）→ CUSTOM pruned（剪枝）→ 结论
+    TextMessage 三件套 → RunFinished。规则/LLM 模式同构。
+    """
+    import asyncio
+    import uuid
+
+    from ag_ui.core import (
+        PROTOCOL_VERSION,
+        CustomEvent,
+        RunFinishedEvent,
+        RunStartedEvent,
+        TextMessageContentEvent,
+        TextMessageEndEvent,
+        TextMessageStartEvent,
+        ToolCallArgsEvent,
+        ToolCallEndEvent,
+        ToolCallResultEvent,
+        ToolCallStartEvent,
+    )
+    from ag_ui.encoder import EventEncoder
+
+    from diagnosis.graphs.explore import run_explore
+
+    thread_id = input_data.get("threadId") or input_data.get("thread_id") or str(uuid.uuid4())
+    run_id = input_data.get("runId") or input_data.get("run_id") or str(uuid.uuid4())
+    state = input_data.get("state") or {}
+    messages = input_data.get("messages") or []
+    signature = (state.get("alert_signature")
+                 or next((m.get("content") for m in reversed(messages)
+                           if m.get("role") == "user"), ""))
+    entity_id = state.get("entity_id", "")
+
+    okb = OkbClient()
+    llm = LlmClient()
+    enc = EventEncoder(accept="text/event-stream")
+
+    def run_sync() -> str:
+        frames: list[str] = [enc.encode(RunStartedEvent(
+            thread_id=thread_id, run_id=run_id, protocol_version=PROTOCOL_VERSION))]
+
+        def emit(ev: str, payload: dict) -> None:
+            if ev != "step":
+                if ev == "error":
+                    frames.append(enc.encode(CustomEvent(
+                        name="error", value={"message": payload.get("message", "")})))
+                return
+            tool, idx = payload["tool"], payload["index"]
+            if tool == "degraded":
+                frames.append(enc.encode(CustomEvent(name="degraded", value=payload.get("result", {}))))
+                return
+            tc_id = f"tc-{idx}"
+            frames.append(enc.encode(ToolCallStartEvent(tool_call_id=tc_id, tool_call_name=tool)))
+            frames.append(enc.encode(ToolCallArgsEvent(
+                tool_call_id=tc_id,
+                delta=json.dumps(payload.get("args", {}), ensure_ascii=False))))
+            frames.append(enc.encode(ToolCallEndEvent(tool_call_id=tc_id)))
+            frames.append(enc.encode(ToolCallResultEvent(
+                tool_call_id=tc_id, message_id=f"tmr-{idx}", role="tool",
+                content=json.dumps(payload.get("result", {}), ensure_ascii=False)[:4000])))
+            topo = payload.get("topo") or {}
+            if topo:
+                frames.append(enc.encode(CustomEvent(name="topo_action", value=topo)))
+
+        final = run_explore(signature, entity_id, okb, llm, emit=emit)
+        if final.get("pruned"):
+            frames.append(enc.encode(CustomEvent(name="pruned", value=final["pruned"])))
+        msg_id = str(uuid.uuid4())
+        summary = final.get("conclusion", {}).get("summary", "")
+        frames.append(enc.encode(TextMessageStartEvent(message_id=msg_id, role="assistant")))
+        frames.append(enc.encode(TextMessageContentEvent(message_id=msg_id, delta=summary)))
+        frames.append(enc.encode(TextMessageEndEvent(message_id=msg_id)))
+        frames.append(enc.encode(RunFinishedEvent(thread_id=thread_id, run_id=run_id)))
+        return "".join(frames)
+
+    async def gen() -> AsyncIterator[str]:
+        loop = asyncio.get_event_loop()
+        yield await loop.run_in_executor(None, run_sync)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 class ObservedAlert(BaseModel):
     entity: str
     stable_code: str

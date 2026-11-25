@@ -11,6 +11,7 @@ const TopologyBrowser = defineAsyncComponent(() => import('./components/Topology
 const SpatialBrowser = defineAsyncComponent(() => import('./components/SpatialBrowser.vue'))
 const OkbConsole = defineAsyncComponent(() => import('./components/OkbConsole.vue'))
 const DiagnosisConsole = defineAsyncComponent(() => import('./components/DiagnosisConsole.vue'))
+const AguiConsole = defineAsyncComponent(() => import('./components/AguiConsole.vue'))
 
 const {
   items, loading, error, nextCursor, history, load, next, previous, section,
@@ -34,6 +35,7 @@ const okbTitles: Record<string, { title: string; desc: string }> = {
 // 一级页：故障诊断-测试（与故障知识平级；数据为模拟样本+fixture 拓扑）
 const sectionTitles: Record<string, { title: string; desc: string }> = {
   'diag:run': { title: '故障诊断-测试', desc: 'LangGraph 判定序流式执行：告警归一 → 传播推演 → 跨域取证提示 → 影响半径 → 结论 → 飞轮回写；输入为模拟告警样本（samples.py）+ fixture 机柜拓扑，知识库为真库实时推演。' },
+  'diag:agui': { title: '诊断-AGUI', desc: 'AG-UI 1.0 协议试点：探索式诊断的标准事件流（RunStarted → ToolCall 工具调用 → Custom 拓扑动作 → TextMessage 结论 → RunFinished），@ag-ui/client HttpAgent 订阅渲染。' },
 }
 const okbSection = computed(() => (String(section.value).startsWith('okb') ? String(section.value) : ''))
 const sectionTitle = computed(() => {
@@ -66,6 +68,7 @@ const summary = computed(() => [
         <button :class="{ active: section === 'topology' }" @click="section = 'topology'"><el-icon><Connection /></el-icon>拓扑浏览</button>
         <button :class="{ active: section === 'spatial' }" @click="section = 'spatial'"><el-icon><DataLine /></el-icon>空间三维</button>
         <button :class="{ active: section === 'diag:run' }" @click="section = 'diag:run'"><el-icon><Warning /></el-icon>故障诊断-测试</button>
+        <button :class="{ active: section === 'diag:agui' }" @click="section = 'diag:agui'"><el-icon><Connection /></el-icon>诊断-AGUI</button>
         <button class="nav-group" :class="{ open: okbOpen }" @click="okbOpen = !okbOpen">
           <el-icon><Warning /></el-icon>故障知识<el-icon class="nav-arrow" :class="{ open: okbOpen }"><ArrowRight /></el-icon>
         </button>
@@ -122,6 +125,7 @@ const summary = computed(() => [
         <SpatialBrowser v-else-if="section === 'spatial'" :sources="sources" :sources-loading="sourcesLoading" :sources-loaded="sourcesLoaded" :sources-error="sourcesError" />
         <OkbConsole v-else-if="okbSection" :page="okbSection" @navigate="(p: string) => section = p" />
         <DiagnosisConsole v-else-if="section === 'diag:run'" />
+        <AguiConsole v-else-if="section === 'diag:agui'" />
       </main>
     </div>
     <CreateRoundDialog v-model="createOpen" :sources="sources" @created="created" />
