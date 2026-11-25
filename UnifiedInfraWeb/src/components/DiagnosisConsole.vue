@@ -289,6 +289,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ArrowRight } from '@element-plus/icons-vue'
+import { streamSse } from '../composables/useSse'
 import RunGraph from './RunGraph.vue'
 import TopologyGraph from './TopologyGraph.vue'
 
@@ -490,42 +491,19 @@ async function sendChat() {
   try {
     const history = chatMessages.value.slice(-9, -2)
       .map(m => ({ role: m.role, content: m.content }))
-    const resp = await fetch('/api/diagnosis/chat/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, history }),
-    })
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }))
-      throw new Error(err.detail ?? `HTTP ${resp.status}`)
-    }
-    const reader = resp.body!.getReader()
-    const decoder = new TextDecoder()
-    let buf = ''
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buf += decoder.decode(value, { stream: true })
-      let idx: number
-      while ((idx = buf.indexOf('\n\n')) >= 0) {
-        const frame = buf.slice(0, idx)
-        buf = buf.slice(idx + 2)
-        const evName = /^event: (.+)$/m.exec(frame)?.[1]
-        const dataRaw = /^data: (.+)$/m.exec(frame)?.[1]
-        if (!evName || !dataRaw) continue
-        const payload = JSON.parse(dataRaw)
-        if (evName === 'reasoning_delta') {
-          assistant.reasoning = (assistant.reasoning ?? '') + payload.delta
-        } else if (evName === 'answer_delta') {
-          assistant.content += payload.delta
-        } else if (evName === 'done') {
-          chatContextInjected.value = payload.context_injected ?? ''
-        } else if (evName === 'error') {
-          throw new Error(payload.message)
-        }
-        chatMessages.value = [...chatMessages.value]  // 响应式刷新
+    await streamSse('/api/diagnosis/chat/stream', { question, history }, (evName, payload) => {
+      const delta = String(payload.delta ?? '')
+      if (evName === 'reasoning_delta') {
+        assistant.reasoning = (assistant.reasoning ?? '') + delta
+      } else if (evName === 'answer_delta') {
+        assistant.content += delta
+      } else if (evName === 'done') {
+        chatContextInjected.value = String(payload.context_injected ?? '')
+      } else if (evName === 'error') {
+        throw new Error(String(payload.message))
       }
-    }
+      chatMessages.value = [...chatMessages.value]  // 响应式刷新
+    })
   } catch (e) {
     chatError.value = e instanceof Error ? e.message : String(e)
     // 流式中断：空回答的占位气泡移除，问题可重发
@@ -601,47 +579,27 @@ async function runExploreMode() {
   explorePruned.value = []
   exploreConclusion.value = ''
   try {
-    const resp = await fetch('/api/diagnosis/explore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        alert_signature: alertSignature.value.trim(),
-        entity_id: entityId.value.trim(),
-      }),
-    })
-    if (!resp.ok || !resp.body) throw new Error(`探索服务异常（HTTP ${resp.status}）`)
-    const reader = resp.body.getReader()
-    const decoder = new TextDecoder()
-    let buf = ''
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buf += decoder.decode(value, { stream: true })
-      let idx: number
-      while ((idx = buf.indexOf('\n\n')) >= 0) {
-        const frame = buf.slice(0, idx)
-        buf = buf.slice(idx + 2)
-        const evName = /^event: (.+)$/m.exec(frame)?.[1]
-        const dataRaw = /^data: (.+)$/m.exec(frame)?.[1]
-        if (!evName || !dataRaw) continue
-        const payload = JSON.parse(dataRaw)
-        if (evName === 'step') {
-          exploreSteps.value = [...exploreSteps.value, payload]
-          // 首次 trace 展示因果链；verify 后链重算
-          if (payload.tool === 'trace_causal' && Array.isArray(payload.result?.chains)) {
-            const chain = payload.result.chains[0] ?? []
-            if (chain.length) exploreChain.value = chain
-          }
-        } else if (evName === 'done') {
-          exploreDone.value = true
-          exploreLlm.value = !!payload.llm_mode
-          explorePruned.value = payload.pruned ?? []
-          exploreConclusion.value = payload.conclusion?.summary ?? ''
-        } else if (evName === 'error') {
-          throw new Error(payload.message)
+    await streamSse('/api/diagnosis/explore', {
+      alert_signature: alertSignature.value.trim(),
+      entity_id: entityId.value.trim(),
+    }, (evName, payload) => {
+      if (evName === 'step') {
+        const step = payload as unknown as ExploreStep
+        exploreSteps.value = [...exploreSteps.value, step]
+        // 首次 trace 展示因果链；verify 后链重算
+        if (step.tool === 'trace_causal' && Array.isArray(step.result?.chains)) {
+          const chain = (step.result.chains as string[][])[0] ?? []
+          if (chain.length) exploreChain.value = chain
         }
+      } else if (evName === 'done') {
+        exploreDone.value = true
+        exploreLlm.value = !!payload.llm_mode
+        explorePruned.value = (payload.pruned as string[]) ?? []
+        exploreConclusion.value = String((payload.conclusion as { summary?: string })?.summary ?? '')
+      } else if (evName === 'error') {
+        throw new Error(String(payload.message))
       }
-    }
+    })
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -687,37 +645,18 @@ async function runStorm(kind: 'pdu' | 'busbar' | 'cross') {
     } else {
       entities = ['srv-001:psu1', 'srv-101:psu1']
     }
-    // SSE：与正向 /run 同机制，节点逐帧点亮（步骤条联动）
-    const resp = await fetch('/api/diagnosis/storm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ alerts: entities.map(e => ({ entity: e, stable_code: 'server.psu.input_lost' })) }),
-    })
-    if (!resp.ok || !resp.body) throw new Error(`风暴诊断服务异常（HTTP ${resp.status}）`)
-    const reader = resp.body.getReader()
-    const decoder = new TextDecoder()
-    let buf = ''
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buf += decoder.decode(value, { stream: true })
-      let idx: number
-      while ((idx = buf.indexOf('\n\n')) >= 0) {
-        const frame = buf.slice(0, idx)
-        buf = buf.slice(idx + 2)
-        const evName = /^event: (.+)$/m.exec(frame)?.[1]
-        const dataRaw = /^data: (.+)$/m.exec(frame)?.[1]
-        if (!evName || !dataRaw) continue
-        const payload = JSON.parse(dataRaw)
-        if (evName === 'node_update') {
-          doneNodes.value = [...doneNodes.value, payload.node]
-        } else if (evName === 'done') {
-          stormResult.value = payload
-        } else if (evName === 'error') {
-          throw new Error(payload.message)
-        }
+    // SSE：与正向 /run 同机制（合图风暴分支），节点逐帧点亮（步骤条联动）
+    await streamSse('/api/diagnosis/storm', {
+      alerts: entities.map(e => ({ entity: e, stable_code: 'server.psu.input_lost' })),
+    }, (evName, payload) => {
+      if (evName === 'node_update') {
+        doneNodes.value = [...doneNodes.value, payload.node as string]
+      } else if (evName === 'done') {
+        stormResult.value = payload as unknown as StormResult
+      } else if (evName === 'error') {
+        throw new Error(String(payload.message))
       }
-    }
+    })
   } catch (e) {
     stormResult.value = null
     errorMsg.value = e instanceof Error ? e.message : String(e)
@@ -815,41 +754,18 @@ async function run() {
   doneNodes.value = []
   result.value = null
   try {
-    // SSE：fetch 流式读取 event/data 帧
-    const resp = await fetch('/api/diagnosis/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        alert_signature: alertSignature.value.trim(),
-        entity_id: entityId.value.trim() || null,
-      }),
-    })
-    if (!resp.ok || !resp.body) throw new Error(`诊断服务响应异常（HTTP ${resp.status}）`)
-    const reader = resp.body.getReader()
-    const decoder = new TextDecoder()
-    let buf = ''
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buf += decoder.decode(value, { stream: true })
-      // SSE 帧以空行分隔
-      let idx: number
-      while ((idx = buf.indexOf('\n\n')) >= 0) {
-        const frame = buf.slice(0, idx)
-        buf = buf.slice(idx + 2)
-        const evName = /^event: (.+)$/m.exec(frame)?.[1]
-        const dataRaw = /^data: (.+)$/m.exec(frame)?.[1]
-        if (!evName || !dataRaw) continue
-        const payload = JSON.parse(dataRaw)
-        if (evName === 'node_update') {
-          doneNodes.value = [...doneNodes.value, payload.node]
-        } else if (evName === 'done') {
-          result.value = payload as DiagnosisResult
-        } else if (evName === 'error') {
-          errorMsg.value = payload.message
-        }
+    await streamSse('/api/diagnosis/run', {
+      alert_signature: alertSignature.value.trim(),
+      entity_id: entityId.value.trim() || null,
+    }, (evName, payload) => {
+      if (evName === 'node_update') {
+        doneNodes.value = [...doneNodes.value, payload.node as string]
+      } else if (evName === 'done') {
+        result.value = payload as unknown as DiagnosisResult
+      } else if (evName === 'error') {
+        errorMsg.value = String(payload.message)
       }
-    }
+    })
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : String(e)
   } finally {
