@@ -12,7 +12,11 @@
             前端组件（CopilotKit 等）即可直接复用同一后端。
           </p>
           <div class="agui-input-row">
-            <el-input v-model="signature" placeholder="告警 signature（如 SERVER-PSU-INPUT-LOST）" class="agui-input" clearable />
+            <el-select v-model="pickedSample" placeholder="选择测试场景" class="agui-sample-select"
+              @change="onPickSample" clearable>
+              <el-option v-for="s in samples" :key="s.id" :label="`${s.label}（${s.entity ?? s.site}）`" :value="s.id" />
+            </el-select>
+            <el-input v-model="signature" placeholder="告警 signature" class="agui-input" clearable />
             <el-input v-model="entityId" placeholder="实体 ID（可选）" class="agui-input-entity" clearable />
             <el-button type="primary" :loading="running" @click="run">Run Agent</el-button>
           </div>
@@ -76,8 +80,21 @@ import { HttpAgent } from '@ag-ui/client'
 import TopologyGraph from './TopologyGraph.vue'
 
 // AG-UI 试点页：HttpAgent 订阅标准事件族，渲染探索式诊断全过程
+interface TestSample {
+  id: string; label: string; site: string; signature: string; entity?: string
+}
+const samples = ref<TestSample[]>([])
+const pickedSample = ref('')
 const signature = ref('SERVER-PSU-INPUT-LOST')
 const entityId = ref('srv-001')
+
+function onPickSample(id: string) {
+  const s = samples.value.find(x => x.id === id)
+  if (!s) return
+  signature.value = s.signature
+  entityId.value = s.entity ?? ''
+}
+
 const running = ref(false)
 const error = ref('')
 const runState = ref('')
@@ -95,8 +112,13 @@ const highlight = ref<{ root: string; examined: string[]; evidence: string[] }>(
 
 onMounted(async () => {
   try {
-    topo.value = await fetch('/api/diagnosis/topology').then(r => r.json())
-  } catch { /* 拓扑加载失败如实展示空态 */ }
+    const [t, s] = await Promise.all([
+      fetch('/api/diagnosis/topology').then(r => r.json()),
+      fetch('/api/diagnosis/samples').then(r => r.json()),
+    ])
+    topo.value = t
+    samples.value = s.samples ?? []
+  } catch { /* 加载失败如实展示空态 */ }
 })
 
 function asText(content: string | Array<{ type: string; text?: string }>): string {
@@ -208,7 +230,8 @@ async function run() {
 .agui-intro { font-size: 12px; margin: 0 0 10px; }
 .agui-ids { font-size: 11px; }
 .agui-input-row { display: flex; gap: 10px; }
-.agui-input { flex: 1; max-width: 320px; }
+.agui-sample-select { width: 220px; }
+.agui-input { flex: 1; max-width: 260px; }
 .agui-input-entity { max-width: 220px; }
 .agui-toolcall { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 5px 8px;
   border: 1px solid #e4e9f0; border-radius: 6px; margin-bottom: 4px; }
