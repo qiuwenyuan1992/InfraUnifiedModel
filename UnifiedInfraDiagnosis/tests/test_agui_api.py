@@ -82,3 +82,43 @@ def test_agui_run_ids_consistent(client: TestClient, monkeypatch: pytest.MonkeyP
     thread_ids = {e["threadId"] for e in events if "threadId" in e}
     assert run_ids == {"r-test"}, f"run_id 必须回传: {run_ids}"
     assert thread_ids == {"t-test"}
+
+
+def test_agui_streams_incrementally(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """真流式：首帧在推理完成前送达（非跑完一次性吐帧）。
+
+    假 run_explore 发首步后阻塞等放行——若端点缓冲，读首帧要等满
+    block 超时（5s）；真流式应在 1s 内读到。时间断言裕量足够大。
+    """
+    import threading
+    import time
+
+    from diagnosis import api as api_mod
+    from diagnosis.graphs import explore as explore_mod
+
+    block = threading.Event()
+
+    def fake_explore(signature, entity_id, okb, llm, emit):
+        emit("step", {"index": 1, "tool": "lookup_alert",
+                      "args": {"signature": signature}, "result": {"candidates": []},
+                      "thought": "", "topo": {}})
+        block.wait(timeout=5.0)  # 阻塞：首帧送达后才放行
+        return {"conclusion": {"summary": "完"}, "pruned": [], "facts": {}}
+
+    monkeypatch.setattr(explore_mod, "run_explore", fake_explore)
+    for k in ("OKB_LLM_BASE_URL", "OKB_LLM_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+
+    t0 = time.monotonic()
+    with client.stream("POST", "/api/diagnosis/agui", json={
+        "threadId": "t-live", "runId": "r-live",
+        "state": {"alert_signature": "X-SIG", "entity_id": ""},
+    }) as resp:
+        lines = resp.iter_lines()
+        first = next(l for l in lines if l.startswith("data: "))
+        latency = time.monotonic() - t0
+        block.set()  # 收到首帧，放行剩余
+        rest = [l for l in lines if l.startswith("data: ")]
+    assert "RUN_STARTED" in first, f"首帧应为 RunStarted: {first}"
+    assert latency < 3.0, f"首帧延迟 {latency:.2f}s——端点在缓冲（跑完才吐帧）"
+    assert any("RUN_FINISHED" in l for l in rest), "放行后应收到余帧"

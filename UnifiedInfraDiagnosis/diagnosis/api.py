@@ -13,7 +13,10 @@ POST /api/diagnosis/report —— 已有 CLI 同款同步入口（非流式，�
 
 from __future__ import annotations
 
+import asyncio
 import json
+import queue
+import threading
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI
@@ -227,23 +230,30 @@ async def explore_diagnosis(req: ExploreRequest) -> StreamingResponse:
     okb = OkbClient()
     llm = LlmClient()
 
+    # 真流式：worker 线程 emit 即入队，gen 逐帧转发（LLM 多轮期间持续推送）
+    q: "queue.Queue[tuple[str, dict] | None]" = queue.Queue()
+
+    def worker() -> None:
+        try:
+            result = run_explore(req.alert_signature, req.entity_id, okb, llm,
+                                 emit=lambda ev, p: q.put((ev, p)))
+        except Exception as exc:  # noqa: BLE001 - 异常转 error 帧后收尾
+            q.put(("error", {"message": str(exc)}))
+            q.put(None)
+            return
+        q.put(("done", {**result, "llm_mode": bool(llm.available())}))
+        q.put(None)  # 收尾哨兵
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+
     async def gen() -> AsyncIterator[str]:
-        queue: list[tuple[str, dict]] = []
-
-        def emit(ev: str, payload: dict) -> None:
-            queue.append((ev, payload))
-
-        # 同步跑 agent（工具调用快），事件经队列转 SSE 帧
-        import asyncio
-
-        def runner():
-            return run_explore(req.alert_signature, req.entity_id, okb, llm, emit=emit)
-
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, runner)
-        for ev, payload in queue:
-            yield _event(ev, payload)
-        yield _event("done", {**result, "llm_mode": bool(llm.available())})
+        while True:
+            item = await asyncio.get_event_loop().run_in_executor(None, q.get)
+            if item is None:
+                break
+            yield _event(*item)
+        thread.join(timeout=120)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -305,47 +315,62 @@ async def agui_diagnosis(input_data: dict) -> StreamingResponse:
     llm = LlmClient()
     enc = EventEncoder(accept="text/event-stream")
 
-    def run_sync() -> str:
-        frames: list[str] = [enc.encode(RunStartedEvent(
-            thread_id=thread_id, run_id=run_id, protocol_version=PROTOCOL_VERSION))]
+    # 共享队列：worker 推帧、gen 消费——emit 到达即送下游（真流式）
+    q: "queue.Queue[str | None]" = queue.Queue()
+    q.put(enc.encode(RunStartedEvent(
+        thread_id=thread_id, run_id=run_id, protocol_version=PROTOCOL_VERSION)))
 
+    def worker() -> None:
         def emit(ev: str, payload: dict) -> None:
             if ev != "step":
                 if ev == "error":
-                    frames.append(enc.encode(CustomEvent(
+                    q.put(enc.encode(CustomEvent(
                         name="error", value={"message": payload.get("message", "")})))
                 return
             tool, idx = payload["tool"], payload["index"]
             if tool == "degraded":
-                frames.append(enc.encode(CustomEvent(name="degraded", value=payload.get("result", {}))))
+                q.put(enc.encode(CustomEvent(name="degraded", value=payload.get("result", {}))))
                 return
             tc_id = f"tc-{idx}"
-            frames.append(enc.encode(ToolCallStartEvent(tool_call_id=tc_id, tool_call_name=tool)))
-            frames.append(enc.encode(ToolCallArgsEvent(
+            q.put(enc.encode(ToolCallStartEvent(tool_call_id=tc_id, tool_call_name=tool)))
+            q.put(enc.encode(ToolCallArgsEvent(
                 tool_call_id=tc_id,
                 delta=json.dumps(payload.get("args", {}), ensure_ascii=False))))
-            frames.append(enc.encode(ToolCallEndEvent(tool_call_id=tc_id)))
-            frames.append(enc.encode(ToolCallResultEvent(
+            q.put(enc.encode(ToolCallEndEvent(tool_call_id=tc_id)))
+            q.put(enc.encode(ToolCallResultEvent(
                 tool_call_id=tc_id, message_id=f"tmr-{idx}", role="tool",
                 content=json.dumps(payload.get("result", {}), ensure_ascii=False)[:4000])))
             topo = payload.get("topo") or {}
             if topo:
-                frames.append(enc.encode(CustomEvent(name="topo_action", value=topo)))
+                q.put(enc.encode(CustomEvent(name="topo_action", value=topo)))
 
-        final = run_explore(signature, entity_id, okb, llm, emit=emit)
+        try:
+            final = run_explore(signature, entity_id, okb, llm, emit=emit)
+        except Exception as exc:  # noqa: BLE001 - 异常转 error 帧后收尾
+            q.put(enc.encode(CustomEvent(name="error", value={"message": str(exc)})))
+            q.put(None)
+            return
         if final.get("pruned"):
-            frames.append(enc.encode(CustomEvent(name="pruned", value=final["pruned"])))
+            q.put(enc.encode(CustomEvent(name="pruned", value=final["pruned"])))
         msg_id = str(uuid.uuid4())
         summary = final.get("conclusion", {}).get("summary", "")
-        frames.append(enc.encode(TextMessageStartEvent(message_id=msg_id, role="assistant")))
-        frames.append(enc.encode(TextMessageContentEvent(message_id=msg_id, delta=summary)))
-        frames.append(enc.encode(TextMessageEndEvent(message_id=msg_id)))
-        frames.append(enc.encode(RunFinishedEvent(thread_id=thread_id, run_id=run_id)))
-        return "".join(frames)
+        q.put(enc.encode(TextMessageStartEvent(message_id=msg_id, role="assistant")))
+        q.put(enc.encode(TextMessageContentEvent(message_id=msg_id, delta=summary)))
+        q.put(enc.encode(TextMessageEndEvent(message_id=msg_id)))
+        q.put(enc.encode(RunFinishedEvent(thread_id=thread_id, run_id=run_id)))
+        q.put(None)  # 收尾哨兵
+
+    thread = threading.Thread(target=worker)
+    thread.start()
 
     async def gen() -> AsyncIterator[str]:
-        loop = asyncio.get_event_loop()
-        yield await loop.run_in_executor(None, run_sync)
+        # 队列逐帧转发：emit 即送达（LLM 多轮思考期间前端持续收到事件）
+        while True:
+            frame = await asyncio.get_event_loop().run_in_executor(None, q.get)
+            if frame is None:
+                break
+            yield frame
+        thread.join(timeout=120)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 

@@ -49,6 +49,44 @@ def _run_explore(client: TestClient, signature: str, entity: str,
     return events
 
 
+def test_explore_streams_incrementally(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """真流式：step 帧在推理完成前送达（非跑完一次性吐帧）。
+
+    假 run_explore 发首步后阻塞等放行——若端点缓冲，读首帧要等满
+    block 超时（5s）；真流式应在 1s 内读到。与 AG-UI 端点同构守卫。
+    """
+    import threading
+    import time
+
+    from diagnosis.graphs import explore as explore_mod
+
+    block = threading.Event()
+
+    def fake_explore(signature, entity_id, okb, llm, emit):
+        emit("step", {"index": 1, "tool": "lookup_alert",
+                      "args": {"signature": signature}, "result": {"candidates": []},
+                      "thought": "", "topo": {}})
+        block.wait(timeout=5.0)  # 阻塞：首帧送达后才放行
+        return {"conclusion": {"summary": "完"}, "pruned": [], "facts": {}}
+
+    monkeypatch.setattr(explore_mod, "run_explore", fake_explore)
+    for k in ("OKB_LLM_BASE_URL", "OKB_LLM_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+
+    t0 = time.monotonic()
+    with client.stream("POST", "/api/diagnosis/explore", json={
+        "alert_signature": "X-SIG", "entity_id": "",
+    }) as resp:
+        lines = resp.iter_lines()
+        first = next(l for l in lines if l.startswith("event: "))
+        latency = time.monotonic() - t0
+        block.set()  # 收到首帧，放行剩余
+        rest = [l for l in lines if l.startswith("event: ")]
+    assert first == "event: step", f"首帧应为 step: {first}"
+    assert latency < 3.0, f"首帧延迟 {latency:.2f}s——端点在缓冲（跑完才吐帧）"
+    assert any("done" in l for l in rest), "放行后应收到余帧"
+
+
 def test_explore_rule_sequence_and_prune(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     """PSU 场景完整验证循环：查→推演→取证→回填→剪枝→结论。"""
     events = _run_explore(client, "SERVER-PSU-INPUT-LOST", "srv-001", monkeypatch)
